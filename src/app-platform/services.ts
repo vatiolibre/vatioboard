@@ -68,6 +68,10 @@ const DENIED_AUDIO_STATE: AudioRuntimeState = {
   seekable: true,
   cacheable: false,
   analysisEligible: false,
+  analysisActive: false,
+  outputMode: null,
+  backgroundPlaybackState: "idle",
+  recoveryRequired: false,
   connectionState: "idle",
   currentTrack: null,
   loading: false,
@@ -401,6 +405,18 @@ function createAudioGateway(
       ? (track) => {
           if (!canUseAudio()) return false;
           return service.playTrackNow?.(track) ?? false;
+        }
+      : undefined,
+    rearmBackgroundPlayback: service.rearmBackgroundPlayback
+      ? (options) => {
+          if (!canUseAudio()) return false;
+          return service.rearmBackgroundPlayback?.(options) ?? false;
+        }
+      : undefined,
+    retryRadioWithVisualizer: service.retryRadioWithVisualizer
+      ? () => {
+          if (!canUseAudio()) return false;
+          return service.retryRadioWithVisualizer?.() ?? false;
         }
       : undefined,
   };

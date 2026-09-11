@@ -5,6 +5,9 @@ const relay = `https://radio-media.vatioboard.com/v1/stations/${UUID}/stream`;
 const triggerBackgroundCache = vi.fn();
 const registerStationClick = vi.fn().mockResolvedValue(true);
 const updateMediaSessionClient = vi.fn();
+const resumeVisualizerGraphForElement = vi.fn().mockResolvedValue(true);
+const destroyVisualizerGraphForElement = vi.fn(() => false);
+const getVisualizerGraph = vi.fn(() => null);
 
 vi.mock("../../src/shared/audio-source-resolver.js", () => ({
   triggerBackgroundCache,
@@ -51,15 +54,24 @@ vi.mock("../../src/shared/audio-system.js", () => {
   background.paused = true;
   return {
     acquireBackgroundAudioLease: vi.fn().mockResolvedValue(true),
+    getBackgroundAudioState: () => ({ status: "idle", activeLeaseIds: [], lastInterruption: null, revision: 0 }),
     getBackgroundKeepAliveAudio: () => background,
     isBackgroundAudioLeaseActive: () => false,
+    rearmBackgroundAudio: vi.fn().mockResolvedValue(true),
     releaseBackgroundAudioLease: vi.fn(),
+    subscribeBackgroundAudioState: (listener) => {
+      listener({ status: "idle", activeLeaseIds: [], lastInterruption: null, revision: 0 });
+      return () => {};
+    },
   };
 });
 vi.mock("../../src/shared/audio-cue.js", () => ({ setMainAudioElement: vi.fn() }));
 vi.mock("../../src/shared/audio-mini-visualizer.js", () => ({
-  destroyVisualizerGraphForElement: vi.fn(() => false),
-  resumeVisualizerGraphForElement: vi.fn().mockResolvedValue(true),
+  destroyVisualizerGraphForElement,
+  resumeVisualizerGraphForElement,
+}));
+vi.mock("../../src/shared/audio-graph-registry.js", () => ({
+  getGraph: getVisualizerGraph,
 }));
 vi.mock("../../src/shared/player-session.js", () => ({
   loadPlayerSession: () => ({
@@ -86,6 +98,10 @@ describe("live radio audio runtime", () => {
     triggerBackgroundCache.mockClear();
     registerStationClick.mockClear();
     updateMediaSessionClient.mockClear();
+    destroyVisualizerGraphForElement.mockClear();
+    resumeVisualizerGraphForElement.mockReset().mockResolvedValue(true);
+    getVisualizerGraph.mockReset().mockReturnValue(null);
+    localStorage.clear();
   });
 
   afterEach(() => vi.useRealTimers());
@@ -226,5 +242,211 @@ describe("live radio audio runtime", () => {
       error: "unsupported-hls",
       paused: true,
     });
+  });
+
+  it("requests native playback without waiting for Web Audio to resume", async () => {
+    let releaseGraphResume;
+    resumeVisualizerGraphForElement.mockImplementation(() => new Promise((resolve) => {
+      releaseGraphResume = resolve;
+    }));
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    await runtime.primeAudio();
+    const element = runtime.getAudioElement();
+    const nativePlay = element.play.bind(element);
+    element.play = vi.fn(nativePlay);
+
+    const selection = runtime.playTrackNow({
+      name: `radio:${UUID}`,
+      title: "Test Radio",
+      media_kind: "radio",
+      station_uuid: UUID,
+      hls: 0,
+    });
+    await flushMicrotasks();
+
+    expect(element.play).toHaveBeenCalledTimes(1);
+    expect(runtime.getState().connectionState).toBe("connecting");
+    await selection;
+    releaseGraphResume?.(true);
+  });
+
+  it("recovers an unexpected live pause but ignores a pause caused by source setup", async () => {
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    await runtime.playTrackNow({
+      name: `radio:${UUID}`,
+      title: "Test Radio",
+      media_kind: "radio",
+      station_uuid: UUID,
+      hls: 0,
+    });
+    await flushMicrotasks();
+    const element = runtime.getAudioElement();
+    const nativePlay = element.play.bind(element);
+    element.play = vi.fn(nativePlay);
+    element.dispatchEvent(new Event("playing"));
+
+    element.pause();
+    expect(element.play).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(251);
+    element.pause();
+    expect(element.play).toHaveBeenCalledTimes(1);
+    expect(runtime.getState().connectionState).toBe("reconnecting");
+  });
+
+  it("moves an established direct stream to relay after its immediate direct retry fails", async () => {
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    await runtime.playTrackNow({
+      name: `radio:${UUID}`,
+      title: "Test Radio",
+      media_kind: "radio",
+      station_uuid: UUID,
+      hls: 0,
+    });
+    await flushMicrotasks();
+    const element = runtime.getAudioElement();
+    element.dispatchEvent(new Event("playing"));
+
+    element.dispatchEvent(new Event("error"));
+    expect(runtime.getState().sourceTransport).toBe("radio-direct-cors");
+    expect(runtime.getState().connectionState).toBe("reconnecting");
+
+    element.dispatchEvent(new Event("error"));
+    expect(runtime.getState().sourceTransport).toBe("radio-relay");
+    expect(element.src).toBe(relay);
+
+    element.dispatchEvent(new Event("error"));
+    expect(runtime.getState().connectionState).toBe("reconnecting");
+    element.dispatchEvent(new Event("playing"));
+    vi.advanceTimersByTime(5_000);
+    expect(runtime.getState().connectionState).toBe("playing");
+  });
+
+  it("turns autoplay blocking into recoverable state without consuming network retries", async () => {
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    runtime.setQueue([{
+      name: `radio:${UUID}`,
+      title: "Test Radio",
+      media_kind: "radio",
+      station_uuid: UUID,
+      hls: 0,
+    }], { autoplay: false });
+    await flushMicrotasks();
+    const element = runtime.getAudioElement();
+    element.play = vi.fn().mockRejectedValueOnce(new DOMException("blocked", "NotAllowedError"));
+
+    await runtime.play();
+    await flushMicrotasks();
+
+    expect(runtime.getState()).toMatchObject({
+      currentTrack: { station_uuid: UUID },
+      sourceTransport: "radio-direct-cors",
+      recoveryRequired: true,
+      error: "background-playback-blocked",
+      paused: false,
+    });
+    expect(updateMediaSessionClient.mock.calls.at(-1)?.[1]?.playbackState).toBe("playing");
+    vi.advanceTimersByTime(60_000);
+    expect(runtime.getState().connectionState).not.toBe("unavailable");
+  });
+
+  it("replaces the managed element once for native-background compatibility", async () => {
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    await runtime.playTrackNow({
+      name: `radio:${UUID}`,
+      title: "Test Radio",
+      media_kind: "radio",
+      station_uuid: UUID,
+      hls: 0,
+    });
+    await flushMicrotasks();
+    const previousElement = runtime.getAudioElement();
+
+    expect(await runtime.rearmBackgroundPlayback({ preferNative: true })).toBe(true);
+    const replacement = runtime.getAudioElement();
+
+    expect(replacement).not.toBe(previousElement);
+    expect(previousElement.src).toBe("");
+    expect(runtime.getState()).toMatchObject({
+      outputMode: "native-background",
+      analysisActive: false,
+      connectionState: "connecting",
+    });
+    replacement.dispatchEvent(new Event("playing"));
+    expect(localStorage.getItem("vatioboard.player.radio.native-background.v1")).toBe("1");
+  });
+
+  it("uses absolute connection deadlines when lifecycle timers were throttled", async () => {
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    await runtime.playTrackNow({
+      name: `radio:${UUID}`,
+      title: "Test Radio",
+      media_kind: "radio",
+      station_uuid: UUID,
+      hls: 0,
+    });
+    await flushMicrotasks();
+
+    await runtime.reconcileBackgroundPlayback("resume", Date.now() + 12_000);
+
+    expect(runtime.getState().sourceTransport).toBe("radio-relay");
+    expect(runtime.getAudioElement().src).toBe(relay);
+  });
+
+  it("offers native recovery if an interrupted radio graph cannot resume within one second", async () => {
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    await runtime.playTrackNow({
+      name: `radio:${UUID}`,
+      title: "Test Radio",
+      media_kind: "radio",
+      station_uuid: UUID,
+      hls: 0,
+    });
+    await flushMicrotasks();
+    const element = runtime.getAudioElement();
+    element.dispatchEvent(new Event("playing"));
+    element.paused = true;
+    getVisualizerGraph.mockReturnValue({ audioContext: { state: "suspended" } });
+    resumeVisualizerGraphForElement.mockImplementation(() => new Promise(() => {}));
+
+    const reconciliation = runtime.reconcileBackgroundPlayback("resume", Date.now());
+    expect(element.paused).toBe(false);
+    vi.advanceTimersByTime(1_000);
+    await reconciliation;
+
+    expect(runtime.getState()).toMatchObject({
+      outputMode: "web-audio",
+      recoveryRequired: true,
+      backgroundPlaybackState: "blocked",
+      error: "background-playback-blocked",
+    });
+    expect(runtime.getState().sourceTransport).toBe("radio-direct-cors");
+  });
+
+  it("Media Session Play reconciles a paused element even when runtime state said playing", async () => {
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    await runtime.playTrackNow({
+      name: `radio:${UUID}`,
+      title: "Test Radio",
+      media_kind: "radio",
+      station_uuid: UUID,
+      hls: 0,
+    });
+    await flushMicrotasks();
+    const element = runtime.getAudioElement();
+    element.dispatchEvent(new Event("playing"));
+    element.paused = true;
+    const nativePlay = element.play.bind(element);
+    element.play = vi.fn(nativePlay);
+    const mediaSessionPlay = updateMediaSessionClient.mock.calls
+      .map((call) => call[1]?.handlers?.play)
+      .filter(Boolean)
+      .at(-1);
+
+    mediaSessionPlay();
+    await flushMicrotasks();
+
+    expect(element.play).toHaveBeenCalledTimes(1);
+    expect(element.paused).toBe(false);
   });
 });

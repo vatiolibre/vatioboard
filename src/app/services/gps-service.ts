@@ -8,6 +8,7 @@ import type {
   GpsSnapshot,
   NormalizedGpsPosition,
 } from "../../types/services";
+import { recordBackgroundDiagnostic } from "../../shared/background-diagnostics.js";
 
 interface GpsServiceOptions {
   geolocation?: Geolocation | null;
@@ -121,6 +122,10 @@ export function createGpsService({ geolocation = navigator.geolocation }: GpsSer
   let nextId = 1;
   let nativeWatchId = null;
   let nativeWatchHighAccuracy = false;
+  let nativeWatchStartedAtMs = 0;
+  let lastLifecycleRestartAtMs = 0;
+  let lastLifecycleRestartCallbackAtMs: number | null = null;
+  let lastDiagnosticAtMs = 0;
   const savedSnapshot = readSnapshot();
   let snapshot: GpsSnapshot = {
     status: (savedSnapshot?.status as GpsSnapshot["status"]) || (geolocation ? "idle" : "unsupported"),
@@ -271,6 +276,15 @@ export function createGpsService({ geolocation = navigator.geolocation }: GpsSer
       consumers: getConsumers(),
       nativeWatchActive: nativeWatchId !== null,
     });
+    if (now - lastDiagnosticAtMs >= 5000) {
+      lastDiagnosticAtMs = now;
+      recordBackgroundDiagnostic("gps-position", {
+        visibility: typeof document === "undefined" ? "unknown" : document.visibilityState,
+        gpsConsumerCount: consumers.size + subscribers.size,
+        nativeWatchActive: nativeWatchId !== null,
+        fixAgeMs: 0,
+      });
+    }
 
     for (const subscriber of subscribers.values()) {
       try {
@@ -297,6 +311,12 @@ export function createGpsService({ geolocation = navigator.geolocation }: GpsSer
       nativeWatchActive: nativeWatchId !== null,
       hasLastPosition: Boolean(snapshot.normalized),
     });
+    recordBackgroundDiagnostic("gps-error", {
+      visibility: typeof document === "undefined" ? "unknown" : document.visibilityState,
+      gpsConsumerCount: consumers.size + subscribers.size,
+      nativeWatchActive: nativeWatchId !== null,
+      gpsErrorCode: lastError.code,
+    });
 
     for (const subscriber of subscribers.values()) {
       try {
@@ -316,6 +336,7 @@ export function createGpsService({ geolocation = navigator.geolocation }: GpsSer
       maximumAge: 0,
       timeout: nativeWatchHighAccuracy ? HIGH_ACCURACY_WATCH_TIMEOUT_MS : DEFAULT_WATCH_TIMEOUT_MS,
     });
+    nativeWatchStartedAtMs = Date.now();
     debugGps("watch-start", {
       enableHighAccuracy: nativeWatchHighAccuracy,
       timeout: nativeWatchHighAccuracy ? HIGH_ACCURACY_WATCH_TIMEOUT_MS : DEFAULT_WATCH_TIMEOUT_MS,
@@ -328,6 +349,7 @@ export function createGpsService({ geolocation = navigator.geolocation }: GpsSer
     if (subscribers.size > 0 || consumers.size > 0 || nativeWatchId === null || !nativeClearWatch) return;
     nativeClearWatch(nativeWatchId);
     nativeWatchId = null;
+    nativeWatchStartedAtMs = 0;
     nativeWatchHighAccuracy = false;
     persistAndEmit({ status: "idle" });
     debugGps("watch-stop", {
@@ -342,7 +364,34 @@ export function createGpsService({ geolocation = navigator.geolocation }: GpsSer
     if (nextHighAccuracy === nativeWatchHighAccuracy) return;
     nativeClearWatch(nativeWatchId);
     nativeWatchId = null;
+    nativeWatchStartedAtMs = 0;
     ensureNativeWatch();
+  }
+
+  function reconcileAfterLifecycle(nowMs = Date.now()) {
+    if (!nativeWatchPosition || subscribers.size + consumers.size === 0) return false;
+    const lastCallbackAtMs = getLastCallbackAtMs();
+    const timeoutMs = hasHighAccuracyConsumer() ? HIGH_ACCURACY_WATCH_TIMEOUT_MS : DEFAULT_WATCH_TIMEOUT_MS;
+    const referenceAtMs = lastCallbackAtMs ?? nativeWatchStartedAtMs;
+    const stale = referenceAtMs <= 0 || nowMs - referenceAtMs > POSITION_STALE_MS;
+    const restartedForSameCallback = lastLifecycleRestartCallbackAtMs === lastCallbackAtMs
+      && nowMs - lastLifecycleRestartAtMs < timeoutMs;
+    if (nativeWatchId !== null && (!stale || restartedForSameCallback)) return false;
+
+    if (nativeWatchId !== null && nativeClearWatch) nativeClearWatch(nativeWatchId);
+    nativeWatchId = null;
+    nativeWatchStartedAtMs = 0;
+    lastLifecycleRestartAtMs = nowMs;
+    lastLifecycleRestartCallbackAtMs = lastCallbackAtMs;
+    ensureNativeWatch();
+    recordBackgroundDiagnostic("gps-lifecycle-reconcile", {
+      reason: stale ? "stale-watch" : "missing-watch",
+      visibility: typeof document === "undefined" ? "unknown" : document.visibilityState,
+      gpsConsumerCount: consumers.size + subscribers.size,
+      nativeWatchActive: nativeWatchId !== null,
+      fixAgeMs: lastCallbackAtMs === null ? null : Math.max(0, nowMs - lastCallbackAtMs),
+    });
+    return nativeWatchId !== null;
   }
 
   function getLastCallbackAtMs() {
@@ -469,6 +518,7 @@ export function createGpsService({ geolocation = navigator.geolocation }: GpsSer
       nativeClearWatch(nativeWatchId);
     }
     nativeWatchId = null;
+    nativeWatchStartedAtMs = 0;
     nativeWatchHighAccuracy = false;
     listeners.clear();
     positionListeners.clear();
@@ -511,6 +561,7 @@ export function createGpsService({ geolocation = navigator.geolocation }: GpsSer
     getCurrentPosition,
     requestHighAccuracy,
     releaseHighAccuracy,
+    reconcileAfterLifecycle,
     installGlobalShim,
     destroy,
   };

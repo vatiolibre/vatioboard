@@ -48,6 +48,11 @@ import {
   fetchBackendMediaAssetBlob,
 } from "../shared/backend-auth.js";
 import { showPromptDialog } from "../shared/ui/confirm-dialog.js";
+import {
+  copyBackgroundDiagnostics,
+  downloadBackgroundDiagnostics,
+  isBackgroundDiagnosticsEnabled,
+} from "../shared/background-diagnostics.js";
 import type { ShellAppRuntimeManager } from "../app-platform/types";
 import type { ShellRuntime } from "../types/shell";
 
@@ -106,6 +111,7 @@ function getVisualizerModeLabel(mode) {
 }
 
 function isSafeVisualizerElement(audioElement, stateSnapshot = null) {
+  if (stateSnapshot?.outputMode === "native-background") return false;
   if (stateSnapshot?.isLive) return stateSnapshot.analysisEligible === true;
   if (!audioElement?.src) return true;
   return isVisualizerSafeSource(audioElement.currentSrc || audioElement.src);
@@ -385,6 +391,19 @@ export function createPlayerShell({
   errorMsg.className = "player-error";
   errorMsg.hidden = true;
 
+  const recoveryActions = document.createElement("div");
+  recoveryActions.className = "player-background-recovery-actions";
+  recoveryActions.hidden = true;
+  const recoveryBtn = document.createElement("button");
+  recoveryBtn.type = "button";
+  recoveryBtn.className = "player-background-recovery-btn";
+  recoveryBtn.textContent = t("playerRadioResumeBackground");
+  const retryVisualizerBtn = document.createElement("button");
+  retryVisualizerBtn.type = "button";
+  retryVisualizerBtn.className = "player-background-recovery-btn";
+  retryVisualizerBtn.textContent = t("playerRadioTryVisualizers");
+  recoveryActions.append(recoveryBtn, retryVisualizerBtn);
+
   // ── Progress ───────────────────────────────────────────────────
   const progressSection = document.createElement("div");
   progressSection.className = "player-progress-section";
@@ -603,7 +622,17 @@ export function createPlayerShell({
   const radioListUl = document.createElement("ul");
   radioListUl.className = "player-radio-list";
   radioListUl.setAttribute("role", "list");
-  radioPane.append(radioSearchForm, radioStatus, radioListUl);
+  const radioDiagnostics = document.createElement("div");
+  radioDiagnostics.className = "player-radio-diagnostics";
+  radioDiagnostics.hidden = !isBackgroundDiagnosticsEnabled();
+  const copyDiagnosticsBtn = document.createElement("button");
+  copyDiagnosticsBtn.type = "button";
+  copyDiagnosticsBtn.textContent = t("playerRadioCopyDiagnostics");
+  const downloadDiagnosticsBtn = document.createElement("button");
+  downloadDiagnosticsBtn.type = "button";
+  downloadDiagnosticsBtn.textContent = t("playerRadioDownloadDiagnostics");
+  radioDiagnostics.append(copyDiagnosticsBtn, downloadDiagnosticsBtn);
+  radioPane.append(radioSearchForm, radioStatus, radioListUl, radioDiagnostics);
 
   contentPaneStack.append(queuePane, libraryPane, playlistPane, radioPane);
   contentSheet.append(contentSheetHeader, contentPaneStack);
@@ -611,7 +640,7 @@ export function createPlayerShell({
   // ── Assembly ───────────────────────────────────────────────────
   const body = document.createElement("div");
   body.className = "player-body";
-  body.append(nowPlaying, visualizerStrip, errorMsg, progressSection, transport, volumeRow, utilityRow);
+  body.append(nowPlaying, visualizerStrip, errorMsg, recoveryActions, progressSection, transport, volumeRow, utilityRow);
 
   root.append(header, body, contentSheet);
   container.append(root);
@@ -912,6 +941,23 @@ export function createPlayerShell({
       tag: radioTagInput.value,
     }));
   });
+
+  recoveryBtn.addEventListener("click", () => {
+    _gestureUnlocked = true;
+    void runtime.rearmBackgroundPlayback({ preferNative: true });
+  });
+  retryVisualizerBtn.addEventListener("click", () => {
+    _gestureUnlocked = true;
+    primeAudioContext();
+    void runtime.retryRadioWithVisualizer();
+  });
+  copyDiagnosticsBtn.addEventListener("click", async () => {
+    const copied = await copyBackgroundDiagnostics();
+    copyDiagnosticsBtn.textContent = copied
+      ? t("playerRadioDiagnosticsCopied")
+      : t("playerRadioCopyDiagnostics");
+  });
+  downloadDiagnosticsBtn.addEventListener("click", downloadBackgroundDiagnostics);
 
   // Clear queue button
   queueSheetClearBtn.addEventListener("click", () => {
@@ -1683,7 +1729,7 @@ export function createPlayerShell({
     }
   }
 
-  function syncVisualizerUi({ sourceSafe = true } = {}) {
+  function syncVisualizerUi({ sourceSafe = true, nativeBackground = false } = {}) {
     visualizerStrip.hidden = !visualizerVisible;
     visualizerStrip.dataset.visualizerMode = visualizerMode;
     visualizerStrip.dataset.visualizerState = visualizerFailed
@@ -1693,8 +1739,10 @@ export function createPlayerShell({
         : "disabled";
     visualizerToggleBtn.classList.toggle("active", visualizerVisible);
     visualizerToggleBtn.setAttribute("aria-pressed", String(visualizerVisible));
-    visualizerLabel.textContent = visualizerFailed || (visualizerVisible && !sourceSafe)
-      ? t("mediaPlayerVisualizerUnavailable")
+    visualizerLabel.textContent = nativeBackground
+      ? t("playerRadioVisualizerPausedForBackground")
+      : visualizerFailed || (visualizerVisible && !sourceSafe)
+        ? t("mediaPlayerVisualizerUnavailable")
       : getVisualizerModeLabel(visualizerMode);
   }
 
@@ -1745,7 +1793,7 @@ export function createPlayerShell({
         && audioElement?.src,
     );
     const sourceSafe = isSafeVisualizerElement(audioElement, stateSnapshot);
-    syncVisualizerUi({ sourceSafe });
+    syncVisualizerUi({ sourceSafe, nativeBackground: stateSnapshot.outputMode === "native-background" });
     if (!hasPlayableSource) {
       stopVisualizer();
       destroyVisualizerController();
@@ -2038,11 +2086,16 @@ export function createPlayerShell({
             ? t("playerRadioHlsUnsupported")
           : s.error === "radio-relay-failed"
             ? t("playerRadioRelayFailure")
+            : s.error === "background-playback-blocked"
+              ? t("playerRadioBackgroundBlocked")
             : t("playerPlaybackError");
       errorMsg.hidden = false;
     } else {
       errorMsg.hidden = true;
     }
+    recoveryActions.hidden = !s.isLive || (!s.recoveryRequired && s.outputMode !== "native-background");
+    recoveryBtn.hidden = !s.recoveryRequired;
+    retryVisualizerBtn.hidden = s.outputMode !== "native-background";
 
     if (queueOpen) {
       const queueSignature = getQueueRenderSignature(s.queue);
@@ -2169,6 +2222,11 @@ export function createPlayerShell({
   }
 
   // ── Runtime subscription ───────────────────────────────────────
+  const handleVisualizerVisibilityChange = () => {
+    if (document.hidden) stopVisualizer();
+    else syncVisualizerPlayback();
+  };
+  document.addEventListener("visibilitychange", handleVisualizerVisibilityChange);
   const unsubscribe = runtime.subscribe(renderState);
   updateRangeVisualFill(progressBar);
   updateRangeVisualFill(volumeSlider);
@@ -2189,6 +2247,7 @@ export function createPlayerShell({
 
     destroy() {
       unsubscribe();
+      document.removeEventListener("visibilitychange", handleVisualizerVisibilityChange);
       clearQueueSaveStatusTimer();
       destroyVisualizerController();
       milkdropPanel?.destroy();

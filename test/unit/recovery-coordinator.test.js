@@ -60,4 +60,21 @@ describe("recovery coordinator", () => {
     await coordinator.destroy();
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
   });
+
+  it("flushes on freeze and reconciles on resume and pageshow", async () => {
+    const coordinator = createRecoveryCoordinator();
+    const flush = vi.fn();
+    const reconcile = vi.fn();
+    coordinator.register({ id: "feature", flush, reconcile });
+    await coordinator.hydrate();
+
+    document.dispatchEvent(new Event("freeze"));
+    document.dispatchEvent(new Event("resume"));
+    window.dispatchEvent(new Event("pageshow"));
+    await coordinator.flush("mutation");
+
+    expect(flush).toHaveBeenCalledWith("freeze");
+    expect(reconcile).toHaveBeenCalledTimes(2);
+    await coordinator.destroy();
+  });
 });

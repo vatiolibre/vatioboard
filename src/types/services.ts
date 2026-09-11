@@ -82,6 +82,7 @@ export interface GpsService {
   getCurrentPosition(): NormalizedGpsPosition | null;
   requestHighAccuracy(reason?: string): Unsubscribe;
   releaseHighAccuracy(reason?: string): void;
+  reconcileAfterLifecycle(nowMs?: number): boolean;
   installGlobalShim(): boolean;
   destroy(): void;
 }
@@ -243,6 +244,10 @@ export interface AudioRuntimeState {
   seekable: boolean;
   cacheable: boolean;
   analysisEligible: boolean;
+  analysisActive: boolean;
+  outputMode: "web-audio" | "native-background" | null;
+  backgroundPlaybackState: "idle" | "arming" | "armed" | "interrupted" | "blocked";
+  recoveryRequired: boolean;
   connectionState: "idle" | "connecting" | "playing" | "reconnecting" | "unavailable";
   currentTrack: unknown;
   loading: boolean;
@@ -262,6 +267,8 @@ export interface AudioRuntime {
   pause(options?: unknown): void;
   stopPlayback(options?: unknown): void;
   playTrackNow?(track: unknown): Promise<boolean> | boolean;
+  rearmBackgroundPlayback?(options?: { preferNative?: boolean }): Promise<boolean> | boolean;
+  retryRadioWithVisualizer?(): Promise<boolean> | boolean;
 }
 
 export type TtsPriority = "critical" | "driving" | "system" | "info";

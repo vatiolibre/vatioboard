@@ -1,6 +1,6 @@
 export const RECOVERY_METADATA_STORAGE_KEY = "vatioboard.recovery.v1";
 
-export type RecoveryFlushReason = "mutation" | "visibility-hidden" | "pagehide" | "destroy";
+export type RecoveryFlushReason = "mutation" | "visibility-hidden" | "freeze" | "pagehide" | "destroy";
 
 export interface RecoveryAdapter {
   id: string;
@@ -87,10 +87,14 @@ export function createRecoveryCoordinator(): RecoveryCoordinator {
   };
   const onPageHide = () => void flush("pagehide");
   const onPageShow = () => void reconcile();
+  const onFreeze = () => void flush("freeze");
+  const onResume = () => void reconcile();
 
   document.addEventListener("visibilitychange", onVisibilityChange);
   window.addEventListener("pagehide", onPageHide);
   window.addEventListener("pageshow", onPageShow);
+  document.addEventListener("freeze", onFreeze);
+  document.addEventListener("resume", onResume);
 
   return {
     register,
@@ -104,6 +108,8 @@ export function createRecoveryCoordinator(): RecoveryCoordinator {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("pageshow", onPageShow);
+      document.removeEventListener("freeze", onFreeze);
+      document.removeEventListener("resume", onResume);
       for (const adapter of adapters.values()) adapter.destroy?.();
       adapters.clear();
     },

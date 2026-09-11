@@ -8,9 +8,9 @@ import {
 import { distanceMeters } from "../../shared/geo-heading.js";
 import {
   acquireBackgroundAudioLease,
-  getBackgroundKeepAliveAudio,
   isBackgroundAudioLeaseActive,
   releaseBackgroundAudioLease,
+  subscribeBackgroundAudioState,
 } from "../../shared/audio-system.js";
 import {
   clearMediaSessionClient,
@@ -184,8 +184,6 @@ export function createDriveRecordingService({
   let keepAlivePromise: Promise<boolean> | null = null;
   let persistTimerId: ReturnType<typeof setTimeout> | null = null;
   let hydrationRevision = 0;
-  const keepAliveAudio = getBackgroundKeepAliveAudio();
-
   function updateMediaSession() {
     const recording = state.recordingState === "recording";
     updateMediaSessionClient(DRIVE_RECORDING_MEDIA_SESSION_OWNER, {
@@ -251,7 +249,6 @@ export function createDriveRecordingService({
       state.keepAliveArmed = armed && isBackgroundAudioLeaseActive(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE);
       state.keepAliveSuppressed = !state.keepAliveArmed;
       state.keepAliveBlocked = !state.keepAliveArmed;
-      if (!state.keepAliveArmed) releaseBackgroundAudioLease(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE);
       return state.keepAliveArmed;
     } finally {
       state.keepAlivePending = false;
@@ -293,8 +290,17 @@ export function createDriveRecordingService({
     }, ACTIVE_REPLAY_PERSIST_INTERVAL_MS);
   }
 
-  keepAliveAudio.addEventListener("pause", handleKeepAliveInterruption);
-  keepAliveAudio.addEventListener("ended", handleKeepAliveInterruption);
+  const unsubscribeBackgroundAudio = subscribeBackgroundAudioState((backgroundState) => {
+    if (destroyed || state.recordingState !== "recording" || !state.keepAliveIntended) return;
+    const ownsLease = backgroundState.activeLeaseIds.includes(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE);
+    const armed = ownsLease && backgroundState.status === "armed";
+    state.keepAliveArmed = armed;
+    state.keepAlivePending = ownsLease && backgroundState.status === "arming";
+    state.keepAliveSuppressed = ownsLease && (backgroundState.status === "interrupted" || backgroundState.status === "blocked");
+    state.keepAliveBlocked = ownsLease && backgroundState.status === "blocked";
+    updateMediaSession();
+    emit();
+  });
   document.addEventListener("visibilitychange", persistForLifecycle);
   window.addEventListener("pagehide", persistForLifecycle);
 
@@ -637,8 +643,7 @@ export function createDriveRecordingService({
     disarmKeepAlive();
     clearPersistTimer();
     releaseGpsSubscription();
-    keepAliveAudio.removeEventListener("pause", handleKeepAliveInterruption);
-    keepAliveAudio.removeEventListener("ended", handleKeepAliveInterruption);
+    unsubscribeBackgroundAudio();
     document.removeEventListener("visibilitychange", persistForLifecycle);
     window.removeEventListener("pagehide", persistForLifecycle);
     clearMediaSessionClient(DRIVE_RECORDING_MEDIA_SESSION_OWNER);

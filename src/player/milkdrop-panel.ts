@@ -182,6 +182,7 @@ function rectsOverlap(a: RectLike | null | undefined, b: RectLike | null | undef
 function isSafeSource() {
   const el = runtime.getAudioElement();
   const state = runtime.getState();
+  if (state.outputMode === "native-background") return false;
   if (state.isLive) return state.analysisEligible === true;
   if (!el?.src) return true;
   return isVisualizerSafeSource(el.currentSrc || el.src);
@@ -498,9 +499,12 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
 
   // ── Render loop ─────────────────────────────────────────────
   function startRenderLoop() {
-    if (rafId || destroyed || !visualizer) return;
+    if (rafId || destroyed || !visualizer || document.hidden) return;
     function render() {
-      if (destroyed) return;
+      if (destroyed || document.hidden) {
+        rafId = null;
+        return;
+      }
       try { visualizer.render(); } catch { /* ignore frame errors */ }
       rafId = requestAnimationFrame(render);
     }
@@ -548,7 +552,10 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     const state = runtime.getState();
     const el = runtime.getAudioElement();
     if (!state.currentTrack || !state.sourceType || !el?.src) return false;
-    if (!isSafeSource()) { failed = true; return false; }
+    if (!isSafeSource()) {
+      if (state.outputMode !== "native-background") failed = true;
+      return false;
+    }
 
     // Create WebGL canvas
     canvas = document.createElement("canvas");
@@ -601,7 +608,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     } catch { /* ResizeObserver optional */ }
 
     restorePreset();
-    startRenderLoop();
+    if (!document.hidden) startRenderLoop();
     return true;
   }
 
@@ -1068,6 +1075,11 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
   fullscreenExitBtn.addEventListener("click", (e) => { e.stopPropagation(); exitFullscreenMode(); });
   minimizeBtn.addEventListener("click", (e) => { e.stopPropagation(); minimize(); });
   closeBtn.addEventListener("click", (e) => { e.stopPropagation(); close(); });
+  const handleVisibilityChange = () => {
+    if (document.hidden) stopRenderLoop();
+    else syncWithPlayback();
+  };
+  document.addEventListener("visibilitychange", handleVisibilityChange);
 
   if (restoreVisibility && loadMilkdropPanelVisibility()) {
     void open();
@@ -1093,6 +1105,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     if (panelResizeObserver) { panelResizeObserver.disconnect(); panelResizeObserver = null; }
     clearPresetOverlayTimer();
     document.removeEventListener("fullscreenchange", onFullscreenChange);
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
     cleanupLayer();
 
     teardownAudioWiring();

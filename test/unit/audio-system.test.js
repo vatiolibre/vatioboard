@@ -43,6 +43,87 @@ describe("audio-system background leases", () => {
     expect(audioSystem.hasBackgroundAudioLease("stale")).toBe(false);
     expect(keepAliveAudio.paused).toBe(true);
   });
+
+  it("retains lease intent after a rejected play and rearms every owner", async () => {
+    const keepAliveAudio = audioSystem.getBackgroundKeepAliveAudio();
+    const originalPlay = keepAliveAudio.play.bind(keepAliveAudio);
+    keepAliveAudio.play = vi.fn().mockRejectedValue(new DOMException("blocked", "NotAllowedError"));
+
+    const armed = await audioSystem.acquireBackgroundAudioLease("player-runtime", {
+      shouldContinue: () => true,
+    });
+    await audioSystem.acquireBackgroundAudioLease("drive-recording", {
+      shouldContinue: () => true,
+    });
+
+    expect(armed).toBe(false);
+    expect(audioSystem.getBackgroundAudioState()).toMatchObject({
+      status: "blocked",
+      activeLeaseIds: ["player-runtime", "drive-recording"],
+      lastInterruption: "play-rejected",
+    });
+
+    keepAliveAudio.play = originalPlay;
+    expect(await audioSystem.rearmBackgroundAudio()).toBe(true);
+    expect(audioSystem.getBackgroundAudioState()).toMatchObject({
+      status: "armed",
+      activeLeaseIds: ["player-runtime", "drive-recording"],
+      lastInterruption: null,
+    });
+  });
+
+  it("distinguishes unexpected interruptions from an intentional last-lease release", async () => {
+    const states = [];
+    const unsubscribe = audioSystem.subscribeBackgroundAudioState((state) => states.push(state));
+    const keepAliveAudio = audioSystem.getBackgroundKeepAliveAudio();
+
+    await audioSystem.acquireBackgroundAudioLease("player-runtime", { shouldContinue: () => true });
+    keepAliveAudio.pause();
+
+    expect(audioSystem.getBackgroundAudioState()).toMatchObject({
+      status: "interrupted",
+      activeLeaseIds: ["player-runtime"],
+      lastInterruption: "pause",
+    });
+
+    await audioSystem.rearmBackgroundAudio();
+    audioSystem.releaseBackgroundAudioLease("player-runtime");
+
+    expect(audioSystem.getBackgroundAudioState()).toMatchObject({
+      status: "idle",
+      activeLeaseIds: [],
+      lastInterruption: null,
+    });
+    expect(states.some((state) => state.status === "interrupted")).toBe(true);
+    unsubscribe();
+  });
+
+  it("keeps arming when one owner releases but another retained lease remains", async () => {
+    const keepAliveAudio = audioSystem.getBackgroundKeepAliveAudio();
+    let finishPlay;
+    keepAliveAudio.play = vi.fn(() => {
+      keepAliveAudio.paused = false;
+      keepAliveAudio.dispatchEvent(new Event("play"));
+      return new Promise((resolve) => { finishPlay = resolve; });
+    });
+
+    const playerArm = audioSystem.acquireBackgroundAudioLease("player-runtime", {
+      shouldContinue: () => true,
+    });
+    const recordingArm = audioSystem.acquireBackgroundAudioLease("drive-recording", {
+      shouldContinue: () => true,
+    });
+    audioSystem.releaseBackgroundAudioLease("player-runtime");
+    finishPlay();
+
+    expect(await playerArm).toBe(true);
+    expect(await recordingArm).toBe(true);
+    expect(audioSystem.getBackgroundAudioState()).toMatchObject({
+      status: "armed",
+      activeLeaseIds: ["drive-recording"],
+    });
+    expect(keepAliveAudio.paused).toBe(false);
+  });
 });
 
 describe("media-session-adapter clients", () => {

@@ -2,6 +2,8 @@
 
 Restricted Cloudflare Worker for Radio Browser station streams and artwork. It accepts only UUID-based station routes and resolves every upstream URL independently.
 
+For in-vehicle background playback and GPS validation, see [Tesla radio and GPS background validation](../../docs/tesla-radio-background-runbook.md).
+
 ## Local development
 
 ```sh

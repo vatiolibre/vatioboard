@@ -492,6 +492,28 @@ html.vb-floating-drag-active body {
   padding: 4px 0;
 }
 
+.player-background-recovery-actions,
+.player-radio-diagnostics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.player-background-recovery-actions[hidden],
+.player-radio-diagnostics[hidden] {
+  display: none;
+}
+
+.player-background-recovery-btn,
+.player-radio-diagnostics button {
+  min-height: 36px;
+  padding: 7px 12px;
+  border: 1px solid var(--player-border, rgba(255, 255, 255, 0.14));
+  border-radius: 9px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.07);
+}
+
 /* ── Progress ─────────────────────────────────────────────────────── */
 
 .player-progress-section {

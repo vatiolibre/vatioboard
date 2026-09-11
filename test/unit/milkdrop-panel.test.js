@@ -201,6 +201,59 @@ describe("createMilkdropPanel", () => {
     panel.destroy();
   });
 
+  it("stops rendering while hidden and resumes only after becoming visible", async () => {
+    makePlayableAudio();
+    const cancelFrame = vi.fn();
+    window.requestAnimationFrame = vi.fn(() => 17);
+    window.cancelAnimationFrame = cancelFrame;
+    const panel = createMilkdropPanel({ mount });
+    await panel.open();
+
+    Object.defineProperty(document, "hidden", { configurable: true, value: true });
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(cancelFrame).toHaveBeenCalledWith(17);
+
+    const callsWhileHidden = window.requestAnimationFrame.mock.calls.length;
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(window.requestAnimationFrame).toHaveBeenCalledTimes(callsWhileHidden);
+
+    Object.defineProperty(document, "hidden", { configurable: true, value: false });
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(window.requestAnimationFrame.mock.calls.length).toBeGreaterThan(callsWhileHidden);
+    panel.destroy();
+  });
+
+  it("keeps native-background compatibility from permanently failing Milkdrop", async () => {
+    mockAudioElement.src = "https://radio-media.vatioboard.com/live";
+    audioRuntime.getState.mockReturnValue({
+      ...defaultAudioState,
+      currentTrack: { name: "radio:test", media_kind: "radio" },
+      sourceType: "live",
+      isLive: true,
+      outputMode: "native-background",
+      analysisEligible: true,
+      playing: true,
+    });
+    const panel = createMilkdropPanel({ mount });
+    await panel.open();
+    expect(butterchurn.createVisualizer).not.toHaveBeenCalled();
+
+    audioRuntime.getState.mockReturnValue({
+      ...defaultAudioState,
+      currentTrack: { name: "radio:test", media_kind: "radio" },
+      sourceType: "live",
+      isLive: true,
+      outputMode: "web-audio",
+      analysisEligible: true,
+      playing: true,
+    });
+    document.dispatchEvent(new Event("visibilitychange"));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(butterchurn.createVisualizer).toHaveBeenCalledTimes(1);
+    panel.destroy();
+  });
+
   it("creates a panel instance with expected API", () => {
     const panel = createMilkdropPanel({ mount });
     expect(panel).toHaveProperty("open");

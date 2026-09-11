@@ -23,6 +23,7 @@ export default [
       'node_modules/**',
       'public/geo/**',
       'public/vendor/**',
+      'workers/**/.wrangler/**',
       '**/*.Zone.Identifier',
     ],
   },
