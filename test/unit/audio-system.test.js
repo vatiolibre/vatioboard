@@ -124,6 +124,23 @@ describe("audio-system background leases", () => {
     });
     expect(keepAliveAudio.paused).toBe(false);
   });
+
+  it("keeps recording and armed camera alerts alive when the Player radio lease stops", async () => {
+    const keepAliveAudio = audioSystem.getBackgroundKeepAliveAudio();
+    await audioSystem.acquireBackgroundAudioLease("player-runtime", { shouldContinue: () => true });
+    await audioSystem.acquireBackgroundAudioLease("drive-recording", { shouldContinue: () => true });
+    await audioSystem.acquireBackgroundAudioLease("speed-alerts", { shouldContinue: () => true });
+
+    audioSystem.releaseBackgroundAudioLease("player-runtime");
+
+    expect(audioSystem.getBackgroundAudioState()).toMatchObject({
+      status: "armed",
+      activeLeaseIds: ["drive-recording", "speed-alerts"],
+    });
+    expect(keepAliveAudio.paused).toBe(false);
+    expect(audioSystem.isBackgroundAudioLeaseActive("drive-recording")).toBe(true);
+    expect(audioSystem.isBackgroundAudioLeaseActive("speed-alerts")).toBe(true);
+  });
 });
 
 describe("media-session-adapter clients", () => {

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   acquireGraph,
+  prepareGraphForElement,
   releaseGraph,
   getGraph,
   destroyGraphForElement,
@@ -47,6 +48,14 @@ describe("audio-graph-registry", () => {
   });
 
   describe("acquireGraph", () => {
+    it("prepares and caches a graph without retaining a consumer reference", async () => {
+      const preparation = prepareGraphForElement(mediaElement);
+      expect(window.AudioContext).toHaveBeenCalledTimes(1);
+      await expect(preparation).resolves.toBe(true);
+      expect(getGraph(mediaElement)).toMatchObject({ refCount: 0 });
+      expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
+    });
+
     it("creates a new graph for a media element", async () => {
       const entry = await acquireGraph(mediaElement);
       expect(entry).not.toBeNull();

@@ -53,18 +53,39 @@ function radio(overrides = {}) {
 describe("radio audio source resolution", () => {
   beforeEach(() => getStationByUuid.mockReset());
 
-  it("starts HTTPS streams direct with one UUID relay fallback", async () => {
+  it("starts HTTPS streams directly, with relay-native recovery and opt-in visualizers", async () => {
     const result = await resolveAudioSource(`radio:${UUID}`, radio({
       url_resolved: "https://stream.example.com/live.mp3",
     }));
     expect(result).toMatchObject({
       sourceType: "live",
-      sourceTransport: "radio-direct-cors",
+      sourceTransport: "radio-direct-native",
       isLive: true,
       seekable: false,
       cacheable: false,
-      analysisEligible: true,
-      fallbackSrc: `https://radio-media.vatioboard.com/v1/stations/${UUID}/stream`,
+      analysisEligible: false,
+      candidates: [
+        expect.objectContaining({
+          src: "https://stream.example.com/live.mp3",
+          transport: "radio-direct-native",
+          crossOrigin: null,
+          analysisEligible: false,
+          outputMode: "native-background",
+          automaticRecovery: true,
+        }),
+        expect.objectContaining({
+          transport: "radio-relay",
+          analysisEligible: false,
+          outputMode: "native-background",
+          automaticRecovery: true,
+        }),
+        expect.objectContaining({
+          transport: "radio-relay",
+          analysisEligible: true,
+          outputMode: "web-audio",
+          automaticRecovery: false,
+        }),
+      ],
     });
   });
 
@@ -78,6 +99,10 @@ describe("radio audio source resolution", () => {
       isLive: true,
     });
     expect(result.src).toContain(`/v1/stations/${UUID}/stream`);
+    expect(result.candidates).toEqual([
+      expect.objectContaining({ transport: "radio-relay", outputMode: "native-background", automaticRecovery: true }),
+      expect.objectContaining({ transport: "radio-relay", outputMode: "web-audio", automaticRecovery: false }),
+    ]);
   });
 
   it("rejects HLS and invalid station identities", async () => {
@@ -85,15 +110,10 @@ describe("radio audio source resolution", () => {
     expect(await resolveAudioSource("radio:bad", radio({ station_uuid: "bad" }))).toBeNull();
   });
 
-  it("re-resolves a restored UUID when transient stream metadata is absent", async () => {
-    getStationByUuid.mockResolvedValue({
-      stationuuid: UUID,
-      url_resolved: "https://fresh.example.com/live.ogg",
-      hls: 0,
-      lastcheckok: 1,
-    });
+  it("resolves a restored UUID synchronously through its deterministic relay", async () => {
     const result = await resolveAudioSource(`radio:${UUID}`, radio());
-    expect(getStationByUuid).toHaveBeenCalledWith(UUID);
-    expect(result.src).toBe("https://fresh.example.com/live.ogg");
+    expect(getStationByUuid).not.toHaveBeenCalled();
+    expect(result.src).toBe(`https://radio-media.vatioboard.com/v1/stations/${UUID}/stream`);
+    expect(result.candidates).toHaveLength(2);
   });
 });

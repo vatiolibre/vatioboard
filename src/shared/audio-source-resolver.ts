@@ -26,7 +26,6 @@ import {
   getRadioStreamRelayUrl,
   hasRadioExternalNetworkAccess,
   isRadioStationUuid,
-  radioBrowser,
 } from "./radio-browser.js";
 
 export interface AudioSourceAsset extends MediaManifestAsset {
@@ -42,21 +41,34 @@ export interface AudioSourceAsset extends MediaManifestAsset {
 export interface ResolvedAudioSource {
   src: string;
   sourceType: "blob" | "remote" | "live";
-  sourceTransport: "local" | "backend" | "radio-direct-cors" | "radio-relay";
+  sourceTransport: AudioSourceTransport;
   isLive: boolean;
   /** Compatibility aliases for existing consumers during the descriptor migration. */
   type: "blob" | "remote" | "live";
-  transport: "local" | "backend" | "radio-direct-cors" | "radio-relay";
+  transport: AudioSourceTransport;
   live: boolean;
   cacheable: boolean;
   seekable: boolean;
   analysisEligible: boolean;
-  fallbackSrc?: string;
+  candidates?: AudioSourceCandidate[];
   stationUuid?: string;
   blob?: Blob;
   source?: string;
   contentHash?: string | null;
   revokeUrl: () => void;
+}
+
+export type AudioSourceTransport = "local" | "backend" | "radio-relay" | "radio-direct-native";
+export type AudioSourceOutputMode = "web-audio" | "native-background";
+
+/** An ordered playback option. Automatic candidates precede opt-in modes. */
+export interface AudioSourceCandidate {
+  src: string;
+  transport: AudioSourceTransport;
+  crossOrigin: "anonymous" | null;
+  analysisEligible: boolean;
+  outputMode: AudioSourceOutputMode;
+  automaticRecovery: boolean;
 }
 
 function parseRadioUrl(value: unknown): URL | null {
@@ -68,50 +80,60 @@ function parseRadioUrl(value: unknown): URL | null {
   }
 }
 
-async function resolveRadioSource(asset: AudioSourceAsset): Promise<ResolvedAudioSource | null> {
+export function resolveRadioSource(asset: AudioSourceAsset): ResolvedAudioSource | null {
   if (!hasRadioExternalNetworkAccess()) return null;
   const stationUuid = String(asset.station_uuid || "");
   if (!isRadioStationUuid(stationUuid) || Number(asset.hls) === 1) return null;
 
-  let streamUrl = parseRadioUrl(asset.url_resolved);
-  if (!streamUrl) {
-    const station = await radioBrowser.getStationByUuid(stationUuid);
-    if (!station || station.hls !== 0 || station.lastcheckok !== 1) return null;
-    streamUrl = parseRadioUrl(station.url_resolved);
-  }
-  if (!streamUrl) return null;
-
   const relaySrc = getRadioStreamRelayUrl(stationUuid);
   if (!relaySrc) return null;
-  if (streamUrl.protocol === "http:") {
-    return {
-      src: relaySrc,
-      sourceType: "live",
-      sourceTransport: "radio-relay",
-      isLive: true,
-      type: "live",
-      transport: "radio-relay",
-      live: true,
-      cacheable: false,
-      seekable: false,
-      analysisEligible: true,
-      stationUuid,
-      revokeUrl() {},
-    };
+
+  const candidates: AudioSourceCandidate[] = [];
+  const streamUrl = parseRadioUrl(asset.url_resolved);
+  // Match the continuity behavior of simple radio sites: an HTTPS station is
+  // first played by a fresh graph-free media element. HTTP streams must use
+  // the HTTPS relay to avoid mixed-content rejection.
+  if (streamUrl?.protocol === "https:") {
+    candidates.push({
+      src: streamUrl.toString(),
+      transport: "radio-direct-native",
+      crossOrigin: null,
+      analysisEligible: false,
+      outputMode: "native-background",
+      automaticRecovery: true,
+    });
   }
+  candidates.push({
+    src: relaySrc,
+    transport: "radio-relay",
+    crossOrigin: "anonymous",
+    analysisEligible: false,
+    outputMode: "native-background",
+    automaticRecovery: true,
+  });
+  // Visualizers are an explicit, session-only choice. This candidate is not
+  // considered by automatic transport recovery.
+  candidates.push({
+    src: relaySrc,
+    transport: "radio-relay",
+    crossOrigin: "anonymous",
+    analysisEligible: true,
+    outputMode: "web-audio",
+    automaticRecovery: false,
+  });
 
   return {
-    src: streamUrl.toString(),
+    src: candidates[0].src,
     sourceType: "live",
-    sourceTransport: "radio-direct-cors",
+    sourceTransport: candidates[0].transport,
     isLive: true,
     type: "live",
-    transport: "radio-direct-cors",
+    transport: candidates[0].transport,
     live: true,
     cacheable: false,
     seekable: false,
-    analysisEligible: true,
-    fallbackSrc: relaySrc || undefined,
+    analysisEligible: candidates[0].analysisEligible,
+    candidates,
     stationUuid,
     revokeUrl() {},
   };

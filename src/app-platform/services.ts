@@ -402,15 +402,21 @@ function createAudioGateway(
       service.stopPlayback(options);
     },
     playTrackNow: service.playTrackNow
-      ? (track) => {
+      ? (track, options) => {
           if (!canUseAudio()) return false;
-          return service.playTrackNow?.(track) ?? false;
+          return service.playTrackNow?.(track, options) ?? false;
         }
       : undefined,
     rearmBackgroundPlayback: service.rearmBackgroundPlayback
       ? (options) => {
           if (!canUseAudio()) return false;
           return service.rearmBackgroundPlayback?.(options) ?? false;
+        }
+      : undefined,
+    setRadioVisualizerEnabled: service.setRadioVisualizerEnabled
+      ? (enabled, options) => {
+          if (!canUseAudio()) return false;
+          return service.setRadioVisualizerEnabled?.(enabled, options) ?? false;
         }
       : undefined,
     retryRadioWithVisualizer: service.retryRadioWithVisualizer

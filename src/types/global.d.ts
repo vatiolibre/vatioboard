@@ -50,6 +50,14 @@ interface Navigator {
   mozConnection?: NetworkInformation;
   webkitConnection?: NetworkInformation;
   deviceMemory?: number;
+  /** Experimental Audio Session API, available on some Chromium builds. */
+  audioSession?: VatioBoardAudioSession;
+}
+
+interface VatioBoardAudioSession extends EventTarget {
+  type: "auto" | "playback" | "transient-solo" | "transient" | "ambient" | "play-and-record";
+  readonly state?: "inactive" | "active" | "interrupted";
+  onchange?: ((this: VatioBoardAudioSession, event: Event) => unknown) | null;
 }
 
 interface NetworkInformation {

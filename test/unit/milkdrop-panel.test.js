@@ -186,7 +186,7 @@ describe("createMilkdropPanel", () => {
       ...defaultAudioState,
       currentTrack: { name: "radio:test", media_kind: "radio" },
       sourceType: "live",
-      sourceTransport: "radio-direct-cors",
+      sourceTransport: "radio-relay",
       isLive: true,
       analysisEligible: true,
       playing: true,

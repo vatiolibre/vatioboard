@@ -51,8 +51,8 @@ let mediaSessionClientSequence = 0;
 let platformPositionStateActive = false;
 
 const FALLBACK_ARTWORK: MediaImage[] = [
-  { src: "/favicon-96x96.png", sizes: "96x96", type: "image/png" },
-  { src: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
+  { src: "/web-app-manifest-192x192.png", sizes: "192x192", type: "image/png" },
+  { src: "/web-app-manifest-512x512.png", sizes: "512x512", type: "image/png" },
 ];
 
 const ACTION_NAMES: MediaSessionAction[] = [
@@ -109,7 +109,7 @@ function buildArtwork(metadata: MediaSessionMetadataPayload = {}): MediaImage[] 
   }
 
   return metadata.artworkUrl
-    ? [{ src: metadata.artworkUrl, sizes: "512x512", type: "image/png" }, ...FALLBACK_ARTWORK]
+    ? [{ src: metadata.artworkUrl }, ...FALLBACK_ARTWORK]
     : [...FALLBACK_ARTWORK];
 }
 

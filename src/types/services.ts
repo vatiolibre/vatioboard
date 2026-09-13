@@ -239,7 +239,7 @@ export interface AudioRuntimeState {
   shuffle: boolean;
   backgroundMode: boolean;
   sourceType: "blob" | "remote" | "live" | null;
-  sourceTransport: "local" | "backend" | "radio-direct-cors" | "radio-relay" | null;
+  sourceTransport: "local" | "backend" | "radio-relay" | "radio-direct-native" | null;
   isLive: boolean;
   seekable: boolean;
   cacheable: boolean;
@@ -266,8 +266,12 @@ export interface AudioRuntime {
   play(options?: unknown): Promise<boolean> | boolean;
   pause(options?: unknown): void;
   stopPlayback(options?: unknown): void;
-  playTrackNow?(track: unknown): Promise<boolean> | boolean;
+  playTrackNow?(track: unknown, options?: { fromUserGesture?: boolean }): Promise<boolean> | boolean;
   rearmBackgroundPlayback?(options?: { preferNative?: boolean }): Promise<boolean> | boolean;
+  setRadioVisualizerEnabled?(
+    enabled: boolean,
+    options?: { fromUserGesture?: boolean },
+  ): Promise<boolean> | boolean;
   retryRadioWithVisualizer?(): Promise<boolean> | boolean;
 }
 

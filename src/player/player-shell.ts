@@ -398,11 +398,7 @@ export function createPlayerShell({
   recoveryBtn.type = "button";
   recoveryBtn.className = "player-background-recovery-btn";
   recoveryBtn.textContent = t("playerRadioResumeBackground");
-  const retryVisualizerBtn = document.createElement("button");
-  retryVisualizerBtn.type = "button";
-  retryVisualizerBtn.className = "player-background-recovery-btn";
-  retryVisualizerBtn.textContent = t("playerRadioTryVisualizers");
-  recoveryActions.append(recoveryBtn, retryVisualizerBtn);
+  recoveryActions.append(recoveryBtn);
 
   // ── Progress ───────────────────────────────────────────────────
   const progressSection = document.createElement("div");
@@ -835,8 +831,6 @@ export function createPlayerShell({
   function getRadioDisabledMessage() {
     if (!hasRadioExternalNetworkAccess()) return t("playerRadioPermissionDenied");
     if (!getValidRadioMediaBase()) return t("playerRadioConfigurationMissing");
-    const AudioContextCtor = window.AudioContext || (window as typeof window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextCtor) return t("playerRadioWebAudioRequired");
     return "";
   }
 
@@ -925,8 +919,7 @@ export function createPlayerShell({
       playStationBtn.disabled = station.hls === 1;
       playStationBtn.addEventListener("click", () => {
         _gestureUnlocked = true;
-        primeAudioContext();
-        void runtime.playTrackNow(radioTrack);
+        void runtime.playTrackNow(radioTrack, { fromUserGesture: true });
       });
       li.append(artwork, details, playStationBtn);
       radioListUl.append(li);
@@ -945,11 +938,6 @@ export function createPlayerShell({
   recoveryBtn.addEventListener("click", () => {
     _gestureUnlocked = true;
     void runtime.rearmBackgroundPlayback({ preferNative: true });
-  });
-  retryVisualizerBtn.addEventListener("click", () => {
-    _gestureUnlocked = true;
-    primeAudioContext();
-    void runtime.retryRadioWithVisualizer();
   });
   copyDiagnosticsBtn.addEventListener("click", async () => {
     const copied = await copyBackgroundDiagnostics();
@@ -1730,17 +1718,18 @@ export function createPlayerShell({
   }
 
   function syncVisualizerUi({ sourceSafe = true, nativeBackground = false } = {}) {
-    visualizerStrip.hidden = !visualizerVisible;
+    const effectiveVisible = visualizerVisible && !nativeBackground;
+    visualizerStrip.hidden = !effectiveVisible;
     visualizerStrip.dataset.visualizerMode = visualizerMode;
     visualizerStrip.dataset.visualizerState = visualizerFailed
       ? "error"
-      : visualizerVisible
+      : effectiveVisible
         ? sourceSafe ? "ready" : "disabled"
         : "disabled";
-    visualizerToggleBtn.classList.toggle("active", visualizerVisible);
-    visualizerToggleBtn.setAttribute("aria-pressed", String(visualizerVisible));
+    visualizerToggleBtn.classList.toggle("active", effectiveVisible);
+    visualizerToggleBtn.setAttribute("aria-pressed", String(effectiveVisible));
     visualizerLabel.textContent = nativeBackground
-      ? t("playerRadioVisualizerPausedForBackground")
+      ? t("mediaPlayerVisualizerUnavailable")
       : visualizerFailed || (visualizerVisible && !sourceSafe)
         ? t("mediaPlayerVisualizerUnavailable")
       : getVisualizerModeLabel(visualizerMode);
@@ -1768,7 +1757,11 @@ export function createPlayerShell({
       visualizerFailed = true;
       visualizerController = null;
       visualizerMediaElement = null;
-      syncVisualizerUi();
+      if (stateSnapshot.isLive && stateSnapshot.outputMode === "web-audio") {
+        void runtime.setRadioVisualizerEnabled?.(false);
+      } else {
+        syncVisualizerUi();
+      }
       return null;
     }
 
@@ -1827,11 +1820,19 @@ export function createPlayerShell({
       if (!started || !controller.isAvailable) {
         visualizerFailed = true;
         controller.stop();
-        syncVisualizerUi();
+        if (stateSnapshot.isLive && stateSnapshot.outputMode === "web-audio") {
+          void runtime.setRadioVisualizerEnabled?.(false);
+        } else {
+          syncVisualizerUi();
+        }
       }
     }).catch(() => {
       visualizerFailed = true;
-      syncVisualizerUi();
+      if (stateSnapshot.isLive && stateSnapshot.outputMode === "web-audio") {
+        void runtime.setRadioVisualizerEnabled?.(false);
+      } else {
+        syncVisualizerUi();
+      }
     });
   }
 
@@ -1847,6 +1848,26 @@ export function createPlayerShell({
     e.stopPropagation();
     _gestureUnlocked = true;
     primeAudioContext();
+    const snapshot = runtime.getState();
+    if (snapshot.isLive) {
+      const effectiveEnabled = visualizerVisible && snapshot.outputMode === "web-audio";
+      if (effectiveEnabled) {
+        setVisualizerVisible(false);
+        void runtime.setRadioVisualizerEnabled?.(false, { fromUserGesture: true });
+        return;
+      }
+      visualizerFailed = false;
+      const enableResult = runtime.setRadioVisualizerEnabled?.(true, { fromUserGesture: true });
+      void Promise.resolve(enableResult ?? false).then((enabled) => {
+        const current = runtime.getState();
+        if (enabled && current.isLive && current.outputMode === "web-audio") {
+          setVisualizerVisible(true);
+        } else {
+          syncVisualizerPlayback(current);
+        }
+      });
+      return;
+    }
     setVisualizerVisible(!visualizerVisible);
   });
 
@@ -2026,12 +2047,14 @@ export function createPlayerShell({
             artworkCompact.innerHTML = "";
             artworkCompact.style.backgroundImage = `url(${CSS.escape(artUrl)})`;
             artworkCompact.classList.add("has-image");
-            runtime.updatePlayerMediaSessionMetadata({
-              title: track.title || track.original_filename || track.name || "",
-              artist: track.artist || track.folder_path || "",
-              album: "VatioLibre",
-              artworkUrl: artUrl,
-            });
+            if (track.media_kind !== "radio") {
+              runtime.updatePlayerMediaSessionMetadata({
+                title: track.title || track.original_filename || track.name || "",
+                artist: track.artist || track.folder_path || "",
+                album: "VatioLibre",
+                artworkUrl: artUrl,
+              });
+            }
           }
         });
       }
@@ -2042,7 +2065,7 @@ export function createPlayerShell({
       sourceBadge.textContent = t("playerOffline");
       sourceBadge.hidden = false;
       sourceBadge.className = "player-source-badge offline";
-    } else if (s.sourceTransport === "radio-direct-cors") {
+    } else if (s.sourceTransport === "radio-direct-native") {
       sourceBadge.textContent = "LIVE · DIRECT";
       sourceBadge.hidden = false;
       sourceBadge.className = "player-source-badge live direct";
@@ -2093,9 +2116,8 @@ export function createPlayerShell({
     } else {
       errorMsg.hidden = true;
     }
-    recoveryActions.hidden = !s.isLive || (!s.recoveryRequired && s.outputMode !== "native-background");
+    recoveryActions.hidden = !s.isLive || !s.recoveryRequired;
     recoveryBtn.hidden = !s.recoveryRequired;
-    retryVisualizerBtn.hidden = s.outputMode !== "native-background";
 
     if (queueOpen) {
       const queueSignature = getQueueRenderSignature(s.queue);

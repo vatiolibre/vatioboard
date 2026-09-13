@@ -213,6 +213,23 @@ export async function acquireGraph(mediaElement: HTMLMediaElement): Promise<Grap
 }
 
 /**
+ * Start preparing the shared graph for an element immediately.
+ *
+ * Call this directly from a trusted gesture.  `acquireGraph()` begins before
+ * this function returns, so Safari can resume/create the AudioContext while
+ * the gesture is still active.  Releasing our temporary retain leaves the
+ * graph cached and connected for the visualizer consumers that attach next.
+ */
+export function prepareGraphForElement(mediaElement: HTMLMediaElement): Promise<boolean> {
+  const preparation = acquireGraph(mediaElement);
+  return preparation.then((entry) => {
+    if (!entry) return false;
+    releaseGraph(mediaElement);
+    return true;
+  }, () => false);
+}
+
+/**
  * Decrement the refCount for a graph entry.  When refCount reaches 0 the
  * source remains cached and connected to the destination because Safari
  * keeps the media element associated with that source for the element's
