@@ -37,4 +37,29 @@ describe("background diagnostics", () => {
     expect(exported).not.toContain("private-station-id");
     expect(exported).not.toContain("secret.example");
   });
+
+  it("keeps bounded audio-channel identities and serialized lease IDs", async () => {
+    const diagnostics = await import("../../src/shared/background-diagnostics.js");
+    diagnostics.recordBackgroundDiagnostic("radio-channel", {
+      primaryElementId: 3,
+      analysisElementId: 3,
+      nativeElementId: 0,
+      keepAliveIdentity: 1,
+      retainedLeaseIds: "speed-alerts,player-runtime",
+      activeRole: "analysis",
+      interruptionClassification: "audio-session",
+      // Arrays are deliberately rejected; callers serialize known-safe IDs.
+      activeLeaseIds: ["private-owner"],
+    });
+
+    expect(diagnostics.getBackgroundDiagnostics().at(-1)?.detail).toEqual({
+      primaryElementId: 3,
+      analysisElementId: 3,
+      nativeElementId: 0,
+      keepAliveIdentity: 1,
+      retainedLeaseIds: "speed-alerts,player-runtime",
+      activeRole: "analysis",
+      interruptionClassification: "audio-session",
+    });
+  });
 });

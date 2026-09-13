@@ -26,6 +26,11 @@ const ALLOWED_FIELDS = new Set([
   "candidateAutomatic",
   "playerLeaseActive",
   "keepAlivePaused",
+  "keepAliveIdentity",
+  "retainedLeaseIds",
+  "primaryElementId",
+  "analysisElementId",
+  "nativeElementId",
   "primaryDuration",
   "durationClass",
   "primaryHasGraph",
@@ -41,6 +46,17 @@ const ALLOWED_FIELDS = new Set([
   "automaticNativeRestoration",
   "corsMode",
   "analysisEligible",
+  "activeRole",
+  "outgoingRole",
+  "handoffPhase",
+  "analysisGraphPreserved",
+  "analysisContextState",
+  "graphClosedDuringHandoff",
+  "graphPreserved",
+  "expectedPauseCause",
+  "interruptionClassification",
+  "previousAudioSessionState",
+  "mediaEvent",
 ]);
 
 export interface BackgroundDiagnosticEntry {
@@ -77,7 +93,9 @@ function sanitizeDetail(detail: Record<string, unknown> = {}) {
   for (const [key, value] of Object.entries(detail)) {
     if (!ALLOWED_FIELDS.has(key)) continue;
     if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
-      safe[key] = value as string | number | boolean | null;
+      safe[key] = typeof value === "string"
+        ? value.slice(0, 240)
+        : value as number | boolean | null;
     }
   }
   return safe;

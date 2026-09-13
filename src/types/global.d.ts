@@ -57,6 +57,8 @@ interface Navigator {
 interface VatioBoardAudioSession extends EventTarget {
   type: "auto" | "playback" | "transient-solo" | "transient" | "ambient" | "play-and-record";
   readonly state?: "inactive" | "active" | "interrupted";
+  onstatechange?: ((this: VatioBoardAudioSession, event: Event) => unknown) | null;
+  /** Retained for early implementations that used the non-standard name. */
   onchange?: ((this: VatioBoardAudioSession, event: Event) => unknown) | null;
 }
 

@@ -53,36 +53,35 @@ function radio(overrides = {}) {
 describe("radio audio source resolution", () => {
   beforeEach(() => getStationByUuid.mockReset());
 
-  it("starts HTTPS streams directly, with relay-native recovery and opt-in visualizers", async () => {
+  it("starts HTTPS stations on relay Web Audio with native compatibility candidates", async () => {
     const result = await resolveAudioSource(`radio:${UUID}`, radio({
       url_resolved: "https://stream.example.com/live.mp3",
     }));
     expect(result).toMatchObject({
       sourceType: "live",
-      sourceTransport: "radio-direct-native",
+      sourceTransport: "radio-relay",
       isLive: true,
       seekable: false,
       cacheable: false,
-      analysisEligible: false,
+      analysisEligible: true,
       candidates: [
-        expect.objectContaining({
-          src: "https://stream.example.com/live.mp3",
-          transport: "radio-direct-native",
-          crossOrigin: null,
-          analysisEligible: false,
-          outputMode: "native-background",
-          automaticRecovery: true,
-        }),
-        expect.objectContaining({
-          transport: "radio-relay",
-          analysisEligible: false,
-          outputMode: "native-background",
-          automaticRecovery: true,
-        }),
         expect.objectContaining({
           transport: "radio-relay",
           analysisEligible: true,
           outputMode: "web-audio",
+          automaticRecovery: true,
+        }),
+        expect.objectContaining({
+          src: "https://stream.example.com/live.mp3",
+          transport: "radio-direct-native",
+          analysisEligible: false,
+          outputMode: "native-background",
+          automaticRecovery: false,
+        }),
+        expect.objectContaining({
+          transport: "radio-relay",
+          analysisEligible: false,
+          outputMode: "native-background",
           automaticRecovery: false,
         }),
       ],
@@ -100,8 +99,8 @@ describe("radio audio source resolution", () => {
     });
     expect(result.src).toContain(`/v1/stations/${UUID}/stream`);
     expect(result.candidates).toEqual([
-      expect.objectContaining({ transport: "radio-relay", outputMode: "native-background", automaticRecovery: true }),
-      expect.objectContaining({ transport: "radio-relay", outputMode: "web-audio", automaticRecovery: false }),
+      expect.objectContaining({ transport: "radio-relay", outputMode: "web-audio", automaticRecovery: true }),
+      expect.objectContaining({ transport: "radio-relay", outputMode: "native-background", automaticRecovery: false }),
     ]);
   });
 

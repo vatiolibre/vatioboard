@@ -90,9 +90,23 @@ export function resolveRadioSource(asset: AudioSourceAsset): ResolvedAudioSource
 
   const candidates: AudioSourceCandidate[] = [];
   const streamUrl = parseRadioUrl(asset.url_resolved);
-  // Match the continuity behavior of simple radio sites: an HTTPS station is
-  // first played by a fresh graph-free media element. HTTP streams must use
-  // the HTTPS relay to avoid mixed-content rejection.
+  // Radio normally uses the exact same long-lived, graph-backed channel as
+  // music. Keeping this candidate first is important on embedded Chromium:
+  // swapping to a fresh media element can surrender the already-established
+  // platform audio session during a music-to-radio handoff.
+  candidates.push({
+    src: relaySrc,
+    transport: "radio-relay",
+    crossOrigin: "anonymous",
+    analysisEligible: true,
+    outputMode: "web-audio",
+    automaticRecovery: true,
+  });
+
+  // Native candidates are compatibility choices only. They must never be
+  // selected by automatic transport recovery because they move playback off
+  // the mature music/Web Audio channel. HTTPS can use the station directly;
+  // HTTP remains relay-only to avoid mixed-content rejection.
   if (streamUrl?.protocol === "https:") {
     candidates.push({
       src: streamUrl.toString(),
@@ -100,7 +114,7 @@ export function resolveRadioSource(asset: AudioSourceAsset): ResolvedAudioSource
       crossOrigin: null,
       analysisEligible: false,
       outputMode: "native-background",
-      automaticRecovery: true,
+      automaticRecovery: false,
     });
   }
   candidates.push({
@@ -109,16 +123,6 @@ export function resolveRadioSource(asset: AudioSourceAsset): ResolvedAudioSource
     crossOrigin: "anonymous",
     analysisEligible: false,
     outputMode: "native-background",
-    automaticRecovery: true,
-  });
-  // Visualizers are an explicit, session-only choice. This candidate is not
-  // considered by automatic transport recovery.
-  candidates.push({
-    src: relaySrc,
-    transport: "radio-relay",
-    crossOrigin: "anonymous",
-    analysisEligible: true,
-    outputMode: "web-audio",
     automaticRecovery: false,
   });
 
