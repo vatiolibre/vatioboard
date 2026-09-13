@@ -73,6 +73,7 @@ const DENIED_AUDIO_STATE: AudioRuntimeState = {
   backgroundPlaybackState: "idle",
   recoveryRequired: false,
   connectionState: "idle",
+  radioFailureClass: null,
   currentTrack: null,
   loading: false,
   error: "permission-denied",

@@ -12,6 +12,8 @@ pnpm run radio:dev
 
 The SPA uses `http://localhost:8787` automatically on localhost. For a hosted development SPA, set `VITE_VATIOBOARD_RADIO_MEDIA_BASE` to the HTTPS development Worker origin and add that SPA origin to `ALLOWED_ORIGINS` in the development Worker configuration.
 
+The feature branch treats only `radio-media.dev.vatioboard.com` as operational. The production hostname is intentionally not required until the radio feature is merged and prepared for release.
+
 ## Hosted development on dev.vatioboard.com
 
 The development deployment on this machine uses:
@@ -40,6 +42,7 @@ The `vars` section of `wrangler.dev.jsonc` must contain:
 {
   "ALLOWED_ORIGINS": "https://dev.vatioboard.com,http://localhost:5174,http://127.0.0.1:5174",
   "SELF_HOSTNAME": "radio-media.dev.vatioboard.com",
+  "BUILD_VERSION": "radio-media-dev-v2",
 }
 ```
 
@@ -108,6 +111,16 @@ Access-Control-Allow-Origin: https://dev.vatioboard.com
 Access-Control-Allow-Headers: Accept, Range
 ```
 
+Verify the running development build and origin policy:
+
+```sh
+curl -i "https://radio-media.dev.vatioboard.com/v1/health" \
+  -H "Origin: https://dev.vatioboard.com" \
+  -H "Accept: application/json"
+```
+
+The response must be `200`, report `status: "ready"`, identify the development Worker version, and include the exact development origin. Missing, `null`, and unknown origins must return `403`.
+
 Verify a real continuous HTTP station through the HTTPS relay:
 
 ```sh
@@ -120,10 +133,22 @@ curl -D - --max-time 5 \
 
 Expected headers include `200`, `Content-Type: audio/mpeg`, `Cache-Control: no-store`, and the exact allowed origin. Curl exit code `28` is expected after `--max-time` because a healthy radio stream does not end.
 
-Verify Media Session-compatible artwork without an Origin header:
+Probe the complete directory/redirect/upstream path without opening a continuous player connection:
 
 ```sh
-curl -I "https://radio-media.dev.vatioboard.com/v1/stations/$UUID/logo"
+curl -i \
+  "https://radio-media.dev.vatioboard.com/v1/stations/$UUID/probe" \
+  -H "Origin: https://dev.vatioboard.com" \
+  -H "Accept: application/json"
+```
+
+A healthy station reports `outcome: "ready"`. Failures are categorical and never include the station URL.
+
+Verify Media Session-compatible artwork with exact-origin CORS:
+
+```sh
+curl -I "https://radio-media.dev.vatioboard.com/v1/stations/$UUID/logo" \
+  -H "Origin: https://dev.vatioboard.com"
 ```
 
 The response must be `200` with a supported image content type. Finally, open `https://dev.vatioboard.com`, select Player -> Radio, and confirm the HTTP station displays `LIVE · RELAY` while the spectrum or scope visualizer receives data.
@@ -137,7 +162,7 @@ This configuration was validated on 2026-09-10:
 - Nginx was active and the Certbot renewal timer was enabled.
 - Vite's transformed environment contained the HTTPS radio-media base.
 - Allowed preflight returned `204`; a disallowed origin returned `403`.
-- No-Origin artwork returned a cached PNG.
+- Exact-origin artwork returned a cached PNG.
 - A real HTTP station returned continuous 128 kbps MP3 data through Nginx and the Worker.
 
 The Vite and Wrangler processes are currently launched as interactive user processes. For unattended availability after logout or reboot, run them under the machine's process supervisor or dedicated systemd services.
@@ -157,8 +182,7 @@ Use the resulting HTTPS `workers.dev` URL as `VITE_VATIOBOARD_RADIO_MEDIA_BASE` 
 ```sh
 pnpm run radio:typecheck
 pnpm run radio:test
-pnpm run radio:types
-pnpm run radio:deploy
+pnpm run verify
 ```
 
-Production deployment requires `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`. The production configuration binds the custom domain `radio-media.vatioboard.com`, disables `workers.dev` and preview URLs, and leaves the main SPA deployment on GitHub Pages unchanged.
+Do not include production connectivity in the feature-branch gate. When radio is ready to merge, create the production DNS/custom-domain route, configure production origins, deploy the Worker, generate its binding types, and run the same health, CORS, probe, and continuous-stream checks before switching the production SPA.

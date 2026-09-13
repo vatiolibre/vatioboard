@@ -49,6 +49,11 @@ const DEFAULT_OWNER = "default";
 const mediaSessionClients = new Map<string, MediaSessionClient>();
 let mediaSessionClientSequence = 0;
 let platformPositionStateActive = false;
+let appliedOwner: string | null = null;
+let appliedPlaybackState: MediaSessionPlaybackState | null = null;
+let appliedMetadataKey: string | null = null;
+let appliedHandlers: MediaSessionHandlers | null = null;
+let appliedPositionKey: string | null = null;
 
 const FALLBACK_ARTWORK: MediaImage[] = [
   { src: "/web-app-manifest-192x192.png", sizes: "192x192", type: "image/png" },
@@ -111,6 +116,30 @@ function buildArtwork(metadata: MediaSessionMetadataPayload = {}): MediaImage[] 
   return metadata.artworkUrl
     ? [{ src: metadata.artworkUrl }, ...FALLBACK_ARTWORK]
     : [...FALLBACK_ARTWORK];
+}
+
+function metadataKey(metadata: MediaSessionMetadataPayload | null): string {
+  if (!metadata) return "null";
+  return JSON.stringify({
+    title: metadata.title || "",
+    artist: metadata.artist || "",
+    album: metadata.album || "",
+    artworkUrl: metadata.artworkUrl || "",
+    artwork: buildArtwork(metadata).map((image) => ({
+      src: image.src,
+      sizes: image.sizes || "",
+      type: image.type || "",
+    })),
+  });
+}
+
+function handlersEqual(left: MediaSessionHandlers | null, right: MediaSessionHandlers | null): boolean {
+  return ACTION_NAMES.every((action) => (left?.[action] ?? null) === (right?.[action] ?? null));
+}
+
+function positionKey(position: MediaSessionPositionPayload | null): string {
+  if (!position) return "null";
+  return `${position.duration}:${position.position}:${position.playbackRate || 1}`;
 }
 
 function applyPlatformMediaSessionMetadata(metadata: MediaSessionMetadataPayload | null): void {
@@ -192,24 +221,47 @@ function applyPlatformMediaSessionActionHandlers(handlers: MediaSessionHandlers 
 
 function applyMediaSessionClients(): void {
   const topClient = getTopClient();
+  const owner = topClient?.owner || null;
+  const ownerChanged = owner !== appliedOwner;
 
   if (!topClient) {
-    applyPlatformMediaSessionPlaybackState("none");
-    applyPlatformMediaSessionMetadata(null);
-    applyPlatformMediaSessionActionHandlers(null);
-    clearPlatformMediaSessionPositionState();
+    if (ownerChanged || appliedPlaybackState !== "none") applyPlatformMediaSessionPlaybackState("none");
+    if (ownerChanged || appliedMetadataKey !== "null") applyPlatformMediaSessionMetadata(null);
+    if (ownerChanged || !handlersEqual(appliedHandlers, null)) applyPlatformMediaSessionActionHandlers(null);
+    if (ownerChanged || appliedPositionKey !== "null") clearPlatformMediaSessionPositionState();
+    appliedOwner = null;
+    appliedPlaybackState = "none";
+    appliedMetadataKey = "null";
+    appliedHandlers = null;
+    appliedPositionKey = "null";
     return;
   }
 
-  applyPlatformMediaSessionPlaybackState(topClient.playbackState || "none");
-  applyPlatformMediaSessionMetadata(topClient.metadata);
-  applyPlatformMediaSessionActionHandlers(topClient.handlers);
-
-  if (topClient.positionState) {
-    applyPlatformMediaSessionPositionState(topClient.positionState);
-  } else {
-    clearPlatformMediaSessionPositionState();
+  const playbackState = topClient.playbackState || "none";
+  const nextMetadataKey = metadataKey(topClient.metadata);
+  const nextPositionKey = positionKey(topClient.positionState);
+  if (ownerChanged || playbackState !== appliedPlaybackState) {
+    applyPlatformMediaSessionPlaybackState(playbackState);
   }
+  if (ownerChanged || nextMetadataKey !== appliedMetadataKey) {
+    applyPlatformMediaSessionMetadata(topClient.metadata);
+  }
+  if (ownerChanged || !handlersEqual(appliedHandlers, topClient.handlers)) {
+    applyPlatformMediaSessionActionHandlers(topClient.handlers);
+  }
+
+  if (ownerChanged || nextPositionKey !== appliedPositionKey) {
+    if (topClient.positionState) {
+      applyPlatformMediaSessionPositionState(topClient.positionState);
+    } else {
+      clearPlatformMediaSessionPositionState();
+    }
+  }
+  appliedOwner = owner;
+  appliedPlaybackState = playbackState;
+  appliedMetadataKey = nextMetadataKey;
+  appliedHandlers = topClient.handlers ? { ...topClient.handlers } : null;
+  appliedPositionKey = nextPositionKey;
 }
 
 export function updateMediaSessionClient(

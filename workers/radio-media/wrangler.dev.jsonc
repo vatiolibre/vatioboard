@@ -5,15 +5,24 @@
   "compatibility_date": "2026-09-01",
   "workers_dev": true,
   "preview_urls": true,
+  "observability": {
+    "enabled": true
+  },
   "vars": {
     "ALLOWED_ORIGINS": "https://dev.vatioboard.com,http://localhost:5174,http://127.0.0.1:5174",
-    "SELF_HOSTNAME": "radio-media.dev.vatioboard.com"
+    "SELF_HOSTNAME": "radio-media.dev.vatioboard.com",
+    "BUILD_VERSION": "radio-media-dev-v2"
   },
   "ratelimits": [
     {
       "name": "STREAM_STARTS",
       "namespace_id": "1101",
       "simple": { "limit": 20, "period": 60 }
+    },
+    {
+      "name": "PROBE_REQUESTS",
+      "namespace_id": "1103",
+      "simple": { "limit": 30, "period": 60 }
     },
     {
       "name": "LOGO_REQUESTS",

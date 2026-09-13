@@ -26,6 +26,7 @@ import { isAudioAsset } from "../shared/audio-catalog.js";
 import { normalizeTrack } from "../shared/track-model.js";
 import {
   hasRadioExternalNetworkAccess,
+  getRadioRelayHealth,
   getValidRadioMediaBase,
   radioBrowser,
   radioStationToTrack,
@@ -52,6 +53,7 @@ import {
   copyBackgroundDiagnostics,
   downloadBackgroundDiagnostics,
   isBackgroundDiagnosticsEnabled,
+  recordBackgroundDiagnostic,
 } from "../shared/background-diagnostics.js";
 import type { ShellAppRuntimeManager } from "../app-platform/types";
 import type { ShellRuntime } from "../types/shell";
@@ -652,6 +654,9 @@ export function createPlayerShell({
   let radioLoading = false;
   let radioStations: RadioBrowserStation[] = [];
   let radioError = "";
+  let radioRelayError = "";
+  let radioRelayHealthPending = false;
+  let radioRelayHealthCheckedAt = 0;
   let radioRequestToken = 0;
   let queueFilter = "";
   let lastRenderedQueueSignature = "";
@@ -729,6 +734,9 @@ export function createPlayerShell({
         renderPlaylistList();
       } else if (radioOpen) {
         renderRadioList();
+        if (!radioRelayHealthPending && Date.now() - radioRelayHealthCheckedAt >= 60_000) {
+          void prewarmRadioRelayHealth();
+        }
         if (!radioLoaded && !radioLoading) void loadPopularRadioStations();
       }
     }
@@ -831,7 +839,32 @@ export function createPlayerShell({
   function getRadioDisabledMessage() {
     if (!hasRadioExternalNetworkAccess()) return t("playerRadioPermissionDenied");
     if (!getValidRadioMediaBase()) return t("playerRadioConfigurationMissing");
+    if (radioRelayError) return radioRelayError;
     return "";
+  }
+
+  async function prewarmRadioRelayHealth() {
+    if (radioRelayHealthPending) return;
+    radioRelayHealthPending = true;
+    try {
+      const health = await getRadioRelayHealth();
+      radioRelayHealthCheckedAt = Date.now();
+      recordBackgroundDiagnostic("radio-relay-health", {
+        relayEnvironment: health.environment,
+        relayHealth: health.status,
+        relayVersion: health.version,
+      });
+      radioRelayError = health.ok
+        ? ""
+        : health.status === "origin-rejected"
+          ? t("playerRadioOriginRejected")
+          : health.status === "unconfigured"
+            ? t("playerRadioConfigurationMissing")
+            : t("playerRadioDevelopmentRelayUnavailable");
+      if (radioOpen) renderRadioList();
+    } finally {
+      radioRelayHealthPending = false;
+    }
   }
 
   async function requestRadioStations(request: () => Promise<RadioBrowserStation[]>) {
@@ -893,6 +926,7 @@ export function createPlayerShell({
       artwork.className = "player-radio-artwork";
       artwork.alt = "";
       artwork.loading = "lazy";
+      artwork.crossOrigin = "anonymous";
       const radioTrack = radioStationToTrack(station);
       artwork.src = String(radioTrack.artwork_ref || "");
 
@@ -2070,7 +2104,11 @@ export function createPlayerShell({
       sourceBadge.hidden = false;
       sourceBadge.className = "player-source-badge live direct";
     } else if (s.sourceTransport === "radio-relay") {
-      sourceBadge.textContent = "LIVE · RELAY";
+      sourceBadge.textContent = s.connectionState === "slow"
+        ? `LIVE · RELAY · ${t("playerRadioSlow")}`
+        : s.connectionState === "reconnecting"
+          ? `LIVE · RELAY · ${t("playerRadioReconnecting")}`
+          : "LIVE · RELAY";
       sourceBadge.hidden = false;
       sourceBadge.className = "player-source-badge live relay";
     } else if (s.sourceType === "remote") {
@@ -2101,7 +2139,19 @@ export function createPlayerShell({
     root.classList.toggle("error", Boolean(s.error));
 
     if (s.error) {
-      errorMsg.textContent = s.error === "unavailable"
+      errorMsg.textContent = s.radioFailureClass === "relay-unreachable"
+        ? t("playerRadioDevelopmentRelayUnavailable")
+        : s.radioFailureClass === "origin-rejected"
+          ? t("playerRadioOriginRejected")
+          : s.radioFailureClass === "directory"
+            ? t("playerRadioMirrorFailure")
+            : s.radioFailureClass === "unrelayable-target"
+              ? t("playerRadioUnrelayableTarget")
+              : s.radioFailureClass === "mime" || s.radioFailureClass === "codec"
+                ? t("playerRadioIncompatibleStation")
+                : s.radioFailureClass === "platform-interruption"
+                  ? t("playerRadioPlatformInterrupted")
+                  : s.error === "unavailable"
         ? t("playerTrackUnavailable")
         : s.error === "station-unavailable"
           ? t("playerRadioStationUnavailable")
@@ -2111,7 +2161,7 @@ export function createPlayerShell({
             ? t("playerRadioRelayFailure")
             : s.error === "background-playback-blocked"
               ? t("playerRadioBackgroundBlocked")
-            : t("playerPlaybackError");
+                    : t("playerPlaybackError");
       errorMsg.hidden = false;
     } else {
       errorMsg.hidden = true;

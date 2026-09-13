@@ -1,13 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../src/shared/environment.js", () => ({
-  getEnvironmentConfig: () => ({ radioMediaBase: "https://radio-media.vatioboard.com" }),
+  getEnvironmentConfig: () => ({
+    radioMediaBase: "https://radio-media.dev.vatioboard.com",
+    radioMediaEnvironment: "development",
+  }),
 }));
 
 import {
   createRadioBrowserClient,
+  getRadioRelayHealth,
   getRadioLogoUrl,
+  probeRadioStation,
   radioStationToTrack,
+  resetRadioRelayHealthForTesting,
   setRadioExternalNetworkAccessCheck,
 } from "../../src/shared/radio-browser.js";
 
@@ -34,6 +40,7 @@ describe("Radio Browser client", () => {
   beforeEach(() => {
     setRadioExternalNetworkAccessCheck(() => true);
     vi.restoreAllMocks();
+    resetRadioRelayHealthForTesting();
   });
 
   it("accepts only trusted HTTPS mirrors, fails over, and constrains popular results", async () => {
@@ -146,5 +153,39 @@ describe("Radio Browser client", () => {
     });
     expect(String(fetchFn.mock.calls[0][0])).toBe(`https://de1.api.radio-browser.info/json/stations/byuuid/${UUID}`);
     expect(fetchFn.mock.calls.flat().join(" ")).not.toContain("evil.example");
+  });
+
+  it("checks and caches the development relay health without exposing its URL in state", async () => {
+    const fetchFn = vi.fn().mockResolvedValue(Response.json({
+      ok: true,
+      status: "ready",
+      version: "dev-build",
+    }));
+    expect(await getRadioRelayHealth({ fetchFn })).toEqual({
+      ok: true,
+      status: "ready",
+      environment: "development",
+      version: "dev-build",
+    });
+    expect((await getRadioRelayHealth({ fetchFn })).ok).toBe(true);
+    expect(fetchFn).toHaveBeenCalledTimes(1);
+    expect(String(fetchFn.mock.calls[0][0])).toBe("https://radio-media.dev.vatioboard.com/v1/health");
+  });
+
+  it("normalizes station probe outcomes and forwards cancellation", async () => {
+    const controller = new AbortController();
+    const fetchFn = vi.fn().mockResolvedValue(Response.json({
+      ok: false,
+      outcome: "unsupported-content",
+      stage: "content",
+      version: "dev-build",
+    }, { status: 502 }));
+    expect(await probeRadioStation(UUID, { fetchFn, signal: controller.signal })).toEqual({
+      ok: false,
+      outcome: "unsupported-content",
+      stage: "content",
+      version: "dev-build",
+    });
+    expect(fetchFn.mock.calls[0][1].signal).toBeInstanceOf(AbortSignal);
   });
 });

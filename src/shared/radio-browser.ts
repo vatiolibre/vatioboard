@@ -7,6 +7,35 @@ const MIRROR_CACHE_TTL_MS = 60 * 60 * 1000;
 const REQUEST_TIMEOUT_MS = 8_000;
 const RESULT_LIMIT = 30;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const RELAY_HEALTH_TTL_MS = 60_000;
+
+export type RadioRelayEnvironment = "development" | "production" | "local" | "unconfigured";
+export type RadioRelayHealthStatus = "ready" | "unconfigured" | "origin-rejected" | "unavailable";
+export type RadioProbeOutcome =
+  | "ready"
+  | "station-unavailable"
+  | "directory-timeout"
+  | "unrelayable-target"
+  | "redirect-limit"
+  | "upstream-timeout"
+  | "upstream-status"
+  | "unsupported-content"
+  | "empty-response"
+  | "early-close";
+
+export interface RadioRelayHealth {
+  ok: boolean;
+  status: RadioRelayHealthStatus;
+  environment: RadioRelayEnvironment;
+  version: string;
+}
+
+export interface RadioStationProbeResult {
+  ok: boolean;
+  outcome: RadioProbeOutcome;
+  stage: "relay" | "directory" | "target" | "upstream" | "content";
+  version: string;
+}
 
 export interface RadioBrowserStation {
   stationuuid: string;
@@ -32,6 +61,7 @@ type RadioFetch = typeof fetch;
 type AccessCheck = () => boolean;
 
 let externalNetworkAccessCheck: AccessCheck = () => true;
+let relayHealthCache: { value: RadioRelayHealth; expiresAt: number } | null = null;
 
 export function setRadioExternalNetworkAccessCheck(check?: AccessCheck | null): void {
   externalNetworkAccessCheck = typeof check === "function" ? check : () => true;
@@ -156,6 +186,26 @@ async function fetchJson(fetchFn: RadioFetch, url: string): Promise<unknown> {
   }
 }
 
+async function fetchWithTimeout(
+  fetchFn: RadioFetch,
+  url: string,
+  init: RequestInit,
+  timeoutMs: number,
+  externalSignal?: AbortSignal,
+): Promise<Response> {
+  const controller = new AbortController();
+  const abortFromExternal = () => controller.abort();
+  if (externalSignal?.aborted) controller.abort();
+  else externalSignal?.addEventListener("abort", abortFromExternal, { once: true });
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetchFn(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+    externalSignal?.removeEventListener("abort", abortFromExternal);
+  }
+}
+
 export interface RadioBrowserClient {
   getPopularStations(): Promise<RadioBrowserStation[]>;
   searchStations(filters?: RadioSearchFilters): Promise<RadioBrowserStation[]>;
@@ -272,6 +322,99 @@ export function getValidRadioMediaBase(): string {
   } catch {
     return "";
   }
+}
+
+export function getRadioRelayEnvironment(): RadioRelayEnvironment {
+  return getEnvironmentConfig().radioMediaEnvironment || "unconfigured";
+}
+
+function normalizeRelayHealth(raw: unknown): RadioRelayHealth | null {
+  if (!raw || typeof raw !== "object") return null;
+  const value = raw as Record<string, unknown>;
+  if (value.ok !== true || value.status !== "ready") return null;
+  return {
+    ok: true,
+    status: "ready",
+    environment: getRadioRelayEnvironment(),
+    version: text(value.version).slice(0, 80),
+  };
+}
+
+export async function getRadioRelayHealth({
+  fetchFn = fetch,
+  force = false,
+}: {
+  fetchFn?: RadioFetch;
+  force?: boolean;
+} = {}): Promise<RadioRelayHealth> {
+  if (!hasRadioExternalNetworkAccess()) {
+    return { ok: false, status: "unavailable", environment: getRadioRelayEnvironment(), version: "" };
+  }
+  const base = getValidRadioMediaBase();
+  const environment = getRadioRelayEnvironment();
+  if (!base) return { ok: false, status: "unconfigured", environment, version: "" };
+  if (!force && relayHealthCache?.expiresAt && relayHealthCache.expiresAt > Date.now()) {
+    return relayHealthCache.value;
+  }
+  try {
+    const response = await fetchWithTimeout(fetchFn, `${base}/v1/health`, {
+      headers: { Accept: "application/json" },
+      redirect: "error",
+    }, 5_000);
+    const result = response.ok ? normalizeRelayHealth(await response.json()) : null;
+    const value: RadioRelayHealth = result || {
+      ok: false,
+      status: response.status === 403 ? "origin-rejected" : "unavailable",
+      environment,
+      version: "",
+    };
+    relayHealthCache = { value, expiresAt: Date.now() + RELAY_HEALTH_TTL_MS };
+    return value;
+  } catch {
+    const value: RadioRelayHealth = { ok: false, status: "unavailable", environment, version: "" };
+    relayHealthCache = { value, expiresAt: Date.now() + RELAY_HEALTH_TTL_MS };
+    return value;
+  }
+}
+
+export async function probeRadioStation(
+  stationUuid: string,
+  { fetchFn = fetch, signal }: { fetchFn?: RadioFetch; signal?: AbortSignal } = {},
+): Promise<RadioStationProbeResult> {
+  const base = getValidRadioMediaBase();
+  if (!base || !isRadioStationUuid(stationUuid)) {
+    return { ok: false, outcome: "unrelayable-target", stage: "relay", version: "" };
+  }
+  try {
+    const response = await fetchWithTimeout(fetchFn, `${base}/v1/stations/${encodeURIComponent(stationUuid)}/probe`, {
+      headers: { Accept: "application/json" },
+      redirect: "error",
+    }, 15_000, signal);
+    const raw = await response.json() as Partial<RadioStationProbeResult>;
+    const outcomes: RadioProbeOutcome[] = [
+      "ready", "station-unavailable", "directory-timeout", "unrelayable-target", "redirect-limit",
+      "upstream-timeout", "upstream-status", "unsupported-content",
+      "empty-response", "early-close",
+    ];
+    const outcome = outcomes.includes(raw.outcome as RadioProbeOutcome)
+      ? raw.outcome as RadioProbeOutcome
+      : "upstream-status";
+    const stages: RadioStationProbeResult["stage"][] = ["relay", "directory", "target", "upstream", "content"];
+    return {
+      ok: response.ok && raw.ok === true && outcome === "ready",
+      outcome,
+      stage: stages.includes(raw.stage as RadioStationProbeResult["stage"])
+        ? raw.stage as RadioStationProbeResult["stage"]
+        : "relay",
+      version: text(raw.version).slice(0, 80),
+    };
+  } catch {
+    return { ok: false, outcome: "upstream-timeout", stage: "relay", version: "" };
+  }
+}
+
+export function resetRadioRelayHealthForTesting(): void {
+  relayHealthCache = null;
 }
 
 export function getRadioStreamRelayUrl(stationUuid: string): string {

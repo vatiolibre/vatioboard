@@ -248,7 +248,17 @@ export interface AudioRuntimeState {
   outputMode: "web-audio" | "native-background" | null;
   backgroundPlaybackState: "idle" | "arming" | "armed" | "interrupted" | "blocked";
   recoveryRequired: boolean;
-  connectionState: "idle" | "connecting" | "playing" | "reconnecting" | "unavailable";
+  connectionState: "idle" | "connecting" | "slow" | "playing" | "reconnecting" | "unavailable";
+  radioFailureClass: null
+    | "relay-unreachable"
+    | "origin-rejected"
+    | "directory"
+    | "unrelayable-target"
+    | "upstream"
+    | "mime"
+    | "codec"
+    | "cors-or-decode"
+    | "platform-interruption";
   currentTrack: unknown;
   loading: boolean;
   error: unknown;

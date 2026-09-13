@@ -5,6 +5,7 @@ Use this runbook against the hosted development SPA at `https://dev.vatioboard.c
 ## Prepare the test
 
 1. Confirm the development SPA and radio Worker are running using the checks in `workers/radio-media/README.md`.
+   The production radio hostname is intentionally undeployed and must not be used as a readiness signal for this feature branch.
 2. In the Tesla browser, open `https://dev.vatioboard.com/?debugBackground=1`.
 3. Allow location access if GPS recording will be tested.
 4. Open Player, select Radio, and choose a non-HLS station.
@@ -29,7 +30,8 @@ Run each applicable combination with the Tesla browser or Player window minimize
 | HTTPS or HTTP relay/Web Audio | The trusted tap arms the shared Player keep-alive first, configures CORS before the relay source, then immediately requests playback on the MP3 analysis element. |
 | Player minimized | Audio and Tesla Media Session play/pause continue to target the selected station. |
 | Browser minimized | Audio continues, or bounded recovery restores the same station without advancing the queue. |
-| Relay failure | Player retries the same relay/analysis channel once, then performs one delayed final retry; it never migrates to native automatically. |
+| Slow relay response | After 12 seconds the UI reports a slow connection, but keeps the same source request, element, graph, lease, and Media Session intact. |
+| Hard relay failure | A media error starts a privacy-safe station probe and retries the same relay/analysis channel once, then performs one delayed final retry; it never migrates to native automatically. |
 | Web Audio unavailable | Radio remains playable from the relay in graph-free mode and visualizers are reported unavailable. |
 | Visuals hidden | Rendering/analyser consumers stop, but the relay source, analysis element, graph, context, and Player lease remain unchanged. |
 | Visuals enabled | The existing **Visuals** toggle attaches to the already active shared graph and produces spectrum/scope data without changing transport. |
@@ -46,6 +48,8 @@ Repeat this exact sequence before the broader matrix:
 4. While another Tesla media source is available, select a radio station with one trusted tap.
 5. Confirm the other source is muted, no competing audio appears during the transition, and radio remains audible for at least five minutes after minimizing the browser.
 6. Restore VatioBoard and download diagnostics before changing playback again.
+
+If startup fails, the report should include `relayEnvironment: "development"`, the Worker build version, and either a relay health state or categorical probe outcome. A healthy probe paired with a media decode error points toward CORS/codec/Web Audio compatibility; a failed probe identifies the directory, target, upstream, or content stage without storing the station URL.
 
 The report should show the same numeric keep-alive identity, retained `speed-alerts,player-runtime` lease IDs, the same primary/analysis element ID used by the MP3, `activeRole: "analysis"`, `analysisGraphPreserved: true`, and `graphClosedDuringHandoff: false`. A new primary element, graph close, native-role activation, or Player lease release between the trusted station tap and radio playback is a regression.
 

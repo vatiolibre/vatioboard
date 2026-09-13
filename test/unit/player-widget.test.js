@@ -21,11 +21,15 @@ const radioMocks = vi.hoisted(() => ({
   searchStations: vi.fn(),
   hasExternalAccess: vi.fn(() => true),
   getValidBase: vi.fn(() => "https://radio-media.vatioboard.com"),
+  getRelayHealth: vi.fn().mockResolvedValue({
+    ok: true, status: "ready", environment: "development", version: "test",
+  }),
 }));
 
 vi.mock("../../src/shared/radio-browser.js", () => ({
   hasRadioExternalNetworkAccess: radioMocks.hasExternalAccess,
   getValidRadioMediaBase: radioMocks.getValidBase,
+  getRadioRelayHealth: radioMocks.getRelayHealth,
   radioBrowser: {
     getPopularStations: radioMocks.getPopularStations,
     searchStations: radioMocks.searchStations,
@@ -330,6 +334,10 @@ describe("createPlayerWidget", () => {
     radioMocks.hasExternalAccess.mockReturnValue(true);
     radioMocks.getValidBase.mockReset();
     radioMocks.getValidBase.mockReturnValue("https://radio-media.vatioboard.com");
+    radioMocks.getRelayHealth.mockReset();
+    radioMocks.getRelayHealth.mockResolvedValue({
+      ok: true, status: "ready", environment: "development", version: "test",
+    });
     catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [], total: 0 });
     catalogMock.syncAudioCatalog.mockResolvedValue(false);
     playlistMock.loadPlaylists.mockResolvedValue({ playlists: [], total: 0 });
@@ -972,6 +980,7 @@ describe("createPlayerWidget", () => {
     expect(row.dataset.stationUuid).toBe(station.stationuuid);
     expect(row.querySelector(".player-radio-item-tags").textContent).toBe("jazz · instrumental · night");
     expect(row.querySelector("img").src).toContain(`/v1/stations/${station.stationuuid}/logo`);
+    expect(row.querySelector("img").crossOrigin).toBe("anonymous");
     row.querySelector(".player-radio-play-btn").click();
     expect(runtimeMock.playTrackNow).toHaveBeenCalledWith(
       expect.objectContaining({

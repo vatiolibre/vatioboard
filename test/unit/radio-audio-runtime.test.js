@@ -142,6 +142,12 @@ vi.mock("../../src/shared/player-session.js", () => ({
 }));
 vi.mock("../../src/shared/radio-browser.js", () => ({
   getRadioLogoUrl: (uuid) => `https://radio-media.vatioboard.com/v1/stations/${uuid}/logo`,
+  getRadioRelayHealth: vi.fn().mockResolvedValue({
+    ok: true, status: "ready", environment: "development", version: "test",
+  }),
+  probeRadioStation: vi.fn().mockResolvedValue({
+    ok: true, outcome: "ready", stage: "content", version: "test",
+  }),
   radioBrowser: { registerStationClick, getStationByUuid: vi.fn() },
   radioStationToTrack: vi.fn(),
 }));
@@ -261,7 +267,7 @@ describe("live radio audio runtime", () => {
     expect(runtime.getState().sourceTransport).toBe("radio-relay");
   });
 
-  it("uses the 12-second timeout for same-channel retry, then cancels stale work on track change", async () => {
+  it("marks a 12-second connection as slow without resetting the source, then cancels stale work", async () => {
     const runtime = await import("../../src/shared/audio-runtime.js");
     await runtime.playTrackNow({
       name: `radio:${UUID}`,
@@ -273,11 +279,16 @@ describe("live radio audio runtime", () => {
     await flushMicrotasks();
 
     const element = runtime.getAudioElement();
+    const initialSrc = element.src;
+    element.play = vi.fn(element.play.bind(element));
     expect(runtime.getState().sourceTransport).toBe("radio-relay");
     vi.advanceTimersByTime(11_999);
     expect(runtime.getState().sourceTransport).toBe("radio-relay");
     vi.advanceTimersByTime(1);
     expect(runtime.getState().sourceTransport).toBe("radio-relay");
+    expect(runtime.getState().connectionState).toBe("slow");
+    expect(element.src).toBe(initialSrc);
+    expect(element.play).not.toHaveBeenCalled();
 
     runtime.setQueue([{ name: "finite-next", title: "Next", media_kind: "audio" }], { autoplay: false });
     await flushMicrotasks();
@@ -303,6 +314,7 @@ describe("live radio audio runtime", () => {
     });
     await flushMicrotasks();
     runtime.getAudioElement().dispatchEvent(new Event("playing"));
+    await vi.advanceTimersByTimeAsync(10_000);
     await flushMicrotasks();
 
     const liveUpdates = updateMediaSessionClient.mock.calls.map((call) => call[1]);

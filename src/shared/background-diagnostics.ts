@@ -57,6 +57,15 @@ const ALLOWED_FIELDS = new Set([
   "interruptionClassification",
   "previousAudioSessionState",
   "mediaEvent",
+  "radioFailureClass",
+  "startupAttemptId",
+  "sourceResetCount",
+  "relayEnvironment",
+  "relayHealth",
+  "relayVersion",
+  "probeOutcome",
+  "probeStage",
+  "latencyBucket",
 ]);
 
 export interface BackgroundDiagnosticEntry {
