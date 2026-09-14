@@ -74,6 +74,19 @@ function isAllowedApiHost(hostname) {
 }
 
 /**
+ * The radio relay is a first-party, CORS-enabled media origin. Treat it the
+ * same as the API/storage origins used by normal MP3 playback.
+ */
+function isAllowedRadioOrigin(url) {
+  try {
+    const { radioMediaBase } = getEnvironmentConfig();
+    return Boolean(radioMediaBase) && url.origin === new URL(radioMediaBase).origin;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Check whether a media source URL is safe for Web Audio routing via
  * createMediaElementSource().
  *
@@ -98,7 +111,9 @@ export function isVisualizerSafeSource(src) {
   try {
     const srcUrl = new URL(src, window.location.origin);
     if (srcUrl.origin === window.location.origin) return true;
-    return isAllowedStorageHost(srcUrl.hostname) || isAllowedApiHost(srcUrl.hostname);
+    return isAllowedStorageHost(srcUrl.hostname)
+      || isAllowedApiHost(srcUrl.hostname)
+      || isAllowedRadioOrigin(srcUrl);
   } catch {
     return false;
   }
@@ -121,7 +136,9 @@ export function requiresCrossOriginForAnalysis(src) {
   try {
     const srcUrl = new URL(src, window.location.origin);
     if (srcUrl.origin === window.location.origin) return false;
-    return isAllowedStorageHost(srcUrl.hostname) || isAllowedApiHost(srcUrl.hostname);
+    return isAllowedStorageHost(srcUrl.hostname)
+      || isAllowedApiHost(srcUrl.hostname)
+      || isAllowedRadioOrigin(srcUrl);
   } catch {
     return false;
   }

@@ -182,8 +182,7 @@ function rectsOverlap(a: RectLike | null | undefined, b: RectLike | null | undef
 function isSafeSource() {
   const el = runtime.getAudioElement();
   const state = runtime.getState();
-  if (state.outputMode === "native-background") return false;
-  if (state.isLive) return state.analysisEligible === true;
+  if (state.analysisEligible === false) return false;
   if (!el?.src) return true;
   return isVisualizerSafeSource(el.currentSrc || el.src);
 }
@@ -553,7 +552,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     const el = runtime.getAudioElement();
     if (!state.currentTrack || !state.sourceType || !el?.src) return false;
     if (!isSafeSource()) {
-      if (state.outputMode !== "native-background") failed = true;
+      failed = true;
       return false;
     }
 

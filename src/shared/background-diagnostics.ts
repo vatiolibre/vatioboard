@@ -20,7 +20,6 @@ const ALLOWED_FIELDS = new Set([
   "nativeWatchActive",
   "fixAgeMs",
   "reason",
-  "outputMode",
   "recoveryRequired",
   "phase",
   "candidateAutomatic",

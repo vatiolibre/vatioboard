@@ -50,7 +50,6 @@ export interface ResolvedAudioSource {
   cacheable: boolean;
   seekable: boolean;
   analysisEligible: boolean;
-  candidates?: AudioSourceCandidate[];
   stationUuid?: string;
   blob?: Blob;
   source?: string;
@@ -58,27 +57,7 @@ export interface ResolvedAudioSource {
   revokeUrl: () => void;
 }
 
-export type AudioSourceTransport = "local" | "backend" | "radio-relay" | "radio-direct-native";
-export type AudioSourceOutputMode = "web-audio" | "native-background";
-
-/** An ordered playback option. Automatic candidates precede opt-in modes. */
-export interface AudioSourceCandidate {
-  src: string;
-  transport: AudioSourceTransport;
-  crossOrigin: "anonymous" | null;
-  analysisEligible: boolean;
-  outputMode: AudioSourceOutputMode;
-  automaticRecovery: boolean;
-}
-
-function parseRadioUrl(value: unknown): URL | null {
-  try {
-    const url = new URL(String(value || ""));
-    return (url.protocol === "http:" || url.protocol === "https:") && !url.username && !url.password ? url : null;
-  } catch {
-    return null;
-  }
-}
+export type AudioSourceTransport = "local" | "backend" | "radio-relay";
 
 export function resolveRadioSource(asset: AudioSourceAsset): ResolvedAudioSource | null {
   if (!hasRadioExternalNetworkAccess()) return null;
@@ -88,56 +67,17 @@ export function resolveRadioSource(asset: AudioSourceAsset): ResolvedAudioSource
   const relaySrc = getRadioStreamRelayUrl(stationUuid);
   if (!relaySrc) return null;
 
-  const candidates: AudioSourceCandidate[] = [];
-  const streamUrl = parseRadioUrl(asset.url_resolved);
-  // Radio normally uses the exact same long-lived, graph-backed channel as
-  // music. Keeping this candidate first is important on embedded Chromium:
-  // swapping to a fresh media element can surrender the already-established
-  // platform audio session during a music-to-radio handoff.
-  candidates.push({
-    src: relaySrc,
-    transport: "radio-relay",
-    crossOrigin: "anonymous",
-    analysisEligible: true,
-    outputMode: "web-audio",
-    automaticRecovery: true,
-  });
-
-  // Native candidates are compatibility choices only. They must never be
-  // selected by automatic transport recovery because they move playback off
-  // the mature music/Web Audio channel. HTTPS can use the station directly;
-  // HTTP remains relay-only to avoid mixed-content rejection.
-  if (streamUrl?.protocol === "https:") {
-    candidates.push({
-      src: streamUrl.toString(),
-      transport: "radio-direct-native",
-      crossOrigin: null,
-      analysisEligible: false,
-      outputMode: "native-background",
-      automaticRecovery: false,
-    });
-  }
-  candidates.push({
-    src: relaySrc,
-    transport: "radio-relay",
-    crossOrigin: "anonymous",
-    analysisEligible: false,
-    outputMode: "native-background",
-    automaticRecovery: false,
-  });
-
   return {
-    src: candidates[0].src,
+    src: relaySrc,
     sourceType: "live",
-    sourceTransport: candidates[0].transport,
+    sourceTransport: "radio-relay",
     isLive: true,
     type: "live",
-    transport: candidates[0].transport,
+    transport: "radio-relay",
     live: true,
     cacheable: false,
     seekable: false,
-    analysisEligible: candidates[0].analysisEligible,
-    candidates,
+    analysisEligible: true,
     stationUuid,
     revokeUrl() {},
   };

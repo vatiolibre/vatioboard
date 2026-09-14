@@ -239,13 +239,12 @@ export interface AudioRuntimeState {
   shuffle: boolean;
   backgroundMode: boolean;
   sourceType: "blob" | "remote" | "live" | null;
-  sourceTransport: "local" | "backend" | "radio-relay" | "radio-direct-native" | null;
+  sourceTransport: "local" | "backend" | "radio-relay" | null;
   isLive: boolean;
   seekable: boolean;
   cacheable: boolean;
   analysisEligible: boolean;
   analysisActive: boolean;
-  outputMode: "web-audio" | "native-background" | null;
   backgroundPlaybackState: "idle" | "arming" | "armed" | "interrupted" | "blocked";
   recoveryRequired: boolean;
   connectionState: "idle" | "connecting" | "slow" | "playing" | "reconnecting" | "unavailable";
@@ -277,12 +276,7 @@ export interface AudioRuntime {
   pause(options?: unknown): void;
   stopPlayback(options?: unknown): void;
   playTrackNow?(track: unknown, options?: { fromUserGesture?: boolean }): Promise<boolean> | boolean;
-  rearmBackgroundPlayback?(options?: { preferNative?: boolean }): Promise<boolean> | boolean;
-  setRadioVisualizerEnabled?(
-    enabled: boolean,
-    options?: { fromUserGesture?: boolean },
-  ): Promise<boolean> | boolean;
-  retryRadioWithVisualizer?(): Promise<boolean> | boolean;
+  rearmBackgroundPlayback?(): Promise<boolean> | boolean;
 }
 
 export type TtsPriority = "critical" | "driving" | "system" | "info";

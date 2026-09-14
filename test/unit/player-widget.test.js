@@ -82,8 +82,6 @@ const runtimeMock = {
   playLibraryTrackNow: vi.fn().mockResolvedValue(undefined),
   playTrackNow: vi.fn().mockResolvedValue(true),
   rearmBackgroundPlayback: vi.fn().mockResolvedValue(true),
-  setRadioVisualizerEnabled: vi.fn().mockResolvedValue(true),
-  retryRadioWithVisualizer: vi.fn().mockResolvedValue(true),
   setQueue: vi.fn(),
   restoreSession: vi.fn().mockResolvedValue(undefined),
   primeAudio: vi.fn().mockResolvedValue(true),
@@ -322,10 +320,6 @@ describe("createPlayerWidget", () => {
     runtimeMock.playTrackNow.mockResolvedValue(true);
     runtimeMock.rearmBackgroundPlayback.mockReset();
     runtimeMock.rearmBackgroundPlayback.mockResolvedValue(true);
-    runtimeMock.setRadioVisualizerEnabled.mockReset();
-    runtimeMock.setRadioVisualizerEnabled.mockResolvedValue(true);
-    runtimeMock.retryRadioWithVisualizer.mockReset();
-    runtimeMock.retryRadioWithVisualizer.mockResolvedValue(true);
     radioMocks.getPopularStations.mockReset();
     radioMocks.getPopularStations.mockResolvedValue([]);
     radioMocks.searchStations.mockReset();
@@ -1159,7 +1153,7 @@ describe("createPlayerWidget", () => {
     widget.destroy();
   });
 
-  it("offers one-tap native recovery and uses the existing Visuals toggle for radio", () => {
+  it("omits compatibility recovery and uses the generic Visuals toggle for radio", () => {
     Object.defineProperty(window, "AudioContext", { configurable: true, value: class {} });
     runtimeMock.getState.mockReturnValue(makeRuntimeState({
       currentTrack: { name: "radio:one", title: "Live One", media_kind: "radio", station_uuid: "one" },
@@ -1168,7 +1162,6 @@ describe("createPlayerWidget", () => {
       isLive: true,
       seekable: false,
       analysisEligible: true,
-      outputMode: "web-audio",
       recoveryRequired: true,
       connectionState: "reconnecting",
       error: "background-playback-blocked",
@@ -1176,41 +1169,17 @@ describe("createPlayerWidget", () => {
     const widget = createPlayerWidget({ floating: false });
     widget.open();
     const panel = document.querySelector(".player-panel");
-    const actions = panel.querySelector(".player-background-recovery-actions");
-    const resume = panel.querySelector(".player-background-recovery-btn");
-
-    expect(actions.hidden).toBe(false);
-    expect(resume.textContent).toBe("playerRadioResumeBackground");
-    resume.click();
-    expect(runtimeMock.rearmBackgroundPlayback).toHaveBeenCalledWith({ preferNative: true });
-    widget.destroy();
-
-    runtimeMock.getState.mockReturnValue(makeRuntimeState({
-      currentTrack: { name: "radio:one", title: "Live One", media_kind: "radio", station_uuid: "one" },
-      sourceType: "live",
-      sourceTransport: "radio-relay",
-      isLive: true,
-      seekable: false,
-      analysisEligible: true,
-      outputMode: "native-background",
-      recoveryRequired: false,
-      connectionState: "playing",
-      playing: true,
-    }));
-    const nativeWidget = createPlayerWidget({ floating: false });
-    nativeWidget.open();
-    const nativePanel = document.querySelector(".player-panel");
-    expect(nativePanel.querySelector(".player-background-recovery-actions").hidden).toBe(true);
-    expect(nativePanel.querySelectorAll(".player-background-recovery-btn")).toHaveLength(1);
-    const visualsToggle = nativePanel.querySelector(".player-visualizer-toggle-btn");
-    expect(visualsToggle.getAttribute("aria-pressed")).toBe("false");
+    expect(panel.querySelector(".player-background-recovery-actions")).toBeNull();
+    expect(panel.querySelector(".player-background-recovery-btn")).toBeNull();
+    const visualsToggle = panel.querySelector(".player-visualizer-toggle-btn");
+    expect(visualsToggle.getAttribute("aria-pressed")).toBe("true");
     visualsToggle.click();
-    expect(runtimeMock.setRadioVisualizerEnabled).toHaveBeenCalledWith(true, { fromUserGesture: true });
-    expect(runtimeMock.retryRadioWithVisualizer).not.toHaveBeenCalled();
-    nativeWidget.destroy();
+    expect(visualsToggle.getAttribute("aria-pressed")).toBe("false");
+    expect(runtimeMock.rearmBackgroundPlayback).not.toHaveBeenCalled();
+    widget.destroy();
   });
 
-  it("reports visualizers unavailable but leaves native Radio usable without Web Audio", () => {
+  it("reports visualizers unavailable but leaves Radio usable without Web Audio", () => {
     Object.defineProperty(window, "AudioContext", { configurable: true, value: undefined });
     runtimeMock.getState.mockReturnValue(makeRuntimeState({
       currentTrack: { name: "radio:one", title: "Live One", media_kind: "radio", station_uuid: "one" },
@@ -1219,7 +1188,6 @@ describe("createPlayerWidget", () => {
       isLive: true,
       seekable: false,
       analysisEligible: false,
-      outputMode: "native-background",
       connectionState: "playing",
       playing: true,
     }));
@@ -1228,8 +1196,8 @@ describe("createPlayerWidget", () => {
     widget.open();
     const panel = document.querySelector(".player-panel");
     expect(panel.querySelector(".player-visualizer-label").textContent).toBe("mediaPlayerVisualizerUnavailable");
-    expect(panel.querySelector(".player-background-recovery-actions").hidden).toBe(true);
-    expect(panel.querySelector(".player-visualizer-toggle-btn").getAttribute("aria-pressed")).toBe("false");
+    expect(panel.querySelector(".player-background-recovery-actions")).toBeNull();
+    expect(panel.querySelector(".player-visualizer-toggle-btn").getAttribute("aria-pressed")).toBe("true");
     expect(panel.querySelector(".player-btn-play-main").disabled).toBe(false);
     widget.destroy();
   });

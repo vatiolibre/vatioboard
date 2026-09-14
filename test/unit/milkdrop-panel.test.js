@@ -179,9 +179,9 @@ describe("createMilkdropPanel", () => {
     return butterchurn.createVisualizer.mock.results.at(-1)?.value;
   }
 
-  it("uses the runtime descriptor for analyser-eligible radio streams", async () => {
-    mockAudioElement.src = "https://arbitrary-station.example/live.mp3";
-    isVisualizerSafeSource.mockReturnValue(false);
+  it("uses the same source-safety policy for analyser-eligible radio streams", async () => {
+    mockAudioElement.src = "https://radio-media.vatioboard.com/live";
+    isVisualizerSafeSource.mockReturnValue(true);
     audioRuntime.getState.mockReturnValue({
       ...defaultAudioState,
       currentTrack: { name: "radio:test", media_kind: "radio" },
@@ -197,7 +197,7 @@ describe("createMilkdropPanel", () => {
     const panel = createMilkdropPanel({ mount });
     await panel.open();
     expect(butterchurn.createVisualizer).toHaveBeenCalledTimes(1);
-    expect(isVisualizerSafeSource).not.toHaveBeenCalled();
+    expect(isVisualizerSafeSource).toHaveBeenCalledWith(mockAudioElement.src);
     panel.destroy();
   });
 
@@ -220,37 +220,6 @@ describe("createMilkdropPanel", () => {
     Object.defineProperty(document, "hidden", { configurable: true, value: false });
     document.dispatchEvent(new Event("visibilitychange"));
     expect(window.requestAnimationFrame.mock.calls.length).toBeGreaterThan(callsWhileHidden);
-    panel.destroy();
-  });
-
-  it("keeps native-background compatibility from permanently failing Milkdrop", async () => {
-    mockAudioElement.src = "https://radio-media.vatioboard.com/live";
-    audioRuntime.getState.mockReturnValue({
-      ...defaultAudioState,
-      currentTrack: { name: "radio:test", media_kind: "radio" },
-      sourceType: "live",
-      isLive: true,
-      outputMode: "native-background",
-      analysisEligible: true,
-      playing: true,
-    });
-    const panel = createMilkdropPanel({ mount });
-    await panel.open();
-    expect(butterchurn.createVisualizer).not.toHaveBeenCalled();
-
-    audioRuntime.getState.mockReturnValue({
-      ...defaultAudioState,
-      currentTrack: { name: "radio:test", media_kind: "radio" },
-      sourceType: "live",
-      isLive: true,
-      outputMode: "web-audio",
-      analysisEligible: true,
-      playing: true,
-    });
-    document.dispatchEvent(new Event("visibilitychange"));
-    await Promise.resolve();
-    await Promise.resolve();
-    expect(butterchurn.createVisualizer).toHaveBeenCalledTimes(1);
     panel.destroy();
   });
 

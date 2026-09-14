@@ -17,7 +17,6 @@ import {
   resolveAudioSource,
   resolveRadioSource,
   triggerBackgroundCache,
-  type AudioSourceCandidate,
   type ResolvedAudioSource,
 } from "./audio-source-resolver.js";
 import {
@@ -42,11 +41,7 @@ import {
   destroyVisualizerGraphForElement,
   resumeVisualizerGraphForElement,
 } from "./audio-mini-visualizer.js";
-import {
-  getGraph,
-  prepareGraphForElement,
-  primeAudioContext,
-} from "./audio-graph-registry.js";
+import { getGraph } from "./audio-graph-registry.js";
 import { recordBackgroundDiagnostic } from "./background-diagnostics.js";
 import {
   clearMediaSessionArtworkCache,
@@ -67,12 +62,6 @@ import type { AudioRuntimeState } from "../types/services";
 // TODO(ts-migration): player/library track payloads are still owned by JS feature modules.
 type RuntimeTrack = Record<string, any>;
 type ManagedAudioElement = HTMLAudioElement & { playsInline?: boolean };
-type ManagedAudioRole = "analysis" | "native-radio";
-type ManagedAudioSlot = {
-  role: ManagedAudioRole;
-  element: ManagedAudioElement | null;
-  sourceRevoke: (() => void) | null;
-};
 type PreparedNextSource = {
   index: number;
   queueId: string;
@@ -96,10 +85,6 @@ const resolveRuntimeAudioSource = resolveAudioSource as (
   asset?: RuntimeTrack,
 ) => Promise<ResolvedAudioSource | null>;
 const savePlayerSessionSnapshot = savePlayerSession as (snapshot: RuntimeTrack) => void;
-
-// Radio output preferences are deliberately session-only. Remove the legacy
-// persisted fallback so every station starts on the shared analysis channel.
-try { localStorage.removeItem("vatioboard.player.radio.native-background.v1"); } catch { /* storage unavailable */ }
 
 function isArtworkUrl(ref) {
   return typeof ref === "string" && (ref.startsWith("http://") || ref.startsWith("https://") || ref.startsWith("/"));
@@ -158,7 +143,6 @@ const state: AudioRuntimeMutableState = {
   cacheable: false,
   analysisEligible: false,
   analysisActive: false,
-  outputMode: null,
   backgroundPlaybackState: "idle",
   recoveryRequired: false,
   connectionState: "idle",
@@ -175,19 +159,10 @@ const state: AudioRuntimeMutableState = {
 
 // ── Audio element ────────────────────────────────────────────────────
 
-// The Player owns at most two media elements. The analysis slot is the mature
-// music/Web Audio path; the native-radio slot is deliberately graph-free for
-// Tesla background continuity. `audio` always points at the active slot.
+// MP3 and relay radio share this one long-lived media element. Visualizers
+// attach to it opportunistically and never select a separate playback path.
 let audio: ManagedAudioElement | null = null;
-let activeAudioRole: ManagedAudioRole | null = null;
-const managedAudioSlots: Record<ManagedAudioRole, ManagedAudioSlot> = {
-  analysis: { role: "analysis", element: null, sourceRevoke: null },
-  "native-radio": { role: "native-radio", element: null, sourceRevoke: null },
-};
-let pendingInactiveNativeCleanup = false;
-let pendingOutgoingAudio: ManagedAudioElement | null = null;
-let lastHandoffPhase = "idle";
-let lastOutgoingAudioRole: ManagedAudioRole | null = null;
+let currentSourceRevoke: (() => void) | null = null;
 let graphClosedDuringHandoff = false;
 const boundAudioElements = new WeakSet<ManagedAudioElement>();
 let positionSyncTimer: ReturnType<typeof setInterval> | null = null;
@@ -202,9 +177,8 @@ let radioReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let radioStableTimer: ReturnType<typeof setTimeout> | null = null;
 let radioArtworkTimer: ReturnType<typeof setTimeout> | null = null;
 let radioProbeAbortController: AbortController | null = null;
-let activeRadioCandidateIndex = 0;
 let radioRetryCount = 0;
-let radioRetryPhase: "initial" | "retry-current" | "fallback" | "delayed-final" = "initial";
+let radioRetryPhase: "initial" | "retry-current" | "delayed-final" = "initial";
 let radioConnectionStartedAtMs = 0;
 let radioRetryDueAtMs = 0;
 let radioStableSinceMs = 0;
@@ -332,39 +306,20 @@ function shouldDeferLiveRecovery() {
   return document.visibilityState === "hidden" || isPlatformInterrupted();
 }
 
-function setManagedAudioSlot(role: ManagedAudioRole, el: ManagedAudioElement | null) {
-  managedAudioSlots[role].element = el;
-}
-
-function getManagedAudioSlot(role: ManagedAudioRole) {
-  return managedAudioSlots[role].element;
-}
-
-function getManagedAudioRole(el: ManagedAudioElement | null): ManagedAudioRole | null {
-  if (!el) return null;
-  if (el === managedAudioSlots.analysis.element) return "analysis";
-  if (el === managedAudioSlots["native-radio"].element) return "native-radio";
-  return null;
-}
-
 function revokeElementSource(el: ManagedAudioElement | null) {
-  if (!el) return;
-  const role = getManagedAudioRole(el);
-  if (!role) return;
-  const slot = managedAudioSlots[role];
-  const revoke = slot.sourceRevoke;
+  if (!el || el !== audio) return;
+  const revoke = currentSourceRevoke;
   if (!revoke) return;
-  slot.sourceRevoke = null;
+  currentSourceRevoke = null;
   try { revoke(); } catch { /* best-effort object URL cleanup */ }
 }
 
 function ownElementSource(el: ManagedAudioElement, revoke?: (() => void) | null) {
   revokeElementSource(el);
-  const role = getManagedAudioRole(el);
-  if (role && revoke) managedAudioSlots[role].sourceRevoke = revoke;
+  if (el === audio && revoke) currentSourceRevoke = revoke;
 }
 
-function createManagedAudioElement(role: ManagedAudioRole, { activate = true } = {}) {
+function createManagedAudioElement() {
   bindLifecyclePersistence();
   const el = new Audio() as ManagedAudioElement;
   resetAudioElementPlaybackRate(el);
@@ -377,38 +332,9 @@ function createManagedAudioElement(role: ManagedAudioRole, { activate = true } =
   el.crossOrigin = "anonymous";
   el.volume = state.muted ? 0 : state.volume;
   el.muted = state.muted;
-  setManagedAudioSlot(role, el);
-  if (activate) activateManagedAudioElement(el, role);
-  return el;
-}
-
-function activateManagedAudioElement(el: ManagedAudioElement, role: ManagedAudioRole) {
-  const outgoing = audio && audio !== el ? audio : null;
-  const outgoingRole = getManagedAudioRole(outgoing);
-  if (outgoing) unbindAudioElement(outgoing);
-  setManagedAudioSlot(role, el);
-  audio = el;
-  activeAudioRole = role;
   bindAudioElement(el);
   setMainAudioElement(el);
-  if (outgoing) {
-    primed = false;
-    primeInFlight = null;
-    lastOutgoingAudioRole = outgoingRole;
-    lastHandoffPhase = "incoming-configured";
-  }
-  return outgoing;
-}
-
-function parkOutgoingAfterPlayRequest(outgoing: ManagedAudioElement | null) {
-  if (!outgoing || outgoing === audio) return;
-  lastHandoffPhase = "incoming-play-requested";
-  internalPauseDepth += 1;
-  ignoreUnexpectedPauseUntilMs = Date.now() + 250;
-  markExpectedPause(outgoing, "handoff-park");
-  try { outgoing.pause(); } catch { /* parking is best effort */ }
-  internalPauseDepth = Math.max(0, internalPauseDepth - 1);
-  lastHandoffPhase = "outgoing-parked";
+  return el;
 }
 
 function clearAudioElementSource(el: ManagedAudioElement | null) {
@@ -434,16 +360,15 @@ function clearAudioElementSource(el: ManagedAudioElement | null) {
   internalPauseDepth = Math.max(0, internalPauseDepth - 1);
 }
 
-function replaceManagedAudioElement(role: ManagedAudioRole = activeAudioRole || "analysis") {
-  const previous = getManagedAudioSlot(role);
-  if (previous) {
-    if (previous === audio) unbindAudioElement(previous);
-    clearAudioElementSource(previous);
-    setManagedAudioSlot(role, null);
+function replaceManagedAudioElement() {
+  if (audio) {
+    unbindAudioElement(audio);
+    clearAudioElementSource(audio);
   }
   primed = false;
   primeInFlight = null;
-  return createManagedAudioElement(role, { activate: previous === audio || !audio });
+  audio = createManagedAudioElement();
+  return audio;
 }
 
 /**
@@ -491,45 +416,9 @@ export function primeAudio() {
 
 function getAudio() {
   if (!audio) {
-    audio = createManagedAudioElement("analysis");
+    audio = createManagedAudioElement();
   }
   return audio;
-}
-
-function getOrCreateAnalysisAudio() {
-  return getManagedAudioSlot("analysis") || createManagedAudioElement("analysis", { activate: false });
-}
-
-function getOrCreateNativeRadioAudio() {
-  const nativeElement = getManagedAudioSlot("native-radio");
-  if (nativeElement) return nativeElement;
-  const current = audio;
-  // A graph-free active element is compatible with native radio and can be
-  // reclassified instead of allocating the second slot.
-  if (current && !getGraph(current) && activeAudioRole === "analysis") {
-    managedAudioSlots["native-radio"].sourceRevoke = managedAudioSlots.analysis.sourceRevoke;
-    managedAudioSlots.analysis.sourceRevoke = null;
-    setManagedAudioSlot("analysis", null);
-    setManagedAudioSlot("native-radio", current);
-    activeAudioRole = "native-radio";
-    return current;
-  }
-  return createManagedAudioElement("native-radio", { activate: false });
-}
-
-function getOrCreateMusicAnalysisAudio() {
-  const analysisElement = getManagedAudioSlot("analysis");
-  if (analysisElement) return analysisElement;
-  const current = audio;
-  if (current && !getGraph(current) && activeAudioRole === "native-radio") {
-    managedAudioSlots.analysis.sourceRevoke = managedAudioSlots["native-radio"].sourceRevoke;
-    managedAudioSlots["native-radio"].sourceRevoke = null;
-    setManagedAudioSlot("native-radio", null);
-    setManagedAudioSlot("analysis", current);
-    activeAudioRole = "analysis";
-    return current;
-  }
-  return createManagedAudioElement("analysis", { activate: false });
 }
 
 function enableBackgroundModeForPlaybackStart() {
@@ -669,7 +558,6 @@ function resetRadioLifecycle() {
   clearRadioTimers();
   cancelRadioProbe();
   activeResolvedSource = null;
-  activeRadioCandidateIndex = 0;
   radioRetryCount = 0;
   radioRetryPhase = "initial";
   radioConnectionStartedAtMs = 0;
@@ -709,7 +597,6 @@ function recordRadioDiagnostic(event: string, detail: Record<string, unknown> = 
   const el = audio;
   const duration = Number(el?.duration);
   const backgroundState = getBackgroundAudioState();
-  const analysisElement = getManagedAudioSlot("analysis");
   recordBackgroundDiagnostic(event, {
     visibility: document.visibilityState,
     isLive: state.isLive,
@@ -723,20 +610,15 @@ function recordRadioDiagnostic(event: string, detail: Record<string, unknown> = 
     retainedLeaseIds: backgroundState.activeLeaseIds.slice(0, 8).join(",").slice(0, 160),
     keepAliveIdentity: getDiagnosticObjectId(backgroundKeepAliveAudio),
     primaryElementId: getDiagnosticObjectId(el),
-    analysisElementId: getDiagnosticObjectId(analysisElement),
-    nativeElementId: getDiagnosticObjectId(getManagedAudioSlot("native-radio")),
-    outputMode: state.outputMode,
+    analysisElementId: getDiagnosticObjectId(el),
     playerLeaseActive: isBackgroundAudioLeaseActive(PLAYER_BACKGROUND_AUDIO_LEASE),
     keepAlivePaused: backgroundKeepAliveAudio.paused,
     primaryDuration: Number.isFinite(duration) ? duration : String(duration),
     durationClass: classifyMediaDuration(el),
     primaryHasGraph: Boolean(el && getGraph(el)),
-    activeRole: activeAudioRole,
-    outgoingRole: lastOutgoingAudioRole,
-    handoffPhase: lastHandoffPhase,
-    analysisGraphPreserved: Boolean(analysisElement && getGraph(analysisElement)),
-    analysisContextState: analysisElement
-      ? getGraph(analysisElement)?.audioContext?.state || "none"
+    analysisGraphPreserved: Boolean(el && getGraph(el)),
+    analysisContextState: el
+      ? getGraph(el)?.audioContext?.state || "none"
       : "none",
     graphClosedDuringHandoff,
     mediaSessionPlaybackState: getPlatformMediaSessionState(),
@@ -749,10 +631,6 @@ function recordRadioDiagnostic(event: string, detail: Record<string, unknown> = 
     sourceResetCount: radioSourceResetCount,
     ...detail,
   });
-}
-
-function supportsWebAudio() {
-  return Boolean(window.AudioContext || window.webkitAudioContext);
 }
 
 function observeGraphContext(el: ManagedAudioElement) {
@@ -775,95 +653,39 @@ function observeGraphContext(el: ManagedAudioElement) {
   });
 }
 
-function getRadioCandidates(resolved = activeResolvedSource): AudioSourceCandidate[] {
-  if (!resolved) return [];
-  if (resolved.candidates?.length) return resolved.candidates;
-  return [{
-    src: resolved.src,
-    transport: resolved.sourceTransport || resolved.transport,
-    crossOrigin: "anonymous",
-    analysisEligible: resolved.analysisEligible !== false,
-    outputMode: "web-audio",
-    automaticRecovery: true,
-  }];
-}
-
-function getAutomaticRadioCandidateIndexes(resolved = activeResolvedSource) {
-  return getRadioCandidates(resolved)
-    .map((candidate, index) => candidate.automaticRecovery !== false ? index : -1)
-    .filter((index) => index >= 0);
-}
-
-function getAnalysisRadioCandidateIndex(resolved = activeResolvedSource) {
-  return getRadioCandidates(resolved).findIndex((candidate) => candidate.outputMode === "web-audio");
-}
-
-function getNativeRadioCandidateIndex(resolved = activeResolvedSource) {
-  const candidates = getRadioCandidates(resolved);
-  const directIndex = candidates.findIndex((candidate) => (
-    candidate.outputMode === "native-background" && candidate.transport === "radio-direct-native"
-  ));
-  return directIndex >= 0
-    ? directIndex
-    : candidates.findIndex((candidate) => candidate.outputMode === "native-background");
-}
-
-function setElementCrossOrigin(el: ManagedAudioElement, value: "anonymous" | null) {
-  if (value) {
-    el.crossOrigin = value;
-    return;
-  }
-  el.removeAttribute?.("crossorigin");
-  el.crossOrigin = null;
-}
-
-function applyRadioCandidate(
-  candidate: AudioSourceCandidate,
-  candidateIndex: number,
-  { forceNative = false } = {},
+function configureAudioElementSource(
+  el: ManagedAudioElement,
+  resolved: ResolvedAudioSource,
+  { countRadioReset = false } = {},
 ) {
-  const outputMode = forceNative || !supportsWebAudio()
-    ? "native-background"
-    : candidate.outputMode;
-  const el = outputMode === "web-audio"
-    ? getOrCreateAnalysisAudio()
-    : getOrCreateNativeRadioAudio();
-  const outgoing = activateManagedAudioElement(el, outputMode === "web-audio" ? "analysis" : "native-radio");
-  if (outgoing) {
-    pendingOutgoingAudio = outgoing;
-    if (outputMode === "web-audio" && getManagedAudioRole(outgoing) === "native-radio") {
-      pendingInactiveNativeCleanup = true;
-    }
-  }
-  activeRadioCandidateIndex = candidateIndex;
-  if (activeResolvedSource) {
-    activeResolvedSource.src = candidate.src;
-    activeResolvedSource.sourceTransport = candidate.transport;
-    activeResolvedSource.transport = candidate.transport;
-    activeResolvedSource.analysisEligible = candidate.analysisEligible && outputMode === "web-audio";
-  }
-  state.sourceTransport = candidate.transport;
-  state.analysisEligible = candidate.analysisEligible && outputMode === "web-audio";
-  state.analysisActive = false;
-  state.outputMode = outputMode;
-  ownElementSource(el, null);
-  setElementCrossOrigin(el, candidate.crossOrigin);
+  ownElementSource(el, resolved.revokeUrl);
+  // Use the same CORS-before-src ordering for every analyzable source. It is
+  // harmless for blob/same-origin MP3s and required by WebKit for the relay.
+  el.crossOrigin = "anonymous";
   el.preload = "metadata";
   el.volume = state.muted ? 0 : state.volume;
   el.muted = state.muted;
   ignoreUnexpectedPauseUntilMs = Date.now() + 250;
   markExpectedPause(el, "source-change", 250);
-  if (radioSourceConfiguredForAttempt && el.getAttribute?.("src")) radioSourceResetCount += 1;
-  el.src = candidate.src;
-  radioSourceConfiguredForAttempt = true;
+  if (countRadioReset && radioSourceConfiguredForAttempt && el.getAttribute?.("src")) {
+    radioSourceResetCount += 1;
+  }
+  el.src = resolved.src;
+  if (countRadioReset) radioSourceConfiguredForAttempt = true;
   resetAudioElementPlaybackRate(el);
+}
+
+function applyRadioSource(resolved = activeResolvedSource) {
+  if (!resolved) return null;
+  const el = getAudio();
+  state.sourceTransport = resolved.sourceTransport || resolved.transport;
+  state.analysisEligible = resolved.analysisEligible !== false;
+  state.analysisActive = false;
+  configureAudioElementSource(el, resolved, { countRadioReset: true });
   recordRadioDiagnostic("radio-transport-configured", {
-    corsMode: candidate.crossOrigin || "none",
+    corsMode: "anonymous",
     analysisEligible: state.analysisEligible,
-    requestedOutputMode: outputMode,
-    activeRole: activeAudioRole,
-    outgoingRole: getManagedAudioRole(outgoing),
-    graphPreserved: Boolean(outgoing && getGraph(outgoing)),
+    graphPreserved: Boolean(getGraph(el)),
   });
   return el;
 }
@@ -957,7 +779,6 @@ function handleElementPlayRejection(token, error, cause) {
       transport: state.sourceTransport,
       connectionState: state.connectionState,
       backgroundStatus: state.backgroundPlaybackState,
-      outputMode: state.outputMode,
     });
     notify();
     return;
@@ -985,24 +806,14 @@ function requestRadioElementPlayback(token, cause = "connection") {
   try {
     playResult = el.play();
   } catch (error) {
-    const outgoing = pendingOutgoingAudio;
-    pendingOutgoingAudio = null;
-    parkOutgoingAfterPlayRequest(outgoing);
     handleElementPlayRejection(token, error, cause);
     return;
   }
-  const outgoing = pendingOutgoingAudio;
-  pendingOutgoingAudio = null;
-  parkOutgoingAfterPlayRequest(outgoing);
-  if (state.outputMode === "web-audio") {
-    void resumeVisualizerGraphForElement(el).catch(() => false);
-  }
+  void resumeVisualizerGraphForElement(el).catch(() => false);
   Promise.resolve(playResult).catch((error) => handleElementPlayRejection(token, error, cause));
-  const candidate = getRadioCandidates()[activeRadioCandidateIndex];
   recordRadioDiagnostic("radio-play-request", {
     reason: cause,
     phase: radioRetryPhase,
-    candidateAutomatic: candidate?.automaticRecovery !== false,
   });
   notify();
 }
@@ -1040,7 +851,7 @@ function handleRadioConnectionFailure(token = loadRequestToken) {
   }
 
   clearRadioTimers();
-  if (radioRetryPhase === "delayed-final" || radioRetryPhase === "fallback") {
+  if (radioRetryPhase === "delayed-final") {
     markRadioUnavailable(state.sourceTransport === "radio-relay" ? "radio-relay-failed" : "station-unavailable");
     return;
   }
@@ -1056,9 +867,7 @@ function handleRadioConnectionFailure(token = loadRequestToken) {
     const retry = () => {
       if (!isCurrentRadioToken(token) || state.paused || !activeResolvedSource || shouldDeferLiveRecovery()) return;
       radioRetryDueAtMs = 0;
-      const candidate = getRadioCandidates()[activeRadioCandidateIndex];
-      if (!candidate) return;
-      applyRadioCandidate(candidate, activeRadioCandidateIndex);
+      applyRadioSource();
       requestRadioElementPlayback(token, "delayed-reconnect");
     };
     radioReconnectTimer = setTimeout(retry, RADIO_RETRY_DELAY_MS);
@@ -1073,106 +882,17 @@ function handleRadioConnectionFailure(token = loadRequestToken) {
   notify();
   const retry = () => {
     if (!isCurrentRadioToken(token) || state.paused || !activeResolvedSource || shouldDeferLiveRecovery()) return;
-    const candidate = getRadioCandidates()[activeRadioCandidateIndex];
-    if (!candidate) return;
-    applyRadioCandidate(candidate, activeRadioCandidateIndex);
+    applyRadioSource();
     requestRadioElementPlayback(token, "immediate-reconnect");
   };
   retry();
 }
 
-async function restartCurrentRadioInOutputMode(
-  outputMode: "web-audio" | "native-background",
-  { fromUserGesture = false, reason = "output-mode-change" } = {},
-) {
-  if (!state.isLive || !state.currentTrack || !activeResolvedSource) return false;
-  graphClosedDuringHandoff = false;
-  lastOutgoingAudioRole = null;
-  lastHandoffPhase = "preparing-output-handoff";
-  const token = ++loadRequestToken;
-  clearRadioTimers();
-  const candidates = getRadioCandidates();
-  const candidateIndex = outputMode === "web-audio"
-    ? getAnalysisRadioCandidateIndex()
-    : getNativeRadioCandidateIndex();
-  const candidate = candidates[candidateIndex];
-  if (!candidate) return false;
-  const previous = getAudio();
-  const previousRole = activeAudioRole;
-  const previousGraph = getGraph(previous);
-  const canReuse = outputMode === state.outputMode
-    && (outputMode === "web-audio" ? Boolean(previousGraph) : !previousGraph);
-  state.paused = false;
-  state.loading = true;
-  state.error = null;
-  state.recoveryRequired = false;
-  state.connectionState = "connecting";
-  syncBackgroundModeKeepAlive();
-  if (outputMode === "web-audio" && fromUserGesture) primeAudioContext();
-  const nextElement = applyRadioCandidate(candidate, candidateIndex, {
-    forceNative: outputMode === "native-background",
-  });
-  const graphPreparation = outputMode === "web-audio"
-    ? prepareGraphForElement(nextElement)
-    : Promise.resolve(true);
-  recordRadioDiagnostic("radio-output-handoff", {
-    reason,
-    fromUserGesture,
-    elementReused: canReuse,
-    activeRole: activeAudioRole,
-    outgoingRole: previous === nextElement ? null : previousRole,
-    graphPreserved: Boolean(previousGraph),
-    requestedOutputMode: outputMode,
-    graphPreparation: outputMode === "web-audio" ? "started" : "not-required",
-  });
-  notify();
-  requestRadioElementPlayback(token, reason);
-
-  const graphReady = await graphPreparation;
-  if (outputMode === "web-audio" && (!graphReady || !getGraph(nextElement))) {
-    if (!isCurrentRadioToken(token)) return false;
-    state.analysisEligible = false;
-    state.analysisActive = false;
-    state.outputMode = "native-background";
-    recordRadioDiagnostic("radio-visualizer", {
-      phase: "graph-preparation-failed",
-      automaticNativeRestoration: false,
-      graphPreserved: Boolean(getGraph(nextElement)),
-    });
-    notify();
-    return true;
-  }
-  if (outputMode === "web-audio") {
-    observeGraphContext(nextElement);
-    const contextReady = await resumeGraphWithinGrace(nextElement);
-    if (!isCurrentRadioToken(token)) return false;
-    if (!contextReady) {
-      state.recoveryRequired = true;
-      state.error = "background-playback-blocked";
-      recordRadioDiagnostic("radio-visualizer", {
-        phase: "graph-context-suspended",
-        automaticNativeRestoration: false,
-      });
-      notify();
-      return false;
-    }
-    state.recoveryRequired = false;
-    state.error = null;
-    recordRadioDiagnostic("radio-visualizer", { phase: "graph-prepared" });
-    notify();
-  }
-  return true;
-}
-
-export async function rearmBackgroundPlayback({ preferNative = false } = {}) {
-  const replaceInterruptedLiveElement = state.isLive && preferNative;
+export async function rearmBackgroundPlayback() {
   state.paused = false;
   state.recoveryRequired = false;
   enableBackgroundModeForPlaybackStart();
   syncBackgroundModeKeepAlive();
-  if (replaceInterruptedLiveElement) {
-    return restartCurrentRadioInOutputMode("native-background", { reason: "native-background-rearm" });
-  }
   if (state.isLive) {
     requestRadioElementPlayback(loadRequestToken, "background-rearm");
     await rearmBackgroundAudio();
@@ -1182,51 +902,6 @@ export async function rearmBackgroundPlayback({ preferNative = false } = {}) {
   const keepAliveArmed = await keepAlivePromise;
   await play();
   return keepAliveArmed || !getAudio().paused;
-}
-
-export function setRadioVisualizerEnabled(enabled, { fromUserGesture = false } = {}) {
-  if (!state.isLive) return Promise.resolve(false);
-  if (enabled && !supportsWebAudio()) return Promise.resolve(false);
-  if (!enabled) {
-    state.analysisActive = false;
-    recordRadioDiagnostic("radio-visualizer", { phase: "visuals-hidden-channel-retained" });
-    notify();
-    return Promise.resolve(true);
-  }
-  if (activeAudioRole === "native-radio") {
-    return restartCurrentRadioInOutputMode("web-audio", {
-      fromUserGesture,
-      reason: "visuals-toggle-on-from-native",
-    });
-  }
-  if (fromUserGesture) primeAudioContext();
-  const el = getAudio();
-  return prepareGraphForElement(el).then(async (ready) => {
-    if (!ready || !getGraph(el)) {
-      state.analysisEligible = false;
-      recordRadioDiagnostic("radio-visualizer", { phase: "visuals-toggle-graph-failed" });
-      notify();
-      return false;
-    }
-    observeGraphContext(el);
-    const resumed = await resumeGraphWithinGrace(el);
-    if (!resumed) {
-      state.recoveryRequired = true;
-      recordRadioDiagnostic("radio-visualizer", { phase: "visuals-toggle-context-suspended" });
-      notify();
-      return false;
-    }
-    state.analysisEligible = true;
-    state.recoveryRequired = false;
-    state.error = null;
-    recordRadioDiagnostic("radio-visualizer", { phase: "visuals-toggle-graph-ready" });
-    notify();
-    return true;
-  });
-}
-
-export function retryRadioWithVisualizer() {
-  return setRadioVisualizerEnabled(true, { fromUserGesture: true });
 }
 
 async function resumeGraphWithinGrace(el: ManagedAudioElement) {
@@ -1252,7 +927,6 @@ export async function reconcileBackgroundPlayback(reason = "lifecycle-visible", 
     connectionState: state.connectionState,
     backgroundStatus: getBackgroundAudioState().status,
     audioContextState: el ? getGraph(el)?.audioContext?.state || "none" : "none",
-    outputMode: state.outputMode,
   });
   const hasLivePlaybackIntent = state.isLive && !state.paused && Boolean(state.currentTrack);
   if (!wantsBackgroundModeKeepAlive() && !hasLivePlaybackIntent) return false;
@@ -1273,7 +947,7 @@ export async function reconcileBackgroundPlayback(reason = "lifecycle-visible", 
   const wasInterrupted = needsElementRecovery
     || backgroundState.status === "interrupted"
     || backgroundState.status === "blocked";
-  const graphResumePromise = state.outputMode === "web-audio" && getGraph(el)
+  const graphResumePromise = getGraph(el)
     ? resumeGraphWithinGrace(el)
     : Promise.resolve(true);
 
@@ -1281,10 +955,7 @@ export async function reconcileBackgroundPlayback(reason = "lifecycle-visible", 
     if (radioReconnectTimer) clearTimeout(radioReconnectTimer);
     radioReconnectTimer = null;
     radioRetryDueAtMs = 0;
-    const candidate = getRadioCandidates()[activeRadioCandidateIndex];
-    if (candidate) applyRadioCandidate(candidate, activeRadioCandidateIndex, {
-      forceNative: state.outputMode === "native-background",
-    });
+    applyRadioSource();
     requestRadioElementPlayback(loadRequestToken, "lifecycle-overdue-retry");
   } else if (radioConnectionStartedAtMs > 0
     && state.connectionState !== "playing"
@@ -1744,7 +1415,6 @@ function bindLifecyclePersistence() {
         connectionState: state.connectionState,
         backgroundStatus: getBackgroundAudioState().status,
         audioContextState: audio ? getGraph(audio)?.audioContext?.state || "none" : "none",
-        outputMode: state.outputMode,
       });
     } else {
       void reconcileBackgroundPlayback("visibility-visible");
@@ -1977,8 +1647,6 @@ async function loadTrack(index, {
   const track = state.queue[index];
   if (!track) return;
   graphClosedDuringHandoff = false;
-  lastOutgoingAudioRole = null;
-  lastHandoffPhase = "preparing-source-handoff";
   const nextIsRadio = track.media_kind === "radio";
   const previousSourceType = state.sourceType;
   const previousElement = audio;
@@ -2003,7 +1671,6 @@ async function loadTrack(index, {
   state.cacheable = false;
   state.analysisEligible = false;
   state.analysisActive = false;
-  state.outputMode = nextIsRadio ? "web-audio" : null;
   state.recoveryRequired = false;
   state.connectionState = nextIsRadio ? "connecting" : "idle";
   state.radioFailureClass = null;
@@ -2056,15 +1723,11 @@ async function loadTrack(index, {
 
   const resolvedIsLive = Boolean(resolved.isLive ?? resolved.live ?? (resolved.type === "live"));
 
-  if (!resolvedIsLive) {
-    el = getOrCreateMusicAnalysisAudio();
-  }
-
   if (!resolvedIsLive && shouldResetVisualizerGraph(previousSourceType, resolved)) {
     const hadVisualizerGraph = destroyVisualizerGraphForElement(el);
     if (hadVisualizerGraph) {
       graphClosedDuringHandoff = true;
-      el = replaceManagedAudioElement("analysis");
+      el = replaceManagedAudioElement();
     }
   }
 
@@ -2078,41 +1741,13 @@ async function loadTrack(index, {
   state.cacheable = resolved.cacheable ?? (resolvedSourceType === "remote" && !resolvedIsLive);
   state.analysisEligible = resolved.analysisEligible !== false;
   state.analysisActive = false;
-  state.outputMode = "web-audio";
   state.connectionState = resolvedIsLive ? "connecting" : "idle";
   activeResolvedSource = resolved;
 
   if (resolvedIsLive) {
-    const candidates = getRadioCandidates(resolved);
-    const initialCandidateIndex = getAutomaticRadioCandidateIndexes(resolved)[0] ?? -1;
-    const initialCandidate = candidates[initialCandidateIndex];
-    if (!initialCandidate) {
-      markRadioUnavailable("station-unavailable");
-      return;
-    }
-    const useVisualizerGraph = initialCandidate.outputMode === "web-audio" && supportsWebAudio();
-    if (useVisualizerGraph && fromUserGesture) primeAudioContext();
-    el = applyRadioCandidate(initialCandidate, initialCandidateIndex, {
-      forceNative: !useVisualizerGraph,
-    });
-    ownElementSource(el, resolved.revokeUrl);
+    el = applyRadioSource(resolved) || el;
   } else {
-    const outgoing = activateManagedAudioElement(el, "analysis");
-    if (outgoing) {
-      pendingOutgoingAudio = outgoing;
-      pendingInactiveNativeCleanup = getManagedAudioRole(outgoing) === "native-radio";
-    }
-    ownElementSource(el, resolved.revokeUrl);
-    // CORS is set before src so WebKit includes Origin on the first request.
-    setElementCrossOrigin(el, "anonymous");
-    el.preload = "metadata";
-    resetAudioElementPlaybackRate(el);
-    ignoreUnexpectedPauseUntilMs = Date.now() + 250;
-    markExpectedPause(el, "source-change", 250);
-    el.src = resolved.src;
-    resetAudioElementPlaybackRate(el);
-    el.volume = state.muted ? 0 : state.volume;
-    el.muted = state.muted;
+    configureAudioElementSource(el, resolved);
   }
 
   if (requestedStartTime > 0) {
@@ -2130,17 +1765,11 @@ async function loadTrack(index, {
       void armBackgroundModeKeepAlive();
     }
     if (resolvedIsLive) {
-      const graphPreparation = state.outputMode === "web-audio"
-        ? prepareGraphForElement(el)
-        : Promise.resolve(true);
       recordRadioDiagnostic("radio-gesture-order", {
         fromUserGesture,
         playerLeaseActive: isBackgroundAudioLeaseActive(PLAYER_BACKGROUND_AUDIO_LEASE),
-        graphPreparation: state.outputMode === "web-audio" ? "started" : "not-required",
         elementReused: previousElement === el,
-        activeRole: activeAudioRole,
-        outgoingRole: getManagedAudioRole(pendingOutgoingAudio),
-        graphPreserved: Boolean(getManagedAudioSlot("analysis") && getGraph(getManagedAudioSlot("analysis")!)),
+        graphPreserved: Boolean(getGraph(el)),
       });
       requestRadioElementPlayback(
         requestToken,
@@ -2149,36 +1778,6 @@ async function loadTrack(index, {
       updateMediaSessionMetadata();
       syncMediaSessionPlaybackState();
       notify();
-      const graphReady = await graphPreparation;
-      if (state.outputMode === "web-audio" && (!graphReady || !getGraph(el))) {
-        if (!isCurrentRadioToken(requestToken)) return;
-        state.analysisEligible = false;
-        state.outputMode = "native-background";
-        recordRadioDiagnostic("radio-visualizer", {
-          phase: "station-graph-preparation-failed",
-          automaticNativeRestoration: false,
-        });
-        notify();
-        return;
-      }
-      if (state.outputMode === "web-audio") {
-        observeGraphContext(el);
-        const graphResumed = await resumeGraphWithinGrace(el);
-        if (!isCurrentRadioToken(requestToken)) return;
-        if (!graphResumed) {
-          state.recoveryRequired = true;
-          state.error = "background-playback-blocked";
-          recordRadioDiagnostic("radio-visualizer", {
-            phase: "station-graph-context-suspended",
-            automaticNativeRestoration: false,
-          });
-          notify();
-        } else {
-          state.recoveryRequired = false;
-          state.error = null;
-          notify();
-        }
-      }
       return;
     }
     updateMediaSessionMetadata();
@@ -2186,9 +1785,6 @@ async function loadTrack(index, {
     await primeAudio();
     resetAudioElementPlaybackRate(el);
     const playResult = el.play();
-    const outgoing = pendingOutgoingAudio;
-    pendingOutgoingAudio = null;
-    parkOutgoingAfterPlayRequest(outgoing);
     void resumeVisualizerGraphForElement(el).catch(() => false);
     playResult.catch((err) => {
       if (suppressAutoplayError && isAutoplayBlockedError(err)) {
@@ -2210,9 +1806,6 @@ async function loadTrack(index, {
   }
 
   if (!autoplay) {
-    const outgoing = pendingOutgoingAudio;
-    pendingOutgoingAudio = null;
-    parkOutgoingAfterPlayRequest(outgoing);
     updateMediaSessionMetadata();
     syncMediaSessionPlaybackState();
   }
@@ -2382,7 +1975,6 @@ export function stopPlayback() {
   state.cacheable = false;
   state.analysisEligible = false;
   state.analysisActive = false;
-  state.outputMode = null;
   state.recoveryRequired = false;
   state.connectionState = "idle";
   state.loading = false;
@@ -2392,30 +1984,17 @@ export function stopPlayback() {
   clearPreparedNext();
   lastPersistedPlaybackSecond = -1;
 
-  const managedElements = new Set<ManagedAudioElement>();
-  const analysisElement = getManagedAudioSlot("analysis");
-  const nativeRadioElement = getManagedAudioSlot("native-radio");
-  if (analysisElement) managedElements.add(analysisElement);
-  if (nativeRadioElement) managedElements.add(nativeRadioElement);
-  for (const el of managedElements) {
-    unbindAudioElement(el);
-    destroyVisualizerGraphForElement(el);
-    clearAudioElementSource(el);
+  if (audio) {
+    unbindAudioElement(audio);
+    destroyVisualizerGraphForElement(audio);
+    clearAudioElementSource(audio);
   }
   audio = null;
-  activeAudioRole = null;
-  for (const slot of Object.values(managedAudioSlots)) {
-    slot.element = null;
-    slot.sourceRevoke = null;
-  }
-  pendingOutgoingAudio = null;
-  pendingInactiveNativeCleanup = false;
-  lastOutgoingAudioRole = null;
-  lastHandoffPhase = "disposed";
+  currentSourceRevoke = null;
   graphClosedDuringHandoff = false;
   primed = false;
   primeInFlight = null;
-  createManagedAudioElement("analysis");
+  audio = createManagedAudioElement();
 
   stopBackgroundModeKeepAlive();
   if (mediaSessionEnabled) clearMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER);
@@ -2657,7 +2236,7 @@ export async function playTrackNow(track, { fromUserGesture = false } = {}) {
 export function getState() {
   const el = audio;
   const graph = el ? getGraph(el) : null;
-  const analysisActive = state.outputMode === "web-audio" && graph?.audioContext?.state === "running";
+  const analysisActive = graph?.audioContext?.state === "running";
   return {
     queue: state.queue,
     playedHistory: state.playedHistory,
@@ -2676,7 +2255,6 @@ export function getState() {
     cacheable: state.cacheable,
     analysisEligible: state.analysisEligible,
     analysisActive,
-    outputMode: state.outputMode,
     backgroundPlaybackState: state.backgroundPlaybackState,
     recoveryRequired: state.recoveryRequired,
     connectionState: state.connectionState,
@@ -3027,8 +2605,7 @@ function onPlaying() {
     state.connectionState = "playing";
     state.radioFailureClass = null;
     const graphContext = audio ? getGraph(audio)?.audioContext : null;
-    const graphInterrupted = state.outputMode === "web-audio"
-      && Boolean(graphContext)
+    const graphInterrupted = Boolean(graphContext)
       && graphContext?.state !== "running";
     state.error = graphInterrupted ? "background-playback-blocked" : null;
     state.recoveryRequired = graphInterrupted;
@@ -3063,15 +2640,6 @@ function onPlaying() {
     recordRadioDiagnostic("radio-playing", { phase: "primary-playing" });
   }
   if (audio && getGraph(audio)) observeGraphContext(audio);
-  const inactiveNativeRadio = getManagedAudioSlot("native-radio");
-  if (activeAudioRole === "analysis" && pendingInactiveNativeCleanup
-    && inactiveNativeRadio && inactiveNativeRadio !== audio) {
-    clearAudioElementSource(inactiveNativeRadio);
-    pendingInactiveNativeCleanup = false;
-    lastHandoffPhase = "incoming-playing-outgoing-cleaned";
-  } else {
-    lastHandoffPhase = "incoming-playing";
-  }
   syncBackgroundModeKeepAlive();
   syncMediaSessionPlaybackState();
   applyPendingSeek();

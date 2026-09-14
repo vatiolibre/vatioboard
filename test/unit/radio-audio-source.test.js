@@ -53,7 +53,7 @@ function radio(overrides = {}) {
 describe("radio audio source resolution", () => {
   beforeEach(() => getStationByUuid.mockReset());
 
-  it("starts HTTPS stations on relay Web Audio with native compatibility candidates", async () => {
+  it("resolves HTTPS stations to the single analyser-eligible relay source", async () => {
     const result = await resolveAudioSource(`radio:${UUID}`, radio({
       url_resolved: "https://stream.example.com/live.mp3",
     }));
@@ -64,28 +64,9 @@ describe("radio audio source resolution", () => {
       seekable: false,
       cacheable: false,
       analysisEligible: true,
-      candidates: [
-        expect.objectContaining({
-          transport: "radio-relay",
-          analysisEligible: true,
-          outputMode: "web-audio",
-          automaticRecovery: true,
-        }),
-        expect.objectContaining({
-          src: "https://stream.example.com/live.mp3",
-          transport: "radio-direct-native",
-          analysisEligible: false,
-          outputMode: "native-background",
-          automaticRecovery: false,
-        }),
-        expect.objectContaining({
-          transport: "radio-relay",
-          analysisEligible: false,
-          outputMode: "native-background",
-          automaticRecovery: false,
-        }),
-      ],
     });
+    expect(result.src).toBe(`https://radio-media.vatioboard.com/v1/stations/${UUID}/stream`);
+    expect(result).not.toHaveProperty("candidates");
   });
 
   it("routes HTTP stations through the relay immediately", async () => {
@@ -98,10 +79,7 @@ describe("radio audio source resolution", () => {
       isLive: true,
     });
     expect(result.src).toContain(`/v1/stations/${UUID}/stream`);
-    expect(result.candidates).toEqual([
-      expect.objectContaining({ transport: "radio-relay", outputMode: "web-audio", automaticRecovery: true }),
-      expect.objectContaining({ transport: "radio-relay", outputMode: "native-background", automaticRecovery: false }),
-    ]);
+    expect(result).not.toHaveProperty("candidates");
   });
 
   it("rejects HLS and invalid station identities", async () => {
@@ -113,6 +91,6 @@ describe("radio audio source resolution", () => {
     const result = await resolveAudioSource(`radio:${UUID}`, radio());
     expect(getStationByUuid).not.toHaveBeenCalled();
     expect(result.src).toBe(`https://radio-media.vatioboard.com/v1/stations/${UUID}/stream`);
-    expect(result.candidates).toHaveLength(2);
+    expect(result).not.toHaveProperty("candidates");
   });
 });

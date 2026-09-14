@@ -17,9 +17,9 @@ The diagnostic flag is stored locally for the browser session. It records lifecy
 
 Radio reuses the same shared two-second silent keep-alive element as music, recording, and camera alerts; it does not create a second loop. A trusted station tap sets playback intent, selects the browser `playback` audio session, and acquires the `player-runtime` lease before requesting station playback. This is the same opportunistic ordering used by the mature music path: Tesla audio ownership is armed inside the gesture and remains continuous while the real source connects or changes.
 
-The Player keeps two bounded media-element roles, but normal playback uses only the `analysis` role. MP3 and relay radio share that physical element, reusable Web Audio graph, `AudioContext`, Player lease, Audio Session, and Media Session owner. Station changes and radio-to-music handoffs replace the source on that same channel without destroying its graph or closing its context. The graph-free `native-radio` role is reserved for the explicit **Use compatibility playback** recovery action (or browsers without Web Audio). Explicit Player Stop is the normal point at which both roles and the graph are disposed.
+The Player keeps one long-lived media element for both MP3 and relay radio. They share that physical element, reusable Web Audio graph, `AudioContext`, Player lease, Audio Session, and Media Session owner. Station changes and radio-to-music handoffs replace the source on that same channel without destroying its graph or closing its context. Explicit Player Stop is the normal point at which the element and graph are disposed.
 
-The Player lease is retained while a station connects, buffers, retries, fails, changes to another station, or explicitly enters/leaves compatibility playback. Only an explicit Player Pause or Stop releases it. Recording and armed camera/speed-alert leases are separate, so releasing the Player lease does not stop the shared loop while either of those owners remains active.
+The Player lease is retained while a station connects, buffers, retries, fails, or changes to another station. Only an explicit Player Pause or Stop releases it. Recording and armed camera/speed-alert leases are separate, so releasing the Player lease does not stop the shared loop while either of those owners remains active.
 
 ## Background audio matrix
 
@@ -31,11 +31,11 @@ Run each applicable combination with the Tesla browser or Player window minimize
 | Player minimized | Audio and Tesla Media Session play/pause continue to target the selected station. |
 | Browser minimized | Audio continues, or bounded recovery restores the same station without advancing the queue. |
 | Slow relay response | After 12 seconds the UI reports a slow connection, but keeps the same source request, element, graph, lease, and Media Session intact. |
-| Hard relay failure | A media error starts a privacy-safe station probe and retries the same relay/analysis channel once, then performs one delayed final retry; it never migrates to native automatically. |
-| Web Audio unavailable | Radio remains playable from the relay in graph-free mode and visualizers are reported unavailable. |
+| Hard relay failure | A media error starts a privacy-safe station probe and retries the same relay/analysis channel once, then performs one delayed final retry without changing elements. |
+| Web Audio unavailable | Radio remains playable from the relay and visualizers are reported unavailable. |
 | Visuals hidden | Rendering/analyser consumers stop, but the relay source, analysis element, graph, context, and Player lease remain unchanged. |
 | Visuals enabled | The existing **Visuals** toggle attaches to the already active shared graph and produces spectrum/scope data without changing transport. |
-| Suspended graph | The same station and Player lease remain intact and the explicit compatibility action is exposed; native playback is never selected silently. |
+| Suspended graph | The same station, element, and Player lease remain intact; use the normal Play control if a fresh gesture is required. |
 | Audio Session interruption | `interrupted` retains intent, source, graph, and leases. Recovery waits for `active`, a visible lifecycle event, or an explicit user action. |
 
 ## Cleared-cache MP3-to-radio regression
@@ -51,9 +51,9 @@ Repeat this exact sequence before the broader matrix:
 
 If startup fails, the report should include `relayEnvironment: "development"`, the Worker build version, and either a relay health state or categorical probe outcome. A healthy probe paired with a media decode error points toward CORS/codec/Web Audio compatibility; a failed probe identifies the directory, target, upstream, or content stage without storing the station URL.
 
-The report should show the same numeric keep-alive identity, retained `speed-alerts,player-runtime` lease IDs, the same primary/analysis element ID used by the MP3, `activeRole: "analysis"`, `analysisGraphPreserved: true`, and `graphClosedDuringHandoff: false`. A new primary element, graph close, native-role activation, or Player lease release between the trusted station tap and radio playback is a regression.
+The report should show the same numeric keep-alive identity, retained `speed-alerts,player-runtime` lease IDs, the same primary/analysis element ID used by the MP3, `analysisGraphPreserved: true`, and `graphClosedDuringHandoff: false`. A new primary element, graph close, or Player lease release between the trusted station tap and radio playback is a regression.
 
-After restoring the browser, verify the station remains selected and the connection status settles on playing. Visible-page lifecycle reconciliation rearms all retained owners and reconciles the same station element and AudioContext. If the shared graph cannot resume, **Use compatibility playback** explicitly moves only that live session to the native role. This mode may provide weaker visualizers and Tesla background continuity; the next station selection returns to the analysis channel.
+After restoring the browser, verify the station remains selected and the connection status settles on playing. Visible-page lifecycle reconciliation rearms all retained owners and reconciles the same station element and AudioContext. If the browser requires a fresh gesture, use the normal Play control; no alternate radio element or transport is created.
 
 Use the normal **Visuals** button to test radio spectrum/scope output; there is no separate radio-only visualizer action. Turning it on primes/resumes the already active shared graph without releasing the Player lease or changing the source. Select several stations and confirm the same relay-backed element/graph is reused. Turning Visuals off stops visual rendering only: transport, element, graph, and ownership must not change.
 
@@ -90,12 +90,11 @@ Download the background diagnostic JSON from Radio after every run and note:
 
 - Tesla model and software version;
 - test duration;
-- relay/analysis or explicit direct-native compatibility transport;
-- shared analysis or explicit compatibility mode;
+- relay transport on the shared analysis element;
 - whether VatioBoard took over the Tesla audio channel before minimization;
 - whether the Miniplayer showed normalized station artwork or the VatioBoard fallback;
 - whether audio continued, reconnected automatically, or required one tap;
-- whether station changes and Visuals transport changes remained free of competing Tesla audio;
+- whether station changes and Visuals state changes remained free of competing Tesla audio;
 - on iPhone Safari, whether both spectrum and scope produced live analyser data and survived a station change;
 - whether GPS callbacks continued or resumed after restoration;
 - whether recording and camera-alert intent survived radio pause, stop, failure, and recovery.

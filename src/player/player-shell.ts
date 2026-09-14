@@ -113,8 +113,7 @@ function getVisualizerModeLabel(mode) {
 }
 
 function isSafeVisualizerElement(audioElement, stateSnapshot = null) {
-  if (stateSnapshot?.outputMode === "native-background") return false;
-  if (stateSnapshot?.isLive) return stateSnapshot.analysisEligible === true;
+  if (stateSnapshot?.analysisEligible === false) return false;
   if (!audioElement?.src) return true;
   return isVisualizerSafeSource(audioElement.currentSrc || audioElement.src);
 }
@@ -393,15 +392,6 @@ export function createPlayerShell({
   errorMsg.className = "player-error";
   errorMsg.hidden = true;
 
-  const recoveryActions = document.createElement("div");
-  recoveryActions.className = "player-background-recovery-actions";
-  recoveryActions.hidden = true;
-  const recoveryBtn = document.createElement("button");
-  recoveryBtn.type = "button";
-  recoveryBtn.className = "player-background-recovery-btn";
-  recoveryBtn.textContent = t("playerRadioResumeBackground");
-  recoveryActions.append(recoveryBtn);
-
   // ── Progress ───────────────────────────────────────────────────
   const progressSection = document.createElement("div");
   progressSection.className = "player-progress-section";
@@ -638,7 +628,7 @@ export function createPlayerShell({
   // ── Assembly ───────────────────────────────────────────────────
   const body = document.createElement("div");
   body.className = "player-body";
-  body.append(nowPlaying, visualizerStrip, errorMsg, recoveryActions, progressSection, transport, volumeRow, utilityRow);
+  body.append(nowPlaying, visualizerStrip, errorMsg, progressSection, transport, volumeRow, utilityRow);
 
   root.append(header, body, contentSheet);
   container.append(root);
@@ -953,6 +943,7 @@ export function createPlayerShell({
       playStationBtn.disabled = station.hls === 1;
       playStationBtn.addEventListener("click", () => {
         _gestureUnlocked = true;
+        primeAudioContext();
         void runtime.playTrackNow(radioTrack, { fromUserGesture: true });
       });
       li.append(artwork, details, playStationBtn);
@@ -969,10 +960,6 @@ export function createPlayerShell({
     }));
   });
 
-  recoveryBtn.addEventListener("click", () => {
-    _gestureUnlocked = true;
-    void runtime.rearmBackgroundPlayback({ preferNative: true });
-  });
   copyDiagnosticsBtn.addEventListener("click", async () => {
     const copied = await copyBackgroundDiagnostics();
     copyDiagnosticsBtn.textContent = copied
@@ -1751,21 +1738,18 @@ export function createPlayerShell({
     }
   }
 
-  function syncVisualizerUi({ sourceSafe = true, nativeBackground = false } = {}) {
-    const effectiveVisible = visualizerVisible && !nativeBackground;
-    visualizerStrip.hidden = !effectiveVisible;
+  function syncVisualizerUi({ sourceSafe = true } = {}) {
+    visualizerStrip.hidden = !visualizerVisible;
     visualizerStrip.dataset.visualizerMode = visualizerMode;
     visualizerStrip.dataset.visualizerState = visualizerFailed
       ? "error"
-      : effectiveVisible
+      : visualizerVisible
         ? sourceSafe ? "ready" : "disabled"
         : "disabled";
-    visualizerToggleBtn.classList.toggle("active", effectiveVisible);
-    visualizerToggleBtn.setAttribute("aria-pressed", String(effectiveVisible));
-    visualizerLabel.textContent = nativeBackground
+    visualizerToggleBtn.classList.toggle("active", visualizerVisible);
+    visualizerToggleBtn.setAttribute("aria-pressed", String(visualizerVisible));
+    visualizerLabel.textContent = visualizerFailed || (visualizerVisible && !sourceSafe)
       ? t("mediaPlayerVisualizerUnavailable")
-      : visualizerFailed || (visualizerVisible && !sourceSafe)
-        ? t("mediaPlayerVisualizerUnavailable")
       : getVisualizerModeLabel(visualizerMode);
   }
 
@@ -1791,11 +1775,7 @@ export function createPlayerShell({
       visualizerFailed = true;
       visualizerController = null;
       visualizerMediaElement = null;
-      if (stateSnapshot.isLive && stateSnapshot.outputMode === "web-audio") {
-        void runtime.setRadioVisualizerEnabled?.(false);
-      } else {
-        syncVisualizerUi();
-      }
+      syncVisualizerUi();
       return null;
     }
 
@@ -1820,7 +1800,7 @@ export function createPlayerShell({
         && audioElement?.src,
     );
     const sourceSafe = isSafeVisualizerElement(audioElement, stateSnapshot);
-    syncVisualizerUi({ sourceSafe, nativeBackground: stateSnapshot.outputMode === "native-background" });
+    syncVisualizerUi({ sourceSafe });
     if (!hasPlayableSource) {
       stopVisualizer();
       destroyVisualizerController();
@@ -1854,19 +1834,11 @@ export function createPlayerShell({
       if (!started || !controller.isAvailable) {
         visualizerFailed = true;
         controller.stop();
-        if (stateSnapshot.isLive && stateSnapshot.outputMode === "web-audio") {
-          void runtime.setRadioVisualizerEnabled?.(false);
-        } else {
-          syncVisualizerUi();
-        }
+        syncVisualizerUi();
       }
     }).catch(() => {
       visualizerFailed = true;
-      if (stateSnapshot.isLive && stateSnapshot.outputMode === "web-audio") {
-        void runtime.setRadioVisualizerEnabled?.(false);
-      } else {
-        syncVisualizerUi();
-      }
+      syncVisualizerUi();
     });
   }
 
@@ -1882,26 +1854,6 @@ export function createPlayerShell({
     e.stopPropagation();
     _gestureUnlocked = true;
     primeAudioContext();
-    const snapshot = runtime.getState();
-    if (snapshot.isLive) {
-      const effectiveEnabled = visualizerVisible && snapshot.outputMode === "web-audio";
-      if (effectiveEnabled) {
-        setVisualizerVisible(false);
-        void runtime.setRadioVisualizerEnabled?.(false, { fromUserGesture: true });
-        return;
-      }
-      visualizerFailed = false;
-      const enableResult = runtime.setRadioVisualizerEnabled?.(true, { fromUserGesture: true });
-      void Promise.resolve(enableResult ?? false).then((enabled) => {
-        const current = runtime.getState();
-        if (enabled && current.isLive && current.outputMode === "web-audio") {
-          setVisualizerVisible(true);
-        } else {
-          syncVisualizerPlayback(current);
-        }
-      });
-      return;
-    }
     setVisualizerVisible(!visualizerVisible);
   });
 
@@ -2099,10 +2051,6 @@ export function createPlayerShell({
       sourceBadge.textContent = t("playerOffline");
       sourceBadge.hidden = false;
       sourceBadge.className = "player-source-badge offline";
-    } else if (s.sourceTransport === "radio-direct-native") {
-      sourceBadge.textContent = "LIVE · DIRECT";
-      sourceBadge.hidden = false;
-      sourceBadge.className = "player-source-badge live direct";
     } else if (s.sourceTransport === "radio-relay") {
       sourceBadge.textContent = s.connectionState === "slow"
         ? `LIVE · RELAY · ${t("playerRadioSlow")}`
@@ -2166,9 +2114,6 @@ export function createPlayerShell({
     } else {
       errorMsg.hidden = true;
     }
-    recoveryActions.hidden = !s.isLive || !s.recoveryRequired;
-    recoveryBtn.hidden = !s.recoveryRequired;
-
     if (queueOpen) {
       const queueSignature = getQueueRenderSignature(s.queue);
       if (queueSignature !== lastRenderedQueueSignature) {
