@@ -113,7 +113,11 @@ function getVisualizerModeLabel(mode) {
 }
 
 function isSafeVisualizerElement(audioElement, stateSnapshot = null) {
-  if (stateSnapshot?.analysisEligible === false) return false;
+  // A source change temporarily clears analysisEligible while the next URL is
+  // being resolved. The media element and its graph are still the same at
+  // that point, so treating the transient loading state as unsafe destroys a
+  // healthy MP3 visualizer in the middle of a Next/Previous handoff.
+  if (!stateSnapshot?.loading && stateSnapshot?.analysisEligible === false) return false;
   if (!audioElement?.src) return true;
   return isVisualizerSafeSource(audioElement.currentSrc || audioElement.src);
 }
@@ -1750,27 +1754,6 @@ export function createPlayerShell({
     const snapshot = runtime.getState();
     if (audioElement.src && !isSafeVisualizerElement(audioElement, snapshot)) return;
     void prepareGraphFromUserGesture(audioElement);
-
-    // This mirrors shared/media-player's proven MP3 ordering: analyser setup
-    // begins in the gesture callback and precedes mediaElement.play().
-    if (!visualizerVisible
-      || !snapshot.currentTrack
-      || !snapshot.sourceType
-      || !audioElement.src
-      || visualizerFailed) return;
-    const controller = getOrCreateVisualizer(snapshot);
-    if (!controller) return;
-    controller.setMode(visualizerMode);
-    void controller.start().then((started) => {
-      if (!started || !controller.isAvailable) {
-        visualizerFailed = true;
-        controller.stop();
-        syncVisualizerUi();
-      }
-    }).catch(() => {
-      visualizerFailed = true;
-      syncVisualizerUi();
-    });
   }
 
   function syncVisualizerUi({ sourceSafe = true } = {}) {
@@ -1872,12 +1855,17 @@ export function createPlayerShell({
     }
 
     controller.start().then((started) => {
+      // Track handoffs can replace/destroy a controller while start() is
+      // awaiting graph acquisition. A stale completion is cancellation, not
+      // evidence that the new source's visualizer is unavailable.
+      if (controller !== visualizerController) return;
       if (!started || !controller.isAvailable) {
         visualizerFailed = true;
         controller.stop();
         syncVisualizerUi();
       }
     }).catch(() => {
+      if (controller !== visualizerController) return;
       visualizerFailed = true;
       syncVisualizerUi();
     });

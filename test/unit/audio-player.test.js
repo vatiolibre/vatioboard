@@ -2369,6 +2369,7 @@ describe("player-shell", () => {
       resolveAudioSource: vi.fn(async (name, track = {}) => ({
         src: track.src || `https://cdn.example.com/${name}.mp3`,
         type: "remote",
+        analysisEligible: track.analysisEligible,
         revokeUrl: vi.fn(),
       })),
       hasLocalSource: vi.fn().mockResolvedValue(false),
@@ -2583,6 +2584,44 @@ describe("player-shell", () => {
     strip.click();
     expect(controller?.setMode).toHaveBeenCalledWith("spectrum");
     expect(strip.dataset.visualizerMode).toBe("spectrum");
+
+    shell.destroy();
+  });
+
+  it("does not latch visualizer failure when a track handoff cancels a pending start", async () => {
+    const container = document.createElement("div");
+    const shell = createPlayerShell({ container });
+    const strip = container.querySelector(".player-visualizer-strip");
+    runtime.setQueue([
+      { ...TRACK_A, src: "/audio/asset_a.mp3" },
+      { ...TRACK_B, src: "/audio/asset_b.mp3", analysisEligible: false },
+    ], { autoplay: true });
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_a");
+      expect(visualizerMockState.calls.length).toBeGreaterThan(0);
+    });
+
+    const firstController = visualizerMockState.calls.at(-1).controller;
+    let finishPendingStart;
+    firstController.start.mockImplementationOnce(() => new Promise((resolve) => {
+      finishPendingStart = resolve;
+    }));
+
+    container.querySelector(".player-btn-next").click();
+
+    await vi.waitFor(() => {
+      expect(runtime.getState().currentTrack?.name).toBe("asset_b");
+      expect(runtime.getState().analysisEligible).toBe(false);
+      expect(firstController.destroy).toHaveBeenCalled();
+      expect(finishPendingStart).toEqual(expect.any(Function));
+    });
+
+    finishPendingStart(false);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(strip.dataset.visualizerState).toBe("disabled");
 
     shell.destroy();
   });
