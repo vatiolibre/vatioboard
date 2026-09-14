@@ -144,25 +144,27 @@ curl -i \
 
 A healthy station reports `outcome: "ready"`. Failures are categorical and never include the station URL.
 
-Verify Media Session-compatible artwork with exact-origin CORS:
+Verify browser artwork both with exact-origin CORS and as a no-CORS CSS image:
 
 ```sh
 curl -I "https://radio-media.dev.vatioboard.com/v1/stations/$UUID/logo" \
   -H "Origin: https://dev.vatioboard.com"
+
+curl -I "https://radio-media.dev.vatioboard.com/v1/stations/$UUID/logo"
 ```
 
-The response must be `200` with a supported image content type. Finally, open `https://dev.vatioboard.com`, select Player -> Radio, and confirm the HTTP station displays `LIVE · RELAY` while the spectrum or scope visualizer receives data.
+Both responses must be `200` with a supported image content type. The exact-origin response includes CORS headers; the no-Origin response supports Chromium CSS backgrounds and Media Session artwork. Requests that include an unknown or `null` Origin remain forbidden. Finally, open `https://dev.vatioboard.com`, select Player -> Radio, and confirm the HTTP station displays `LIVE · RELAY` while the spectrum or scope visualizer receives data.
 
 ### Verified state
 
-This configuration was validated on 2026-09-10:
+This configuration was validated on 2026-09-13:
 
 - Both development hostnames resolved to the development server.
 - The radio certificate matched `radio-media.dev.vatioboard.com` and was valid through 2026-12-09.
 - Nginx was active and the Certbot renewal timer was enabled.
 - Vite's transformed environment contained the HTTPS radio-media base.
 - Allowed preflight returned `204`; a disallowed origin returned `403`.
-- Exact-origin artwork returned a cached PNG.
+- Exact-origin and no-Origin artwork returned cached PNGs, while explicit unknown origins were rejected.
 - A real HTTP station returned continuous 128 kbps MP3 data through Nginx and the Worker.
 
 The Vite and Wrangler processes are currently launched as interactive user processes. For unattended availability after logout or reboot, run them under the machine's process supervisor or dedicated systemd services.

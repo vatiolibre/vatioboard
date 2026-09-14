@@ -63,7 +63,7 @@ describe("radio media Worker", () => {
     vi.unstubAllGlobals();
   });
 
-  it("rejects malformed routes, methods, and every missing or unknown Origin", async () => {
+  it("rejects malformed routes, methods, and missing or unknown origins on protected routes", async () => {
     expect((await worker.fetch(request("/v1/proxy?url=https://example.com"), ENV)).status).toBe(400);
     expect((await worker.fetch(request(`/v1/stations/${UUID_A}/stream?url=x`), ENV)).status).toBe(400);
     expect((await worker.fetch(request("/v1/stations/not-a-uuid/stream"), ENV)).status).toBe(400);
@@ -83,6 +83,30 @@ describe("radio media Worker", () => {
     expect(rejectedHealth.status).toBe(403);
     expect(rejectedHealth.headers.get("Access-Control-Allow-Origin")).toBe("https://attacker.example");
     expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("allows no-Origin logo GET and HEAD requests used by CSS artwork", async () => {
+    mockRadioFetch({
+      station: (uuid) => stationResponse(uuid, { favicon: "https://images.example.com/logo.png" }),
+      upstream: () => new Response(new Uint8Array([1, 2, 3]), { headers: { "Content-Type": "image/png" } }),
+    });
+    const path = `${HOST}/v1/stations/${UUID_A}/logo`;
+    const image = await worker.fetch(new Request(path), ENV);
+    expect(image.status).toBe(200);
+    expect(image.headers.get("Content-Type")).toBe("image/png");
+    expect(image.headers.get("Access-Control-Allow-Origin")).toBeNull();
+    expect(image.headers.get("Cross-Origin-Resource-Policy")).toBe("cross-origin");
+
+    const head = await worker.fetch(new Request(path, { method: "HEAD" }), ENV);
+    expect(head.status).toBe(200);
+    expect(head.body).toBeNull();
+
+    const preflight = await worker.fetch(new Request(path, { method: "OPTIONS" }), ENV);
+    expect(preflight.status).toBe(403);
+    const explicitUnknown = await worker.fetch(new Request(path, {
+      headers: { Origin: "https://attacker.example" },
+    }), ENV);
+    expect(explicitUnknown.status).toBe(403);
   });
 
   it("serves versioned health with strict development CORS and security headers", async () => {
@@ -280,7 +304,10 @@ describe("radio media Worker", () => {
     expect(first.headers.get("Cache-Control")).toBe("public, max-age=86400");
     expect([...new Uint8Array(await first.arrayBuffer())]).toEqual([1, 2, 3]);
     const calls = vi.mocked(fetch).mock.calls.length;
-    expect((await worker.fetch(request(path), ENV)).headers.get("Content-Type")).toBe("image/png");
+    const cached = await worker.fetch(request(path), ENV);
+    expect(cached.headers.get("Content-Type")).toBe("image/png");
+    expect(cached.headers.get("Access-Control-Allow-Origin")).toBe(ORIGIN);
+    expect(cached.headers.get("Cross-Origin-Resource-Policy")).toBe("cross-origin");
     expect(fetch).toHaveBeenCalledTimes(calls);
     resetRadioMediaWorkerForTesting();
     entries.clear();

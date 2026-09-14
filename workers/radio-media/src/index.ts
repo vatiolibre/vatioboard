@@ -638,7 +638,15 @@ async function handleLogo(request: Request, env: Env, uuid: string, origin: stri
     const hit = await cache.match(cacheKey);
     if (hit) {
       logEvent("logo_hit");
-      return request.method === "HEAD" ? new Response(null, hit) : hit;
+      // Reapply the current route policy so older cached artwork cannot omit
+      // CORS/CORP headers after a Worker policy update.
+      const headers = new Headers(hit.headers);
+      corsHeaders(origin).forEach((value, key) => headers.set(key, value));
+      return new Response(request.method === "HEAD" ? null : hit.body, {
+        status: hit.status,
+        statusText: hit.statusText,
+        headers,
+      });
     }
   }
   logEvent("logo_miss");
@@ -687,9 +695,18 @@ export default {
     const isHealth = url.pathname === "/v1/health";
     const match = /^\/v1\/stations\/([^/]+)\/(stream|logo|probe)$/.exec(url.pathname);
     if (!isHealth && !match) return response(404, "Not found");
+    const route = match?.[2] as "stream" | "logo" | "probe" | undefined;
     const origin = request.headers.get("Origin");
     const origins = allowedOrigins(env);
-    if (!origin || !origins.has(origin)) {
+    // CSS background images and Media Session artwork are fetched in no-cors
+    // mode by some Chromium builds, so their GET/HEAD requests may omit Origin.
+    // The logo route is safe to expose this way because it accepts only a
+    // validated station UUID and never an arbitrary upstream URL. An explicit
+    // untrusted Origin, and every stream/probe/health request, remains denied.
+    const permitsMissingOrigin = route === "logo"
+      && origin === null
+      && (request.method === "GET" || request.method === "HEAD");
+    if ((!origin || !origins.has(origin)) && !permitsMissingOrigin) {
       // Health may echo the rejected origin on its error response so a
       // configured frontend can distinguish an allowlist mismatch from an
       // unreachable relay. No media or station data is exposed.
@@ -711,7 +728,7 @@ export default {
     }
     if (!match) return response(404, "Not found", origin);
     const uuid = match[1];
-    const route = match[2] as "stream" | "logo" | "probe";
+    if (!route) return response(404, "Not found", origin);
     if (!UUID_PATTERN.test(uuid)) {
       logEvent("invalid_uuid");
       return response(400, "Invalid station UUID");
