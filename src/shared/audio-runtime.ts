@@ -43,11 +43,6 @@ import {
 } from "./audio-mini-visualizer.js";
 import { getGraph } from "./audio-graph-registry.js";
 import { recordBackgroundDiagnostic } from "./background-diagnostics.js";
-import {
-  clearMediaSessionArtworkCache,
-  DEFAULT_PLAYER_ARTWORK,
-  getNormalizedMediaSessionArtwork,
-} from "./media-session-artwork.js";
 import { loadPlayerSession, savePlayerSession } from "./player-session.js";
 import {
   getRadioLogoUrl,
@@ -175,7 +170,6 @@ let activeResolvedSource: ResolvedAudioSource | null = null;
 let radioConnectionTimer: ReturnType<typeof setTimeout> | null = null;
 let radioReconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let radioStableTimer: ReturnType<typeof setTimeout> | null = null;
-let radioArtworkTimer: ReturnType<typeof setTimeout> | null = null;
 let radioProbeAbortController: AbortController | null = null;
 let radioRetryCount = 0;
 let radioRetryPhase: "initial" | "retry-current" | "delayed-final" = "initial";
@@ -187,7 +181,6 @@ let internalPauseDepth = 0;
 let ignoreUnexpectedPauseUntilMs = 0;
 let pendingRadioClickUuid = "";
 let pendingRadioClickQueueId = "";
-let radioArtworkRequestToken = 0;
 let radioArtworkStatus: "idle" | "loading" | "ready" | "failed" = "idle";
 let radioStartupAttemptId = 0;
 let radioSourceResetCount = 0;
@@ -203,7 +196,6 @@ const RADIO_CONNECT_TIMEOUT_MS = 12_000;
 const RADIO_RETRY_DELAY_MS = 5_000;
 const RADIO_STABLE_RESET_MS = 30_000;
 const RADIO_GRAPH_RESUME_GRACE_MS = 1_000;
-const RADIO_ARTWORK_STABLE_MS = 10_000;
 
 const PREPARE_MIN_LEAD_SECONDS = 8;
 const PREPARE_MAX_LEAD_SECONDS = 24;
@@ -542,11 +534,9 @@ function clearRadioTimers() {
   if (radioConnectionTimer) clearTimeout(radioConnectionTimer);
   if (radioReconnectTimer) clearTimeout(radioReconnectTimer);
   if (radioStableTimer) clearTimeout(radioStableTimer);
-  if (radioArtworkTimer) clearTimeout(radioArtworkTimer);
   radioConnectionTimer = null;
   radioReconnectTimer = null;
   radioStableTimer = null;
-  radioArtworkTimer = null;
 }
 
 function cancelRadioProbe() {
@@ -563,7 +553,6 @@ function resetRadioLifecycle() {
   radioConnectionStartedAtMs = 0;
   radioRetryDueAtMs = 0;
   radioStableSinceMs = 0;
-  radioArtworkRequestToken += 1;
   radioArtworkStatus = "idle";
   state.radioFailureClass = null;
   radioSourceResetCount = 0;
@@ -1435,7 +1424,6 @@ function bindLifecyclePersistence() {
   window.addEventListener("pageshow", handlePageShow);
   window.addEventListener("beforeunload", () => {
     flushSessionPersistence();
-    clearMediaSessionArtworkCache();
   });
   document.addEventListener("visibilitychange", flushOnHide);
   document.addEventListener("freeze", handleFreeze);
@@ -2627,16 +2615,6 @@ function onPlaying() {
       }
     }, RADIO_STABLE_RESET_MS);
     updateMediaSessionMetadata();
-    if (radioArtworkTimer) clearTimeout(radioArtworkTimer);
-    const artworkToken = loadRequestToken;
-    radioArtworkTimer = setTimeout(() => {
-      radioArtworkTimer = null;
-      if (isCurrentRadioToken(artworkToken)
-        && state.connectionState === "playing"
-        && Date.now() - radioStableSinceMs >= RADIO_ARTWORK_STABLE_MS) {
-        beginRadioArtworkNormalization(artworkToken);
-      }
-    }, RADIO_ARTWORK_STABLE_MS);
     recordRadioDiagnostic("radio-playing", { phase: "primary-playing" });
   }
   if (audio && getGraph(audio)) observeGraphContext(audio);
@@ -2670,6 +2648,13 @@ function updateMediaSessionMetadata() {
   if (!mediaSessionEnabled) return;
   const track = state.currentTrack;
   if (!track) return;
+  const artworkUrl = track.artwork_ref && isArtworkUrl(track.artwork_ref)
+    ? track.artwork_ref
+    : state.isLive ? getRadioLogoUrl(track.station_uuid || "") : "";
+
+  if (state.isLive) {
+    radioArtworkStatus = artworkUrl ? "ready" : "failed";
+  }
 
   updateMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER, {
     active: true,
@@ -2678,44 +2663,9 @@ function updateMediaSessionMetadata() {
       title: track.title || track.original_filename || track.name || "",
       artist: track.artist || track.folder_path || "",
       album: "VatioLibre",
-      ...(state.isLive
-        ? { artwork: DEFAULT_PLAYER_ARTWORK }
-        : { artworkUrl: track.artwork_ref && isArtworkUrl(track.artwork_ref) ? track.artwork_ref : "" }),
+      artworkUrl,
     },
     handlers: state.seekable ? SEEKABLE_MEDIA_SESSION_HANDLERS : LIVE_MEDIA_SESSION_HANDLERS,
-  });
-}
-
-function beginRadioArtworkNormalization(token: number) {
-  const track = state.currentTrack;
-  if (!state.isLive || !track) return;
-  const sourceUrl = track.artwork_ref && isArtworkUrl(track.artwork_ref)
-    ? track.artwork_ref
-    : getRadioLogoUrl(track.station_uuid || "");
-  if (!sourceUrl) return;
-  const artworkToken = ++radioArtworkRequestToken;
-  radioArtworkStatus = "loading";
-  recordRadioDiagnostic("radio-artwork", { phase: "normalizing", artworkStatus: radioArtworkStatus });
-  void getNormalizedMediaSessionArtwork(track.station_uuid || track.name || sourceUrl, sourceUrl).then((artwork) => {
-    if (token !== loadRequestToken || artworkToken !== radioArtworkRequestToken
-      || !state.isLive || !state.currentTrack) return;
-    radioArtworkStatus = artwork ? "ready" : "failed";
-    if (artwork && mediaSessionEnabled) {
-      updateMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER, {
-        active: true,
-        priority: PLAYER_MEDIA_SESSION_PRIORITY,
-        metadata: {
-          title: state.currentTrack.title || state.currentTrack.original_filename || state.currentTrack.name || "",
-          artist: state.currentTrack.artist || state.currentTrack.folder_path || "",
-          album: "VatioLibre",
-          artwork,
-        },
-      });
-    }
-    recordRadioDiagnostic("radio-artwork", {
-      phase: artwork ? "normalized" : "failed",
-      artworkStatus: radioArtworkStatus,
-    });
   });
 }
 

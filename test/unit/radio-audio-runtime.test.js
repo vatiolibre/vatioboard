@@ -303,9 +303,10 @@ describe("live radio audio runtime", () => {
     expect(liveUpdates).toContainEqual(expect.objectContaining({ positionState: null }));
     expect(liveUpdates).toContainEqual(expect.objectContaining({
       metadata: expect.objectContaining({
-        artwork: [{ src: "blob:station-artwork", sizes: "512x512", type: "image/png" }],
+        artworkUrl: `https://radio-media.vatioboard.com/v1/stations/${UUID}/logo`,
       }),
     }));
+    expect(getNormalizedMediaSessionArtwork).not.toHaveBeenCalled();
 
     await runtime.playTrackNow({
       name: `radio:${UUID}`,
