@@ -140,6 +140,7 @@ function installMocks() {
 
   vi.doMock("../../src/shared/audio-graph-registry.js", () => ({
     primeAudioContext: vi.fn(),
+    prepareGraphFromUserGesture: vi.fn().mockResolvedValue(false),
     acquireGraph: vi.fn().mockResolvedValue(null),
     releaseGraph: vi.fn(),
   }));

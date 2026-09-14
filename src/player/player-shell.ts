@@ -17,7 +17,7 @@ import {
 import { t } from "../i18n.js";
 import { createMiniAudioVisualizer } from "../shared/audio-mini-visualizer.js";
 import { isVisualizerSafeSource } from "../shared/audio-visualizer.js";
-import { primeAudioContext } from "../shared/audio-graph-registry.js";
+import { prepareGraphFromUserGesture } from "../shared/audio-graph-registry.js";
 import { loadMilkdropPanelVisibility } from "./milkdrop-panel-prefs.js";
 import * as runtime from "../shared/audio-runtime.js";
 import { loadText, saveText } from "../shared/storage.js";
@@ -942,9 +942,11 @@ export function createPlayerShell({
       playStationBtn.textContent = station.hls === 1 ? t("playerRadioHlsUnsupported") : t("playerRadioPlay");
       playStationBtn.disabled = station.hls === 1;
       playStationBtn.addEventListener("click", () => {
-        _gestureUnlocked = true;
-        primeAudioContext();
-        void runtime.playTrackNow(radioTrack, { fromUserGesture: true });
+        prepareVisualizersFromGesture();
+        void runtime.playTrackNow(radioTrack, {
+          fromUserGesture: true,
+          beforePlay: () => prepareVisualizersFromGesture(),
+        });
       });
       li.append(artwork, details, playStationBtn);
       radioListUl.append(li);
@@ -1124,8 +1126,7 @@ export function createPlayerShell({
       actionsDiv.className = "player-library-item-actions";
 
       function playTrackNow() {
-        _gestureUnlocked = true;
-        primeAudioContext();
+        prepareVisualizersFromGesture();
         void runtime.playLibraryTrackNow(track, audioTracks);
       }
 
@@ -1351,8 +1352,7 @@ export function createPlayerShell({
     playAllBtn.className = "player-playlist-play-all-btn";
     playAllBtn.textContent = t("playerPlayAll");
     playAllBtn.addEventListener("click", () => {
-      _gestureUnlocked = true;
-      primeAudioContext();
+      prepareVisualizersFromGesture();
       playPlaylistTracks(items, undefined);
     });
 
@@ -1539,8 +1539,7 @@ export function createPlayerShell({
       actionsDiv.append(playNextBtn, addToQueueBtn);
       li.append(infoDiv, actionsDiv);
       li.addEventListener("click", () => {
-        _gestureUnlocked = true;
-        primeAudioContext();
+        prepareVisualizersFromGesture();
         playPlaylistTracks(items, item);
       });
       playlistListUl.append(li);
@@ -1738,6 +1737,42 @@ export function createPlayerShell({
     }
   }
 
+  /**
+   * Start/resume the same shared graph used by the proven MP3 preview while
+   * the current event still has transient user activation. The radio loader
+   * invokes this once more after assigning its relay URL and before play().
+   */
+  function prepareVisualizersFromGesture({ force = false } = {}) {
+    _gestureUnlocked = true;
+    if (!force && !visualizerVisible) return;
+    const audioElement = getRuntimeAudioElement();
+    if (!audioElement) return;
+    const snapshot = runtime.getState();
+    if (audioElement.src && !isSafeVisualizerElement(audioElement, snapshot)) return;
+    void prepareGraphFromUserGesture(audioElement);
+
+    // This mirrors shared/media-player's proven MP3 ordering: analyser setup
+    // begins in the gesture callback and precedes mediaElement.play().
+    if (!visualizerVisible
+      || !snapshot.currentTrack
+      || !snapshot.sourceType
+      || !audioElement.src
+      || visualizerFailed) return;
+    const controller = getOrCreateVisualizer(snapshot);
+    if (!controller) return;
+    controller.setMode(visualizerMode);
+    void controller.start().then((started) => {
+      if (!started || !controller.isAvailable) {
+        visualizerFailed = true;
+        controller.stop();
+        syncVisualizerUi();
+      }
+    }).catch(() => {
+      visualizerFailed = true;
+      syncVisualizerUi();
+    });
+  }
+
   function syncVisualizerUi({ sourceSafe = true } = {}) {
     visualizerStrip.hidden = !visualizerVisible;
     visualizerStrip.dataset.visualizerMode = visualizerMode;
@@ -1790,6 +1825,12 @@ export function createPlayerShell({
     visualizerController?.destroy();
     visualizerController = null;
     visualizerMediaElement = null;
+  }
+
+  function resetVisualizerFailure() {
+    if (!visualizerFailed) return;
+    visualizerFailed = false;
+    destroyVisualizerController();
   }
 
   function syncVisualizerPlayback(stateSnapshot = runtime.getState()) {
@@ -1852,15 +1893,15 @@ export function createPlayerShell({
   visualizerToggleBtn.addEventListener("pointerup", (e) => e.stopPropagation());
   visualizerToggleBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    _gestureUnlocked = true;
-    primeAudioContext();
-    setVisualizerVisible(!visualizerVisible);
+    const nextVisible = !visualizerVisible;
+    if (nextVisible) resetVisualizerFailure();
+    prepareVisualizersFromGesture({ force: true });
+    setVisualizerVisible(nextVisible);
   });
 
   visualizerStrip.addEventListener("click", () => {
-    _gestureUnlocked = true;
-    primeAudioContext();
-    if (visualizerFailed) return;
+    resetVisualizerFailure();
+    prepareVisualizersFromGesture({ force: true });
     visualizerMode = getNextVisualizerMode(visualizerMode);
     saveSettingText(VISUALIZER_MODE_STORAGE_KEY, visualizerMode);
     visualizerController?.setMode(visualizerMode);
@@ -1904,6 +1945,7 @@ export function createPlayerShell({
   milkdropToggleBtn.addEventListener("pointerup", (e) => e.stopPropagation());
   milkdropToggleBtn.addEventListener("click", (e) => {
     e.stopPropagation();
+    prepareVisualizersFromGesture({ force: true });
     void ensureMilkdropPanel().then((panel) => {
       panel?.toggle?.();
       syncMilkdropToggle();
@@ -1917,11 +1959,7 @@ export function createPlayerShell({
 
   // ── Event wiring ───────────────────────────────────────────────
   playBtn.addEventListener("click", () => {
-    // Pre-warm AudioContext synchronously from the user gesture so iOS
-    // Safari allows it to enter the "running" state.  acquireGraph()
-    // will reuse this context when the visualizer starts later.
-    _gestureUnlocked = true;
-    primeAudioContext();
+    prepareVisualizersFromGesture();
 
     const s = runtime.getState();
     if (s.paused || !s.playing) {
@@ -1933,13 +1971,11 @@ export function createPlayerShell({
   });
 
   prevBtn.addEventListener("click", () => {
-    _gestureUnlocked = true;
-    primeAudioContext();
+    prepareVisualizersFromGesture();
     void runtime.previousTrack();
   });
   nextBtn.addEventListener("click", () => {
-    _gestureUnlocked = true;
-    primeAudioContext();
+    prepareVisualizersFromGesture();
     void runtime.nextTrack();
   });
   shuffleBtn.addEventListener("click", () => runtime.toggleShuffle());
@@ -2197,8 +2233,7 @@ export function createPlayerShell({
 
       li.append(nameSpan, artistSpan, durationSpan, badge, removeBtn);
       li.addEventListener("click", () => {
-        _gestureUnlocked = true;
-        primeAudioContext();
+        prepareVisualizersFromGesture();
         void runtime.playTrackByName(track._queueId || track.name);
       });
 

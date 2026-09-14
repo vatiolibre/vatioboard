@@ -117,6 +117,7 @@ function installMilkdropMocks() {
     acquireGraph: acquireGraphMock,
     releaseGraph: releaseGraphMock,
     primeAudioContext: vi.fn(),
+    prepareGraphFromUserGesture: vi.fn().mockResolvedValue(true),
   }));
   vi.doMock("../../src/shared/audio-visualizer.js", () => ({
     isVisualizerSafeSource: vi.fn(() => true),

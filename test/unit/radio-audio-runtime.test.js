@@ -324,7 +324,7 @@ describe("live radio audio runtime", () => {
     });
   });
 
-  it("arms the Player lease before synchronously playing relay radio", async () => {
+  it("arms the Player lease and prepares visualization before synchronously playing relay radio", async () => {
     const runtime = await import("../../src/shared/audio-runtime.js");
     const order = [];
     acquireBackgroundAudioLease.mockImplementationOnce(() => {
@@ -344,12 +344,18 @@ describe("live radio audio runtime", () => {
       media_kind: "radio",
       station_uuid: UUID,
       hls: 0,
-    }, { fromUserGesture: true });
+    }, {
+      fromUserGesture: true,
+      beforePlay: (audioElement) => {
+        expect(audioElement.src).toBe(relay);
+        order.push("visualizer");
+      },
+    });
 
     const element = runtime.getAudioElement();
     expect(playSpy).toHaveBeenCalledTimes(1);
     expect(element.src).toBe(relay);
-    expect(order).toEqual(["lease", "play"]);
+    expect(order).toEqual(["lease", "visualizer", "play"]);
     expect(acquireBackgroundAudioLease).toHaveBeenCalledTimes(1);
     expect(clearMediaSessionClient).not.toHaveBeenCalled();
     expect(registerStationClick).not.toHaveBeenCalled();
@@ -357,7 +363,7 @@ describe("live radio audio runtime", () => {
     expect(updateMediaSessionClient.mock.calls.some((call) => call[1]?.metadata)).toBe(true);
     expect(runtime.getState().connectionState).toBe("connecting");
     element.dispatchEvent(new Event("playing"));
-    expect(order).toEqual(["lease", "play"]);
+    expect(order).toEqual(["lease", "visualizer", "play"]);
     await selection;
     playSpy.mockRestore();
   });
@@ -700,7 +706,7 @@ describe("live radio audio runtime", () => {
     expect(runtime.getAudioElement().src).toBe(relay);
   });
 
-  it("keeps graph recovery on the same radio element when its context cannot resume", async () => {
+  it("keeps graph recovery on the same radio element without changing transport state", async () => {
     const runtime = await import("../../src/shared/audio-runtime.js");
     await runtime.playTrackNow({
       name: `radio:${UUID}`,
@@ -725,7 +731,9 @@ describe("live radio audio runtime", () => {
     await reconciliation;
 
     expect(runtime.getState()).toMatchObject({
-      recoveryRequired: true,
+      recoveryRequired: false,
+      error: null,
+      connectionState: "connecting",
     });
     expect(runtime.getState().sourceTransport).toBe("radio-relay");
     expect(runtime.getAudioElement()).toBe(visualizerElement);

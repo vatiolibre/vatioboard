@@ -58,7 +58,11 @@ export function getGraph(mediaElement: HTMLMediaElement): GraphEntry | null {
 }
 
 async function resumeGraphContext(entry: GraphEntry | null | undefined): Promise<void> {
-  if (entry?.audioContext?.state === "suspended") {
+  const state = String(entry?.audioContext?.state || "closed");
+  // WebKit can expose the non-standard `interrupted` state on iPhone/iPad.
+  // Treat every non-running, non-closed context as resumable so a gesture can
+  // recover the same graph instead of leaving its analysers permanently idle.
+  if (entry?.audioContext && state !== "running" && state !== "closed") {
     try { await entry.audioContext.resume(); } catch { /* best effort */ }
   }
 }
@@ -114,7 +118,7 @@ export function primeAudioContext(): boolean {
   try {
     const ctx = _primedAudioContext || new AudioContextCtor();
     // resume() inside a user gesture puts iOS Safari into "running".
-    if (ctx.state === "suspended") {
+    if (String(ctx.state) !== "running" && String(ctx.state) !== "closed") {
       ctx.resume().catch(() => {});
     }
     _primedAudioContext = ctx;
@@ -163,7 +167,9 @@ export async function acquireGraph(mediaElement: HTMLMediaElement): Promise<Grap
     }
 
     try {
-      if (audioContext.state === "suspended") await audioContext.resume();
+      if (String(audioContext.state) !== "running" && String(audioContext.state) !== "closed") {
+        await audioContext.resume();
+      }
     } catch {
       try { await audioContext.close(); } catch { /* ignore */ }
       return null;
@@ -227,6 +233,20 @@ export function prepareGraphForElement(mediaElement: HTMLMediaElement): Promise<
     releaseGraph(mediaElement);
     return true;
   }, () => false);
+}
+
+/**
+ * Prime/resume the shared graph synchronously from a trusted user gesture.
+ *
+ * This is the common gesture entry point for the MP3 preview, the Player's
+ * spectrum/scope, and Milkdrop. Graph acquisition begins before this function
+ * returns so WebKit's transient user activation is still available.
+ */
+export function prepareGraphFromUserGesture(mediaElement: HTMLMediaElement): Promise<boolean> {
+  // acquireGraph creates/resumes the context synchronously until its first
+  // await, so invoking it here preserves the gesture without a second context
+  // or duplicate resume request.
+  return prepareGraphForElement(mediaElement);
 }
 
 /**

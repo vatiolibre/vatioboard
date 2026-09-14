@@ -675,6 +675,15 @@ function configureAudioElementSource(
   resetAudioElementPlaybackRate(el);
 }
 
+function startConfiguredAudioElement(el: ManagedAudioElement): Promise<void> {
+  resetAudioElementPlaybackRate(el);
+  // Match the working MP3 visualizer lifecycle: resume the already-bound
+  // graph first, then ask the media element to play. Calling resume() here is
+  // synchronous even though its completion is best-effort and asynchronous.
+  void resumeVisualizerGraphForElement(el).catch(() => false);
+  return Promise.resolve(el.play());
+}
+
 function applyRadioSource(resolved = activeResolvedSource) {
   if (!resolved) return null;
   const el = getAudio();
@@ -804,12 +813,11 @@ function requestRadioElementPlayback(token, cause = "connection") {
 
   let playResult: Promise<void> | void;
   try {
-    playResult = el.play();
+    playResult = startConfiguredAudioElement(el);
   } catch (error) {
     handleElementPlayRejection(token, error, cause);
     return;
   }
-  void resumeVisualizerGraphForElement(el).catch(() => false);
   Promise.resolve(playResult).catch((error) => handleElementPlayRejection(token, error, cause));
   recordRadioDiagnostic("radio-play-request", {
     reason: cause,
@@ -940,13 +948,9 @@ export async function reconcileBackgroundPlayback(reason = "lifecycle-visible", 
     return false;
   }
 
-  const backgroundState = getBackgroundAudioState();
   const needsElementRecovery = el.paused
     || el.ended
     || state.recoveryRequired;
-  const wasInterrupted = needsElementRecovery
-    || backgroundState.status === "interrupted"
-    || backgroundState.status === "blocked";
   const graphResumePromise = getGraph(el)
     ? resumeGraphWithinGrace(el)
     : Promise.resolve(true);
@@ -972,15 +976,10 @@ export async function reconcileBackgroundPlayback(reason = "lifecycle-visible", 
   }
 
   const graphReady = await graphResumePromise;
-  if (!graphReady && wasInterrupted && isCurrentRadioToken(loadRequestToken)) {
-    state.recoveryRequired = true;
-    state.error = "background-playback-blocked";
+  if (!graphReady && isCurrentRadioToken(loadRequestToken)) {
     recordRadioDiagnostic("radio-visualizer", {
       phase: "resume-failed",
-      automaticNativeRestoration: false,
     });
-    notify();
-    return false;
   }
   return needsElementRecovery;
 }
@@ -1636,13 +1635,14 @@ function autoSkipUnavailable(autoplay = !state.paused) {
  * Load and play a track from the queue by index.
  *
  * @param {number} index - Queue index
- * @param {{ startTime?: number, autoplay?: boolean, suppressAutoplayError?: boolean, fromUserGesture?: boolean }} [opts]
+ * @param {{ startTime?: number, autoplay?: boolean, suppressAutoplayError?: boolean, fromUserGesture?: boolean, beforePlay?: ((element: HTMLAudioElement) => void) | null }} [opts]
  */
 async function loadTrack(index, {
   startTime = 0,
   autoplay = true,
   suppressAutoplayError = false,
   fromUserGesture = false,
+  beforePlay = null,
 } = {}) {
   const track = state.queue[index];
   if (!track) return;
@@ -1761,6 +1761,9 @@ async function loadTrack(index, {
   if (!resolvedIsLive || !autoplay) notify();
 
   if (autoplay) {
+    if (typeof beforePlay === "function") {
+      try { beforePlay(el); } catch { /* visualization preparation is optional */ }
+    }
     if (state.backgroundMode && !resolvedIsLive) {
       void armBackgroundModeKeepAlive();
     }
@@ -1783,9 +1786,7 @@ async function loadTrack(index, {
     updateMediaSessionMetadata();
     syncMediaSessionPlaybackState();
     await primeAudio();
-    resetAudioElementPlaybackRate(el);
-    const playResult = el.play();
-    void resumeVisualizerGraphForElement(el).catch(() => false);
+    const playResult = startConfiguredAudioElement(el);
     playResult.catch((err) => {
       if (suppressAutoplayError && isAutoplayBlockedError(err)) {
         state.paused = true;
@@ -1924,9 +1925,7 @@ export async function play() {
     applyPendingSeek();
     await primeAudio();
     applyPendingSeek();
-    resetAudioElementPlaybackRate(el);
-    const playResult = el.play();
-    void resumeVisualizerGraphForElement(el).catch(() => false);
+    const playResult = startConfiguredAudioElement(el);
     playResult.catch((err) => {
       if (err?.name !== "AbortError") {
         state.error = "playback-failed";
@@ -2210,8 +2209,10 @@ export async function playLibraryTrackNow(track, libraryTracks) {
 /**
  * Play an arbitrary track immediately while preserving the pending queue.
  * Used by Radio so discovery results never become queue entries en masse.
+ * @param {object} track
+ * @param {{ fromUserGesture?: boolean, beforePlay?: ((element: HTMLAudioElement) => void) | null }} [options]
  */
-export async function playTrackNow(track, { fromUserGesture = false } = {}) {
+export async function playTrackNow(track, { fromUserGesture = false, beforePlay = null } = {}) {
   const selectedTrack = ensureQueueEntry(track);
   if (!selectedTrack) return false;
 
@@ -2226,7 +2227,7 @@ export async function playTrackNow(track, { fromUserGesture = false } = {}) {
   pendingRadioClickUuid = selectedTrack.media_kind === "radio" ? selectedTrack.station_uuid || "" : "";
   pendingRadioClickQueueId = pendingRadioClickUuid ? selectedTrack._queueId : "";
   flushSessionPersistence({ currentTime: 0 });
-  await loadTrack(0, { autoplay: true, fromUserGesture });
+  await loadTrack(0, { autoplay: true, fromUserGesture, beforePlay });
   return true;
 }
 
@@ -2604,11 +2605,10 @@ function onPlaying() {
     radioRetryPhase = "initial";
     state.connectionState = "playing";
     state.radioFailureClass = null;
-    const graphContext = audio ? getGraph(audio)?.audioContext : null;
-    const graphInterrupted = Boolean(graphContext)
-      && graphContext?.state !== "running";
-    state.error = graphInterrupted ? "background-playback-blocked" : null;
-    state.recoveryRequired = graphInterrupted;
+    // Web Audio is a progressive enhancement. A graph/context failure must
+    // never alter the successful radio transport state.
+    state.error = null;
+    state.recoveryRequired = false;
     radioStableSinceMs = Date.now();
     const uuid = state.currentTrack?.station_uuid || "";
     if (uuid && pendingRadioClickUuid === uuid) {

@@ -981,7 +981,10 @@ describe("createPlayerWidget", () => {
         media_kind: "radio",
         station_uuid: station.stationuuid,
       }),
-      { fromUserGesture: true },
+      expect.objectContaining({
+        fromUserGesture: true,
+        beforePlay: expect.any(Function),
+      }),
     );
     expect(runtimeMock.setQueue).not.toHaveBeenCalled();
     widget.destroy();

@@ -275,7 +275,10 @@ export interface AudioRuntime {
   play(options?: unknown): Promise<boolean> | boolean;
   pause(options?: unknown): void;
   stopPlayback(options?: unknown): void;
-  playTrackNow?(track: unknown, options?: { fromUserGesture?: boolean }): Promise<boolean> | boolean;
+  playTrackNow?(track: unknown, options?: {
+    fromUserGesture?: boolean;
+    beforePlay?: ((element: HTMLAudioElement) => void) | null;
+  }): Promise<boolean> | boolean;
   rearmBackgroundPlayback?(): Promise<boolean> | boolean;
 }
 

@@ -647,6 +647,13 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     root.hidden = false;
     if (persist) saveVisibility(true);
 
+    // A failed AudioContext resume/acquire on iOS is often transient. An
+    // explicit reopen is a fresh user-driven attempt, not a permanent latch.
+    if (!wasOpen && failed) {
+      teardownAudioWiring();
+      failed = false;
+    }
+
     // Always clamp to viewport on open to prevent overflow
     clampPanelToWindow();
 

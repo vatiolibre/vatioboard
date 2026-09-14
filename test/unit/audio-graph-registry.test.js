@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   acquireGraph,
   prepareGraphForElement,
+  prepareGraphFromUserGesture,
   releaseGraph,
   getGraph,
   destroyGraphForElement,
@@ -48,6 +49,34 @@ describe("audio-graph-registry", () => {
   });
 
   describe("acquireGraph", () => {
+    it("prepares the source graph from a gesture before media playback starts", async () => {
+      const preparation = prepareGraphFromUserGesture(mediaElement);
+
+      expect(window.AudioContext).toHaveBeenCalledTimes(1);
+      expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledWith(mediaElement);
+      expect(fakeSourceNode.connect).toHaveBeenCalledWith(fakeAudioContext.destination);
+      await expect(preparation).resolves.toBe(true);
+    });
+
+    it("does not create another context while gesture preparation is pending", async () => {
+      let resumeContext;
+      fakeAudioContext.state = "suspended";
+      fakeAudioContext.resume = vi.fn(() => new Promise((resolve) => {
+        resumeContext = () => {
+          fakeAudioContext.state = "running";
+          resolve();
+        };
+      }));
+
+      const first = prepareGraphFromUserGesture(mediaElement);
+      const second = prepareGraphFromUserGesture(mediaElement);
+
+      expect(window.AudioContext).toHaveBeenCalledTimes(1);
+      resumeContext();
+      await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+      expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
+    });
+
     it("prepares and caches a graph without retaining a consumer reference", async () => {
       const preparation = prepareGraphForElement(mediaElement);
       expect(window.AudioContext).toHaveBeenCalledTimes(1);
@@ -184,6 +213,18 @@ describe("audio-graph-registry", () => {
 
       expect(fakeAudioContext.resume).toHaveBeenCalled();
       expect(entry.refCount).toBe(0);
+    });
+
+    it("attempts to resume WebKit's interrupted context state", async () => {
+      await acquireGraph(mediaElement);
+      releaseGraph(mediaElement);
+      fakeAudioContext.state = "interrupted";
+      fakeAudioContext.resume = vi.fn(async () => {
+        fakeAudioContext.state = "running";
+      });
+
+      await expect(resumeGraphForElement(mediaElement)).resolves.toBe(true);
+      expect(fakeAudioContext.resume).toHaveBeenCalledTimes(1);
     });
   });
 
