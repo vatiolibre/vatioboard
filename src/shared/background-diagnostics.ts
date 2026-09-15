@@ -1,8 +1,14 @@
 const ENABLE_KEY = "vatioboard.debug.background";
 const STORAGE_KEY = "vatioboard.debug.background.events.v1";
 const MAX_EVENTS = 250;
+let memoryEnabled = false;
+let memoryEvents: BackgroundDiagnosticEntry[] = [];
 
 const ALLOWED_FIELDS = new Set([
+  "action", "hidden", "heartbeat", "wallTime", "performanceTime", "wallDelta", "performanceDelta",
+  "leaseCount", "primaryCurrentTime", "keepAliveCurrentTime", "keepAliveDuration",
+  "keepAliveLoop", "keepAliveMuted", "keepAliveVolume", "keepAlivePlaybackRate", "keepAliveEnded",
+  "primaryTimeupdates", "keepAliveTimeupdates",
   "visibility",
   "lifecycle",
   "isLive",
@@ -77,15 +83,22 @@ function readEnabledPreference() {
   try {
     return sessionStorage.getItem(ENABLE_KEY) === "1";
   } catch {
-    return false;
+    return memoryEnabled;
   }
 }
 
 function enableFromLocation() {
   try {
-    const requested = new URL(window.location.href).searchParams.get("debugBackground");
-    if (requested === "1") sessionStorage.setItem(ENABLE_KEY, "1");
-    if (requested === "0") sessionStorage.removeItem(ENABLE_KEY);
+    const params = new URL(window.location.href).searchParams;
+    const requested = params.get("debugAudio") ?? params.get("debugBackground");
+    if (requested === "1") {
+      memoryEnabled = true;
+      sessionStorage.setItem(ENABLE_KEY, "1");
+    }
+    if (requested === "0") {
+      memoryEnabled = false;
+      sessionStorage.removeItem(ENABLE_KEY);
+    }
   } catch {
     // Diagnostics are optional and must never affect playback.
   }
@@ -115,7 +128,7 @@ export function getBackgroundDiagnostics(): BackgroundDiagnosticEntry[] {
     const parsed: unknown = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "[]");
     return Array.isArray(parsed) ? parsed.slice(-MAX_EVENTS) as BackgroundDiagnosticEntry[] : [];
   } catch {
-    return [];
+    return memoryEvents.slice();
   }
 }
 
@@ -127,8 +140,9 @@ export function recordBackgroundDiagnostic(event: string, detail: Record<string,
     event: String(event || "unknown").slice(0, 80),
     detail: sanitizeDetail(detail),
   });
+  memoryEvents = entries.slice(-MAX_EVENTS);
   try {
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(entries.slice(-MAX_EVENTS)));
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(memoryEvents));
   } catch {
     // Diagnostics are best effort.
   }

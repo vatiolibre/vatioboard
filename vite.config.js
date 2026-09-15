@@ -126,6 +126,7 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: resolve(__dirname, "index.html"),
+        teslaAudio: resolve(__dirname, "tesla-background-audio.html"),
       },
       output: {
         manualChunks: getManualChunk,

@@ -141,6 +141,52 @@ describe("audio-system background leases", () => {
     expect(audioSystem.isBackgroundAudioLeaseActive("drive-recording")).toBe(true);
     expect(audioSystem.isBackgroundAudioLeaseActive("speed-alerts")).toBe(true);
   });
+  it("an old arm completion cannot stop or clear a newer arm after release/reacquire", async () => {
+    const audio = audioSystem.getBackgroundKeepAliveAudio();
+    const completions = [];
+    audio.play = vi.fn(() => new Promise((resolve) => { completions.push(resolve); }));
+    const oldArm = audioSystem.acquireBackgroundAudioLease("player-runtime");
+    audioSystem.releaseBackgroundAudioLease("player-runtime");
+    const newArm = audioSystem.acquireBackgroundAudioLease("drive-recording");
+    completions[0]();
+    expect(await oldArm).toBe(false);
+    expect(audioSystem.isBackgroundAudioArmPending()).toBe(true);
+    audio.paused = false;
+    completions[1]();
+    expect(await newArm).toBe(true);
+    expect(audio.paused).toBe(false);
+    expect(audioSystem.getBackgroundAudioState().activeLeaseIds).toEqual(["drive-recording"]);
+  });
+
+  it("makes one automatic recovery attempt and waits for a gesture after rejection", async () => {
+    const audio = audioSystem.getBackgroundKeepAliveAudio();
+    await audioSystem.acquireBackgroundAudioLease("player-runtime");
+    const originalPlay = audio.play.bind(audio);
+    audio.play = vi.fn().mockRejectedValue(new DOMException("blocked", "NotAllowedError"));
+    audio.pause();
+    await vi.waitFor(() => expect(audioSystem.getBackgroundAudioState().status).toBe("blocked"));
+    for (let i = 0; i < 5; i++) {
+      audio.dispatchEvent(new Event("pause"));
+      window.dispatchEvent(new Event("pageshow"));
+      await audioSystem.acquireBackgroundAudioLease("player-runtime");
+    }
+    expect(audio.play).toHaveBeenCalledTimes(1);
+    audio.play = originalPlay;
+    expect(await audioSystem.activateBackgroundAudioFromGesture()).toBe(true);
+    expect(audio.paused).toBe(false);
+  });
+
+  it("initiates every registered activation before any pending promise settles", async () => {
+    const primary = vi.fn(() => new Promise(() => {}));
+    const alerts = vi.fn(() => new Promise(() => {}));
+    const removePrimary = audioSystem.registerBackgroundAudioGestureHandler(primary);
+    const removeAlerts = audioSystem.registerBackgroundAudioGestureHandler(alerts);
+    void audioSystem.activateBackgroundAudioFromGesture();
+    expect(primary).toHaveBeenCalledTimes(1);
+    expect(alerts).toHaveBeenCalledTimes(1);
+    removePrimary(); removeAlerts();
+  });
+
 });
 
 describe("media-session-adapter clients", () => {

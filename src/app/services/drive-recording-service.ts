@@ -8,6 +8,7 @@ import {
 import { distanceMeters } from "../../shared/geo-heading.js";
 import {
   acquireBackgroundAudioLease,
+  activateBackgroundAudioFromGesture,
   isBackgroundAudioLeaseActive,
   releaseBackgroundAudioLease,
   subscribeBackgroundAudioState,
@@ -222,6 +223,7 @@ export function createDriveRecordingService({
     if (fromUserGesture) {
       state.keepAliveSuppressed = false;
       state.keepAliveBlocked = false;
+      void activateBackgroundAudioFromGesture();
     }
     if (isBackgroundAudioLeaseActive(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE)) {
       state.keepAliveArmed = true;
@@ -243,7 +245,6 @@ export function createDriveRecordingService({
     try {
       const armed = await keepAlivePromise;
       if (revision !== state.keepAliveRevision || state.recordingState !== "recording") {
-        releaseBackgroundAudioLease(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE);
         return false;
       }
       state.keepAliveArmed = armed && isBackgroundAudioLeaseActive(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE);
@@ -251,8 +252,10 @@ export function createDriveRecordingService({
       state.keepAliveBlocked = !state.keepAliveArmed;
       return state.keepAliveArmed;
     } finally {
-      state.keepAlivePending = false;
-      keepAlivePromise = null;
+      if (revision === state.keepAliveRevision) {
+        state.keepAlivePending = false;
+        keepAlivePromise = null;
+      }
       updateMediaSession();
       emit();
     }

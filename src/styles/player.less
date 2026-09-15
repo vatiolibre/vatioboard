@@ -502,6 +502,7 @@ html.vb-floating-drag-active body {
   display: none;
 }
 
+.player-background-rearm,
 .player-radio-diagnostics button {
   min-height: 36px;
   padding: 7px 12px;
@@ -509,6 +510,12 @@ html.vb-floating-drag-active body {
   border-radius: 9px;
   color: inherit;
   background: rgba(255, 255, 255, 0.07);
+}
+
+.player-background-rearm {
+  min-height: var(--vb-touch-target-min, 44px);
+  font: inherit;
+  cursor: pointer;
 }
 
 /* ── Progress ─────────────────────────────────────────────────────── */

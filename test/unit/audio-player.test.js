@@ -1101,7 +1101,7 @@ describe("audio-runtime", () => {
     expect(runtime.getState().shuffle).toBe(false);
   });
 
-  it("background mode enables on playback start and keeps a silent keepalive only while active", async () => {
+  it("background mode retains the silent keepalive through Pause until Stop", async () => {
     runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
 
     await vi.waitFor(() => {
@@ -1121,10 +1121,10 @@ describe("audio-runtime", () => {
     });
 
     runtime.pause();
-
-    await vi.waitFor(() => {
-      expect(keepAliveAudio.paused).toBe(true);
-    });
+    expect(keepAliveAudio.paused).toBe(false);
+    expect(navigator.mediaSession.playbackState).toBe("playing");
+    runtime.stopPlayback();
+    expect(keepAliveAudio.paused).toBe(true);
   });
 
   it("background mode enables for autoplay queue starts", async () => {
@@ -1908,9 +1908,11 @@ describe("audio-runtime", () => {
     }
   });
 
-  it("primeAudio resolves false when no source is loaded yet", async () => {
+  it("primeAudio primes the permanent element with silent PCM before a source is loaded", async () => {
     const result = await runtime.primeAudio();
-    expect(result).toBe(false);
+    expect(result).toBe(true);
+    expect(runtime.getAudioElement().src).toBe("blob:test-url");
+    expect(runtime.getState().paused).toBe(true);
   });
 
   it("primeAudio resolves true immediately when element has src", async () => {
@@ -1987,7 +1989,7 @@ describe("audio-runtime", () => {
 });
 
 describe("audio-runtime local-to-remote transitions", () => {
-  it("replaces the shared audio element when a visualized local track advances to remote", async () => {
+  it("replaces a graph-bound element only for an explicitly analysis-incompatible source", async () => {
     vi.resetModules();
     localStorage.clear();
 
@@ -2000,6 +2002,7 @@ describe("audio-runtime local-to-remote transitions", () => {
       .mockResolvedValueOnce({
         src: "https://cdn.example.com/stream-track.mp3",
         type: "remote",
+        analysisEligible: false,
         revokeUrl: vi.fn(),
       });
     const destroyVisualizerGraphForElement = vi.fn(() => true);
@@ -2035,14 +2038,13 @@ describe("audio-runtime local-to-remote transitions", () => {
     const remoteEl = runtime.getAudioElement();
     runtime.stopPlayback();
 
-    expect(destroyVisualizerGraphForElement).toHaveBeenCalledTimes(2);
-    expect(destroyVisualizerGraphForElement).toHaveBeenLastCalledWith(remoteEl);
-    expect(runtime.getAudioElement()).not.toBe(remoteEl);
+    expect(destroyVisualizerGraphForElement).toHaveBeenCalledTimes(1);
+    expect(runtime.getAudioElement()).toBe(remoteEl);
     expect(remoteEl.src).toBe("");
     expect(runtime.getAudioElement().src).toBe("");
   });
 
-  it("keeps playback active after replacing the audio element for a remote next track", async () => {
+  it("preserves playback and the graph when a local track advances to normal remote audio", async () => {
     vi.resetModules();
     localStorage.clear();
 
@@ -2083,8 +2085,8 @@ describe("audio-runtime local-to-remote transitions", () => {
     await runtime.nextTrack();
 
     const remoteEl = runtime.getAudioElement();
-    expect(remoteEl).not.toBe(localEl);
-    expect(destroyVisualizerGraphForElement).toHaveBeenCalledWith(localEl);
+    expect(remoteEl).toBe(localEl);
+    expect(destroyVisualizerGraphForElement).not.toHaveBeenCalled();
 
     await vi.waitFor(() => {
       expect(runtime.getState().currentTrack?.name).toBe("asset_b");
@@ -2095,7 +2097,7 @@ describe("audio-runtime local-to-remote transitions", () => {
     });
   });
 
-  it("replaces the audio element on stop after a visualized local track", async () => {
+  it("preserves the audio element and graph on stop after a visualized local track", async () => {
     vi.resetModules();
     localStorage.clear();
 
@@ -2128,8 +2130,8 @@ describe("audio-runtime local-to-remote transitions", () => {
 
     runtime.stopPlayback();
 
-    expect(destroyVisualizerGraphForElement).toHaveBeenCalledWith(localEl);
-    expect(runtime.getAudioElement()).not.toBe(localEl);
+    expect(destroyVisualizerGraphForElement).not.toHaveBeenCalled();
+    expect(runtime.getAudioElement()).toBe(localEl);
     expect(runtime.getAudioElement().src).toBe("");
   });
 

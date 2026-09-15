@@ -395,6 +395,13 @@ export function createPlayerShell({
   const errorMsg = document.createElement("div");
   errorMsg.className = "player-error";
   errorMsg.hidden = true;
+  const rearmButton = document.createElement("button");
+  rearmButton.type = "button";
+  rearmButton.className = "player-background-rearm";
+  rearmButton.textContent = t("rearmBackgroundAudio");
+  rearmButton.hidden = true;
+  rearmButton.addEventListener("click", () => { void runtime.rearmBackgroundPlayback(); });
+
 
   // ── Progress ───────────────────────────────────────────────────
   const progressSection = document.createElement("div");
@@ -632,7 +639,7 @@ export function createPlayerShell({
   // ── Assembly ───────────────────────────────────────────────────
   const body = document.createElement("div");
   body.className = "player-body";
-  body.append(nowPlaying, visualizerStrip, errorMsg, progressSection, transport, volumeRow, utilityRow);
+  body.append(nowPlaying, visualizerStrip, errorMsg, rearmButton, progressSection, transport, volumeRow, utilityRow);
 
   root.append(header, body, contentSheet);
   container.append(root);
@@ -2105,6 +2112,10 @@ export function createPlayerShell({
     muteBtn.setAttribute("aria-label", s.muted ? t("mediaPlayerUnmute") : t("mediaPlayerMute"));
     volumeSlider.value = String(Math.round(s.volume * 100));
     updateRangeVisualFill(volumeSlider);
+
+    rearmButton.hidden = s.backgroundPlaybackState !== "blocked"
+      && s.backgroundPlaybackState !== "interrupted"
+      && s.error !== "background-playback-blocked";
 
     // Loading/error
     root.classList.toggle("loading", s.loading);

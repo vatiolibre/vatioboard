@@ -9,6 +9,9 @@ import {
 } from "../../shared/audio-channel-retainer.js";
 import {
   acquireBackgroundAudioLease,
+  activateBackgroundAudioFromGesture,
+  registerBackgroundAudioGestureHandler,
+  subscribeBackgroundAudioState,
   isBackgroundAudioLeaseActive,
   releaseBackgroundAudioLease,
 } from "../../shared/audio-system.js";
@@ -60,6 +63,39 @@ export function createDrivingAudioAlertController({
   trapAudio.playsInline = true;
 
   let primePromise: Promise<boolean> | null = null;
+  let backgroundIntended = false;
+  let backgroundRevision = 0;
+  let destroyed = false;
+  const unregisterGesture = registerBackgroundAudioGestureHandler(() => {
+    if (!backgroundIntended) return false;
+    return primeAlerts();
+  });
+
+  let alertsPrimePromise: Promise<boolean> | null = null;
+  function primeAlerts() {
+    if (state.primed && !state.alertSoundBlocked && !state.trapSoundBlocked) return Promise.resolve(true);
+    if (alertsPrimePromise) return alertsPrimePromise;
+    state.primePending = true;
+    const overspeedRevision = state.overspeedRequestId;
+    const trapRevision = state.trapRequestId;
+    alertsPrimePromise = Promise.all([
+      primeAudioElement(overspeedAudio, { isCurrent: () => overspeedRevision === state.overspeedRequestId }),
+      primeAudioElement(trapAudio, { isCurrent: () => trapRevision === state.trapRequestId }),
+    ]).then((results) => {
+      if (destroyed) return false;
+      state.primed = results.every(Boolean);
+      if (state.primed) {
+        state.alertSoundBlocked = false;
+        state.trapSoundBlocked = false;
+      }
+      return state.primed;
+    }).finally(() => {
+      alertsPrimePromise = null;
+      state.primePending = false;
+      if (!destroyed) emit();
+    });
+    return alertsPrimePromise;
+  }
 
   function emit() {
     try {
@@ -73,12 +109,15 @@ export function createDrivingAudioAlertController({
     try {
       audio.pause();
       audio.currentTime = 0;
+      activateAudioElement(audio);
     } catch {
       // Best effort only.
     }
   }
 
   function stopOverspeed() {
+    // Quiet telemetry updates must not cancel a gesture prime that is already silent.
+    if (!destroyed && state.primePending && !state.overspeedAudible && !state.alertSoundPending) return;
     state.overspeedRequestId += 1;
     state.alertSoundPending = false;
     state.overspeedAudible = false;
@@ -86,6 +125,7 @@ export function createDrivingAudioAlertController({
   }
 
   function stopTrap({ resetLastTrap = false }: LegacyAudioAlertRecord = {}) {
+    if (!destroyed && state.primePending && !state.trapAudible && !state.trapSoundPending) return;
     state.trapRequestId += 1;
     state.trapSoundPending = false;
     state.trapAudible = false;
@@ -94,25 +134,36 @@ export function createDrivingAudioAlertController({
   }
 
   async function armBackgroundAudio() {
-    if (state.backgroundAudioArmed || state.backgroundAudioArmPending) return state.backgroundAudioArmed;
+    backgroundIntended = true;
+    if (isBackgroundAudioLeaseActive(DRIVING_ALERT_BACKGROUND_AUDIO_LEASE)) {
+      state.backgroundAudioArmed = true;
+      return true;
+    }
+    if (state.backgroundAudioArmPending) return state.backgroundAudioArmed;
+    const revision = backgroundRevision;
     state.backgroundAudioArmPending = true;
     emit();
     try {
-      state.backgroundAudioArmed = Boolean(await acquireBackgroundAudioLease(
+      const armed = Boolean(await acquireBackgroundAudioLease(
         DRIVING_ALERT_BACKGROUND_AUDIO_LEASE,
-        { shouldContinue: () => state.backgroundAudioArmed || state.backgroundAudioArmPending },
+        { shouldContinue: () => backgroundIntended },
       ));
-      return state.backgroundAudioArmed;
+      if (revision === backgroundRevision) {
+        state.backgroundAudioArmed = backgroundIntended && isBackgroundAudioLeaseActive(DRIVING_ALERT_BACKGROUND_AUDIO_LEASE);
+      }
+      return armed || state.backgroundAudioArmed;
     } catch {
       state.backgroundAudioArmed = false;
       return false;
     } finally {
-      state.backgroundAudioArmPending = false;
+      if (revision === backgroundRevision) state.backgroundAudioArmPending = false;
       emit();
     }
   }
 
   function disarmBackgroundAudio() {
+    backgroundIntended = false;
+    backgroundRevision += 1;
     state.backgroundAudioArmed = false;
     state.backgroundAudioArmPending = false;
     releaseBackgroundAudioLease(DRIVING_ALERT_BACKGROUND_AUDIO_LEASE);
@@ -209,8 +260,11 @@ export function createDrivingAudioAlertController({
     fromUserGesture = false,
   }: LegacyAudioAlertRecord = {}) {
     state.muted = Boolean(muted);
-    if (audioIntended && !state.muted) {
+    if (audioIntended) {
       void armBackgroundAudio();
+      if (fromUserGesture) void activateBackgroundAudioFromGesture();
+    } else if (backgroundIntended) {
+      disarmBackgroundAudio();
     }
 
     if (shouldPlayOverspeedSound(alertUiState || {}, alertSoundEnabled, state.muted)) {
@@ -243,12 +297,11 @@ export function createDrivingAudioAlertController({
     emit();
     primePromise = (async () => {
       try {
-        if (keepAlive) await armBackgroundAudio();
-        const [overspeedPrimed, trapPrimed] = await Promise.all([
-          primeAudioElement(overspeedAudio),
-          primeAudioElement(trapAudio),
-        ]);
-        state.primed = Boolean(overspeedPrimed && trapPrimed);
+        const retention = keepAlive ? armBackgroundAudio() : Promise.resolve(false);
+        const alerts = primeAlerts();
+        const activation = activateBackgroundAudioFromGesture();
+        const [alertsPrimed] = await Promise.all([alerts, retention, activation]);
+        state.primed = alertsPrimed;
         if (state.primed) {
           state.alertSoundBlocked = false;
           state.trapSoundBlocked = false;
@@ -284,16 +337,23 @@ export function createDrivingAudioAlertController({
       muted: state.muted,
       primed: state.primed,
       backgroundAudioArmed:
-        state.backgroundAudioArmed && isBackgroundAudioLeaseActive(DRIVING_ALERT_BACKGROUND_AUDIO_LEASE),
+        backgroundIntended && isBackgroundAudioLeaseActive(DRIVING_ALERT_BACKGROUND_AUDIO_LEASE),
       backgroundAudioArmPending: state.backgroundAudioArmPending,
     };
   }
 
   function destroy() {
+    destroyed = true;
+    unregisterGesture();
+    unsubscribeBackground();
     stopOverspeed();
     stopTrap({ resetLastTrap: true });
     disarmBackgroundAudio();
   }
+
+  const unsubscribeBackground = subscribeBackgroundAudioState(() => {
+    if (backgroundIntended && !destroyed) emit();
+  });
 
   return {
     destroy,

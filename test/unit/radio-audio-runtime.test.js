@@ -73,6 +73,7 @@ vi.mock("../../src/shared/media-session-artwork.js", () => ({
 }));
 vi.mock("../../src/shared/audio-channel-retainer.js", () => ({
   primeAudioElement: vi.fn().mockResolvedValue(true),
+  createSilentLoopAudioUrl: () => "blob:primary-prime",
   resetAudioElementPlaybackRate: vi.fn(),
 }));
 vi.mock("../../src/shared/audio-system.js", () => {
@@ -89,6 +90,9 @@ vi.mock("../../src/shared/audio-system.js", () => {
     getBackgroundKeepAliveAudio: () => background,
     isBackgroundAudioLeaseActive: (leaseId) => activeBackgroundLeaseIds.has(leaseId),
     rearmBackgroundAudio: vi.fn().mockResolvedValue(true),
+    activateBackgroundAudioFromGesture: vi.fn().mockResolvedValue(true),
+    registerBackgroundAudioGestureHandler: () => () => {},
+    recoverBackgroundAudioAutomatically: vi.fn(),
     releaseBackgroundAudioLease,
     subscribeBackgroundAudioState: (listener) => {
       listener({ status: "idle", activeLeaseIds: [], lastInterruption: null, revision: 0 });
@@ -409,6 +413,8 @@ describe("live radio audio runtime", () => {
     expect(releaseBackgroundAudioLease).not.toHaveBeenCalled();
 
     runtime.pause();
+    expect(releaseBackgroundAudioLease).not.toHaveBeenCalled();
+    runtime.stopPlayback();
     expect(releaseBackgroundAudioLease).toHaveBeenCalledWith("player-runtime");
   });
 
@@ -613,11 +619,11 @@ describe("live radio audio runtime", () => {
     expect(musicGraph.audioContext.close).not.toHaveBeenCalled();
     expect(audioSystem.getBackgroundKeepAliveAudio()).toBe(keepAliveElement);
     expect(audioSystem.getBackgroundAudioState().activeLeaseIds).toEqual([
-      "speed-alerts",
       "player-runtime",
+      "speed-alerts",
     ]);
     expect(releaseBackgroundAudioLease).not.toHaveBeenCalled();
-    expect(order).toEqual(["player-lease", "radio-play"]);
+    expect(order).toEqual(["radio-play"]);
     expect(runtime.getState()).toMatchObject({
       sourceTransport: "radio-relay",
       analysisEligible: true,
@@ -641,7 +647,8 @@ describe("live radio audio runtime", () => {
     expect(destroyVisualizerGraphForElement).not.toHaveBeenCalledWith(musicElement);
 
     runtime.stopPlayback();
-    expect(destroyVisualizerGraphForElement).toHaveBeenCalledWith(musicElement);
+    expect(destroyVisualizerGraphForElement).not.toHaveBeenCalledWith(musicElement);
+    expect(runtime.getAudioElement()).toBe(musicElement);
     playSpy.mockRestore();
   });
 

@@ -16,6 +16,8 @@ import {
 import { createDrivingAudioCueController } from "../shared/driving-audio-cues.js";
 import {
   acquireBackgroundAudioLease,
+  activateBackgroundAudioFromGesture,
+  registerBackgroundAudioGestureHandler,
   getBackgroundKeepAliveAudio,
   isBackgroundAudioLeaseActive,
   releaseBackgroundAudioLease,
@@ -62,6 +64,10 @@ export function createSpeedAudioController({
 
   const backgroundKeepAliveAudio = getBackgroundKeepAliveAudio();
 
+  const unregisterGesture = registerBackgroundAudioGestureHandler(() => {
+    if (!wantsBackgroundAudio()) return false;
+    return startBackgroundAlertLoops(state.backgroundAudioRevision).then((results) => results.every(Boolean));
+  });
   let audioPrimePromise = null;
   let recordingKeepAliveArmPromise = null;
 
@@ -461,8 +467,7 @@ export function createSpeedAudioController({
 
   function wantsBackgroundAudio() {
     return (
-      (state.backgroundMode || state.alertAudioControlActive) &&
-      !state.backgroundAudioSuppressed
+      state.backgroundMode || state.alertAudioControlActive
     );
   }
 
@@ -679,9 +684,9 @@ export function createSpeedAudioController({
     state.backgroundAudioSuppressed = true;
     state.backgroundAudioArmed = false;
     state.backgroundAudioArmPending = false;
-    state.alertAudioControlActive = false;
     clearTrapMuteTimeout();
-    releaseBackgroundAudioLease(SPEED_BACKGROUND_AUDIO_LEASE);
+    // Suspension does not disable an enabled feature or release its retention intent.
+    if (!wantsBackgroundAudio()) releaseBackgroundAudioLease(SPEED_BACKGROUND_AUDIO_LEASE);
     notifyStateChange();
     return true;
   }
@@ -732,7 +737,7 @@ export function createSpeedAudioController({
     }
 
     return ensureAudioElementLooping(audio, {
-      shouldContinue: () => !isStaleBackgroundAudioArm(backgroundAudioRevision),
+      shouldContinue: () => wantsBackgroundAudio(),
     }).then(Boolean, () => false);
   }
 
@@ -937,6 +942,7 @@ export function createSpeedAudioController({
 
   async function armBackgroundAlertAudio({ fromUserGesture = false } = {}) {
     if (!wantsBackgroundAudio()) return;
+    if (fromUserGesture) void activateBackgroundAudioFromGesture();
     if (
       state.backgroundAudioArmed
       && !state.backgroundAudioArmPending
@@ -953,7 +959,7 @@ export function createSpeedAudioController({
     state.backgroundAudioArmPending = true;
     notifyStateChange();
     const keepAlivePromise = acquireBackgroundAudioLease(SPEED_BACKGROUND_AUDIO_LEASE, {
-      shouldContinue: () => !isStaleBackgroundAudioArm(backgroundAudioRevision),
+      shouldContinue: () => wantsBackgroundAudio(),
     }).then(Boolean, () => false);
 
     try {
@@ -1002,7 +1008,9 @@ export function createSpeedAudioController({
       if (isStaleBackgroundAudioArm(backgroundAudioRevision)) {
         shouldRetry = wantsBackgroundAudio();
       } else {
-        disarmBackgroundAlertAudio();
+        state.backgroundAudioArmed = false;
+        state.backgroundAudioSuppressed = true;
+        notifyStateChange();
       }
     } finally {
       state.backgroundAudioArmPending = false;
@@ -1148,7 +1156,10 @@ export function createSpeedAudioController({
       });
   }
 
+  let runtimeListenersAttached = false;
   function attachRuntimeAudioEventListeners() {
+    if (runtimeListenersAttached) return;
+    runtimeListenersAttached = true;
     for (const audio of [
       overspeedAudio,
       trapAlertAudio,
@@ -1161,6 +1172,13 @@ export function createSpeedAudioController({
   }
 
   function dispose() {
+    unregisterGesture();
+    if (runtimeListenersAttached) {
+      for (const audio of [overspeedAudio, trapAlertAudio, backgroundKeepAliveAudio]) {
+        for (const event of ["play", "pause", "ended"]) audio.removeEventListener(event, syncRuntimePagePresentation);
+      }
+      runtimeListenersAttached = false;
+    }
     cueController.destroy();
     releaseBackgroundAudioLease(SPEED_RECORDING_BACKGROUND_AUDIO_LEASE);
     releaseBackgroundAudioLease(SPEED_BACKGROUND_AUDIO_LEASE);

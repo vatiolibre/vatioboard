@@ -1,3 +1,5 @@
+import { recordBackgroundDiagnostic } from "./background-diagnostics.js";
+
 /**
  * Media Session adapter.
  *
@@ -186,11 +188,15 @@ function applyPlatformMediaSessionPositionState({
 }: Partial<MediaSessionPositionPayload> = {}): void {
   if (!supported()) return;
   if (typeof navigator.mediaSession.setPositionState !== "function") return;
-  if (!Number.isFinite(duration) || duration <= 0) return;
+  if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(position)
+    || !Number.isFinite(playbackRate) || playbackRate <= 0) {
+    clearPlatformMediaSessionPositionState();
+    return;
+  }
   try {
     navigator.mediaSession.setPositionState({
       duration,
-      position: Math.min(position, duration),
+      position: Math.max(0, Math.min(position, duration)),
       playbackRate,
     });
     platformPositionStateActive = true;
@@ -212,7 +218,11 @@ function applyPlatformMediaSessionActionHandlers(handlers: MediaSessionHandlers 
   for (const action of ACTION_NAMES) {
     const handler = handlers?.[action] ?? null;
     try {
-      navigator.mediaSession.setActionHandler(action, handler);
+      navigator.mediaSession.setActionHandler(action, handler ? (details) => {
+        recordBackgroundDiagnostic("media-session-action", { action });
+        // Resolve the current owner and handler at dispatch time, including handoffs.
+        getTopClient()?.handlers?.[action]?.(details);
+      } : null);
     } catch {
       // Some browsers do not support all actions
     }

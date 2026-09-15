@@ -4,6 +4,8 @@ interface SilentLoopAudioOptions {
 }
 
 interface PrimeAudioElementOptions {
+  isCurrent?: () => boolean;
+  silentSource?: boolean;
   getResumeTime?: ((audio: HTMLAudioElement) => number) | null;
   beforePlay?: ((audio: HTMLAudioElement, resumeTime: number) => void) | null;
   restorePlayback?: ((audio: HTMLAudioElement, resumeTime: number) => void) | null;
@@ -90,6 +92,8 @@ export function activateAudioElement(audio: HTMLAudioElement | null | undefined,
 export async function primeAudioElement(
   audio: HTMLAudioElement | null | undefined,
   {
+    isCurrent = () => true,
+    silentSource = false,
     getResumeTime = null,
     beforePlay = null,
     restorePlayback = null,
@@ -104,8 +108,8 @@ export async function primeAudioElement(
   const previousLoop = audio.loop;
   const resumeTime = typeof getResumeTime === "function" ? getResumeTime(audio) : 0;
 
-  audio.muted = true;
-  audio.volume = 0;
+  audio.muted = !silentSource;
+  audio.volume = silentSource ? 1 : 0;
   audio.currentTime = 0;
 
   if (typeof beforePlay === "function") {
@@ -117,6 +121,7 @@ export async function primeAudioElement(
     if (isPromiseLike(playPromise)) {
       await playPromise;
     }
+    if (!isCurrent()) return false;
     audio.pause();
     if (typeof restorePlayback === "function") {
       restorePlayback(audio, resumeTime);
@@ -125,6 +130,7 @@ export async function primeAudioElement(
     }
     return true;
   } catch {
+    if (!isCurrent()) return false;
     audio.pause();
     if (typeof restorePlayback === "function") {
       restorePlayback(audio, resumeTime);
@@ -133,9 +139,11 @@ export async function primeAudioElement(
     }
     return false;
   } finally {
-    audio.muted = previousMuted;
-    audio.volume = previousVolume;
-    audio.loop = previousLoop;
+    if (isCurrent()) {
+      audio.muted = previousMuted;
+      audio.volume = previousVolume;
+      audio.loop = previousLoop;
+    }
   }
 }
 

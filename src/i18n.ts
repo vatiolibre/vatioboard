@@ -100,6 +100,7 @@ const baseTranslations: TranslationCatalog = {
     recordingKeepAlivePromptBody:
       'GPS recording is still active. The browser paused the keep-alive audio channel.',
     rearmKeepAliveAudio: 'Rearm keep-alive audio',
+    rearmBackgroundAudio: 'Rearm background audio',
     notNow: 'Not now',
     done: 'Done',
     manualSpeed: 'Manual speed',
@@ -1067,6 +1068,7 @@ const baseTranslations: TranslationCatalog = {
     recordingKeepAlivePromptBody:
       'La grabación GPS sigue activa. El navegador pausó el canal de audio keep-alive.',
     rearmKeepAliveAudio: 'Rearmar audio keep-alive',
+    rearmBackgroundAudio: 'Rearmar audio en segundo plano',
     notNow: 'Ahora no',
     done: 'Listo',
     manualSpeed: 'Velocidad manual',

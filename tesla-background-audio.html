@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Tesla background audio test</title>
+  <style>
+    body { font: 18px system-ui; background: #14181d; color: #edf2f6; margin: 24px; }
+    button { font: inherit; padding: 16px; margin: 6px; cursor: pointer; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; }
+    section { display: flex; flex-wrap: wrap; gap: 24px; }
+    section > div { flex: 1; min-width: 300px; }
+  </style>
+</head>
+<body>
+  <h1>Tesla background audio test</h1>
+  <p>Press START once. Confirm the Tesla Miniplayer, minimize for 30 seconds, use its controls, then return after at least five minutes and export the report.</p>
+  <div id="tesla-audio-test"></div>
+  <script type="module" src="/src/player/tesla-background-audio.ts"></script>
+</body>
+</html>
