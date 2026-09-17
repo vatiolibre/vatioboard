@@ -57,27 +57,35 @@ export interface ResolvedAudioSource {
   revokeUrl: () => void;
 }
 
-export type AudioSourceTransport = "local" | "backend" | "radio-relay";
+export type AudioSourceTransport = "local" | "backend" | "radio-relay" | "radio-direct";
 
 export function resolveRadioSource(asset: AudioSourceAsset): ResolvedAudioSource | null {
   if (!hasRadioExternalNetworkAccess()) return null;
   const stationUuid = String(asset.station_uuid || "");
   if (!isRadioStationUuid(stationUuid) || Number(asset.hls) === 1) return null;
 
-  const relaySrc = getRadioStreamRelayUrl(stationUuid);
-  if (!relaySrc) return null;
+  // Plain media playback does not require station CORS headers. Prefer the
+  // directory's HTTPS stream, matching the working Tesla radio POC.
+  let directSrc = "";
+  try {
+    const url = new URL(asset.url_resolved || "");
+    if (url.protocol === "https:" && !url.username && !url.password) directSrc = url.href;
+  } catch { /* Restored entries without URLs use the relay. */ }
+  const src = directSrc || getRadioStreamRelayUrl(stationUuid);
+  if (!src) return null;
+  const transport = directSrc ? "radio-direct" : "radio-relay";
 
   return {
-    src: relaySrc,
+    src,
     sourceType: "live",
-    sourceTransport: "radio-relay",
+    sourceTransport: transport,
     isLive: true,
     type: "live",
-    transport: "radio-relay",
+    transport,
     live: true,
     cacheable: false,
     seekable: false,
-    analysisEligible: true,
+    analysisEligible: false,
     stationUuid,
     revokeUrl() {},
   };

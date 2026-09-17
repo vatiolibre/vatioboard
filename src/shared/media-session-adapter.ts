@@ -1,3 +1,4 @@
+import { audioCompatibility } from "./audio-compatibility.js";
 import { recordBackgroundDiagnostic } from "./background-diagnostics.js";
 
 /**
@@ -40,7 +41,7 @@ interface MediaSessionClient {
 }
 
 function supported(): boolean {
-  return "mediaSession" in navigator;
+  return audioCompatibility.mediaSessionWrites && "mediaSession" in navigator;
 }
 
 function supportsMetadata(): boolean {

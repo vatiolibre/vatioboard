@@ -5,6 +5,7 @@ let memoryEnabled = false;
 let memoryEvents: BackgroundDiagnosticEntry[] = [];
 
 const ALLOWED_FIELDS = new Set([
+  "audioAttached", "silentDuringPlayback", "primeOtherConsumers", "mediaSessionWrites", "audioSessionHints", "primaryConnected",
   "action", "hidden", "heartbeat", "wallTime", "performanceTime", "wallDelta", "performanceDelta",
   "leaseCount", "primaryCurrentTime", "keepAliveCurrentTime", "keepAliveDuration",
   "keepAliveLoop", "keepAliveMuted", "keepAliveVolume", "keepAlivePlaybackRate", "keepAliveEnded",

@@ -1,3 +1,4 @@
+import { audioCompatibility } from "./audio-compatibility.js";
 import { isBackgroundDiagnosticsEnabled, recordBackgroundDiagnostic } from "./background-diagnostics.js";
 
 interface DiagnosticSources {
@@ -63,6 +64,12 @@ export function startAudioLifecycleDiagnostics(sources: DiagnosticSources) {
     const keepAlive = sources.keepAlive;
     const leaseIds = sources.getLeaseIds();
     return {
+      audioAttached: audioCompatibility.attachedElement,
+      silentDuringPlayback: audioCompatibility.silentDuringPlayback,
+      primeOtherConsumers: audioCompatibility.primeOtherConsumers,
+      mediaSessionWrites: audioCompatibility.mediaSessionWrites,
+      audioSessionHints: audioCompatibility.audioSessionHints,
+      primaryConnected: primary?.isConnected ?? false,
       visibility: document.visibilityState, hidden: document.hidden,
       heartbeat, wallTime: Date.now(), performanceTime: performance.now(),
       primaryElementId: identity(primary), keepAliveIdentity: identity(keepAlive),

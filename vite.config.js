@@ -127,6 +127,7 @@ export default defineConfig({
       input: {
         index: resolve(__dirname, "index.html"),
         teslaAudio: resolve(__dirname, "tesla-background-audio.html"),
+        teslaRadioPoc: resolve(__dirname, "tesla-radio-poc.html"),
       },
       output: {
         manualChunks: getManualChunk,

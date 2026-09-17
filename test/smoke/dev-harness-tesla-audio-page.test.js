@@ -10,6 +10,7 @@ afterEach(() => {
 
 it("starts shared playback from one tap and stops only its own leases", async () => {
   await bootHtmlPage("tesla-background-audio.html");
+  window.history.replaceState(null, "", "/tesla-background-audio.html?audioCompatibility=0");
   vi.useFakeTimers();
   vi.spyOn(console, "debug").mockImplementation(() => {});
   // Import without automatic mounting so the test owns cleanup.

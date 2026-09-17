@@ -11,7 +11,7 @@ import { recordBackgroundDiagnostic } from "./background-diagnostics.js";
 import { createAudioChannelRetainer } from "./audio-channel-retainer.js";
 
 export interface BackgroundAudioState {
-  status: "idle" | "arming" | "armed" | "interrupted" | "blocked";
+  status: "idle" | "arming" | "armed" | "delegated" | "interrupted" | "blocked";
   activeLeaseIds: string[];
   lastInterruption: "pause" | "ended" | "play-rejected" | null;
   revision: number;
@@ -20,6 +20,26 @@ export interface BackgroundAudioState {
 const backgroundAudioRetainer = createAudioChannelRetainer();
 const backgroundKeepAliveAudio = backgroundAudioRetainer.getKeepAliveAudio();
 const backgroundAudioLeases = new Map();
+const primaryCarriers = new Set<string>();
+
+/** Primary startup/playback supplies retention; leases remain independently owned. */
+export function setBackgroundAudioCarrier(owner: string, active: boolean) {
+  if (primaryCarriers.has(owner) === active) return;
+  if (active) primaryCarriers.add(owner);
+  else primaryCarriers.delete(owner);
+  backgroundAudioGeneration += 1;
+  backgroundAudioArmPending = false;
+  backgroundAudioArmPromise = null;
+  if (primaryCarriers.size) {
+    stopKeepAliveIntentionally();
+    publishBackgroundAudioState(hasActiveBackgroundAudioLease() ? "delegated" : "idle", null);
+  } else if (hasActiveBackgroundAudioLease()) {
+    void rearmBackgroundAudio();
+  } else {
+    stopKeepAliveIntentionally();
+    publishBackgroundAudioState("idle", null);
+  }
+}
 const backgroundAudioListeners = new Set<(state: BackgroundAudioState) => void>();
 
 let backgroundAudioGeneration = 0;
@@ -51,7 +71,7 @@ export function activateBackgroundAudioFromGesture(): Promise<boolean> {
 
 /** One automatic attempt per interruption; a fresh gesture resets the budget. */
 export function recoverBackgroundAudioAutomatically() {
-  if (automaticRecoveryAttempted || !hasActiveBackgroundAudioLease()
+  if (primaryCarriers.size || automaticRecoveryAttempted || !hasActiveBackgroundAudioLease()
     || !backgroundKeepAliveAudio.paused || navigator.audioSession?.state === "interrupted") return;
   automaticRecoveryAttempted = true;
   void rearmBackgroundAudio();
@@ -97,7 +117,7 @@ function publishBackgroundAudioState(
     revision: backgroundAudioState.revision + 1,
   };
   backgroundAudioState = next;
-  if (next.activeLeaseIds.length) {
+  if (next.activeLeaseIds.length && status !== "delegated") {
     updateMediaSessionClient("background-retention", {
       active: true, priority: -1, playbackState: "playing",
       metadata: { title: "VatioBoard", artist: "Background audio active" },
@@ -120,13 +140,14 @@ function stopKeepAliveIntentionally() {
 }
 
 function handleKeepAliveInterruption(event: Event) {
-  if (intentionalStopDepth > 0 || !backgroundKeepAliveAudio.paused || !hasActiveBackgroundAudioLease()) return;
+  if (primaryCarriers.size || intentionalStopDepth > 0 || !backgroundKeepAliveAudio.paused || !hasActiveBackgroundAudioLease()) return;
   if (backgroundAudioState.status === "blocked") return;
   publishBackgroundAudioState("interrupted", event.type === "ended" ? "ended" : "pause");
   queueMicrotask(recoverBackgroundAudioAutomatically);
 }
 
 backgroundKeepAliveAudio.addEventListener("play", () => {
+  if (primaryCarriers.size) { stopKeepAliveIntentionally(); return; }
   if (hasActiveBackgroundAudioLease()) publishBackgroundAudioState("armed", null);
 });
 backgroundKeepAliveAudio.addEventListener("pause", handleKeepAliveInterruption);
@@ -139,7 +160,7 @@ backgroundKeepAliveAudio.addEventListener("timeupdate", () => {
 });
 
 function shouldKeepBackgroundAudioPlaying(generation) {
-  return generation === backgroundAudioGeneration && hasActiveBackgroundAudioLease();
+  return generation === backgroundAudioGeneration && !primaryCarriers.size && hasActiveBackgroundAudioLease();
 }
 
 export function getBackgroundKeepAliveAudio() {
@@ -162,7 +183,7 @@ export function subscribeBackgroundAudioState(listener: (state: BackgroundAudioS
 }
 
 export function isBackgroundAudioActive() {
-  return !backgroundKeepAliveAudio.paused;
+  return Boolean(primaryCarriers.size) || !backgroundKeepAliveAudio.paused;
 }
 
 export function isBackgroundAudioArmPending() {
@@ -189,6 +210,11 @@ export async function rearmBackgroundAudio() {
     return false;
   }
 
+  if (primaryCarriers.size) {
+    publishBackgroundAudioState("delegated", null);
+    return true;
+  }
+
   if (backgroundAudioRetainer.isKeepAliveActive()) {
     publishBackgroundAudioState("armed", null);
     return true;
@@ -200,7 +226,7 @@ export async function rearmBackgroundAudio() {
   backgroundAudioArmPending = true;
   publishBackgroundAudioState("arming", backgroundAudioState.lastInterruption);
   backgroundAudioArmPromise = backgroundAudioRetainer.ensureKeepAlivePlaying({
-    shouldContinue: () => hasActiveBackgroundAudioLease(),
+    shouldContinue: () => !primaryCarriers.size && hasActiveBackgroundAudioLease(),
   }).then((armed) => {
     if (!shouldKeepBackgroundAudioPlaying(generation)) {
       return false;
@@ -239,6 +265,11 @@ export async function acquireBackgroundAudioLease(id, { shouldContinue = null } 
     return false;
   }
 
+  if (primaryCarriers.size) {
+    publishBackgroundAudioState("delegated", null);
+    return true;
+  }
+
   if (backgroundAudioRetainer.isKeepAliveActive()) {
     publishBackgroundAudioState("armed", null);
     return true;
@@ -270,6 +301,7 @@ export function releaseBackgroundAudioLease(id) {
 }
 
 export function disposeAudioSystemForTests() {
+  primaryCarriers.clear();
   backgroundAudioLeases.clear();
   backgroundAudioGeneration += 1;
   automaticRecoveryAttempted = false;

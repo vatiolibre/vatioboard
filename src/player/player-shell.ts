@@ -113,6 +113,7 @@ function getVisualizerModeLabel(mode) {
 }
 
 function isSafeVisualizerElement(audioElement, stateSnapshot = null) {
+  if (stateSnapshot?.isLive) return false;
   // A source change temporarily clears analysisEligible while the next URL is
   // being resolved. The media element and its graph are still the same at
   // that point, so treating the transient loading state as unsafe destroys a
@@ -953,11 +954,7 @@ export function createPlayerShell({
       playStationBtn.textContent = station.hls === 1 ? t("playerRadioHlsUnsupported") : t("playerRadioPlay");
       playStationBtn.disabled = station.hls === 1;
       playStationBtn.addEventListener("click", () => {
-        prepareVisualizersFromGesture();
-        void runtime.playTrackNow(radioTrack, {
-          fromUserGesture: true,
-          beforePlay: () => prepareVisualizersFromGesture(),
-        });
+        void runtime.playTrackNow(radioTrack, { fromUserGesture: true });
       });
       li.append(artwork, details, playStationBtn);
       radioListUl.append(li);
@@ -1749,9 +1746,8 @@ export function createPlayerShell({
   }
 
   /**
-   * Start/resume the same shared graph used by the proven MP3 preview while
-   * the current event still has transient user activation. The radio loader
-   * invokes this once more after assigning its relay URL and before play().
+   * Start/resume the MP3 graph while the event has user activation.
+   * Native radio must remain unbound, including while its source is empty.
    */
   function prepareVisualizersFromGesture({ force = false } = {}) {
     _gestureUnlocked = true;
@@ -1759,7 +1755,7 @@ export function createPlayerShell({
     const audioElement = getRuntimeAudioElement();
     if (!audioElement) return;
     const snapshot = runtime.getState();
-    if (audioElement.src && !isSafeVisualizerElement(audioElement, snapshot)) return;
+    if (!isSafeVisualizerElement(audioElement, snapshot)) return;
     void prepareGraphFromUserGesture(audioElement);
   }
 
@@ -2082,6 +2078,11 @@ export function createPlayerShell({
       sourceBadge.textContent = t("playerOffline");
       sourceBadge.hidden = false;
       sourceBadge.className = "player-source-badge offline";
+    } else if (s.sourceTransport === "radio-direct") {
+      sourceBadge.textContent = s.connectionState === "reconnecting"
+        ? `LIVE · ${t("playerRadioReconnecting")}` : "LIVE";
+      sourceBadge.hidden = false;
+      sourceBadge.className = "player-source-badge live";
     } else if (s.sourceTransport === "radio-relay") {
       sourceBadge.textContent = s.connectionState === "slow"
         ? `LIVE · RELAY · ${t("playerRadioSlow")}`

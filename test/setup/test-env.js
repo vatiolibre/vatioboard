@@ -84,6 +84,11 @@ class FakeAudio extends EventTarget {
     this.dispatchEvent(new Event("pause"));
   }
 
+  removeAttribute(name) {
+    if (name.toLowerCase() === "crossorigin") this.crossOrigin = null;
+    if (name === "src") this.src = "";
+  }
+
   load() {}
 }
 

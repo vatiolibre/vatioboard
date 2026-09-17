@@ -2,6 +2,68 @@
 
 Use this runbook against the hosted development SPA at `https://dev.vatioboard.com`. The radio Worker remains at `https://radio-media.dev.vatioboard.com`; no Tesla-specific Worker or DNS entry is required.
 
+## Vehicle results reported 2026-09-16
+
+| Path | User-reported outcome |
+| --- | --- |
+| Original POC on dev.vatiolibre.com | Works |
+| Isolated POC on dev.vatioboard.com | Works |
+| Harness: POC direct radio | Works |
+| Harness: Relay native radio | Works |
+| Harness: Relay Web Audio radio | Works |
+| Harness: VatioBoard native radio | Does not work |
+| Main VatioBoard Player | Does not work |
+
+The reported failure is competing vehicle audio during radio playback and radio stopping on browser minimization. This matrix narrows the failure to the runtime-managed path; relay transport, the hosting origin and Web Audio are not sufficient explanations. It does not yet distinguish the runtime's detached element, extra silent/priming playback, Audio Session hints or Media Session updates. Per-duration exports and vehicle/browser versions were not supplied with this result.
+
+The compatibility experiment below implements the next comparison. It has automated Chromium coverage, but has not yet been tested in the vehicle. The previous results do not identify a single proven cause.
+
+## Next test: shared-runtime compatibility mode
+
+After deploying this build, open:
+
+- **Main Player:** https://dev.vatioboard.com/?audioCompatibility=1&debugAudio=1
+- **Comparison harness (compatibility is now the default):** https://dev.vatioboard.com/tesla-background-audio.html
+- **Previous runtime behavior:** https://dev.vatioboard.com/tesla-background-audio.html?audioCompatibility=0
+- **Working isolated reference:** https://dev.vatioboard.com/tesla-radio-poc.html
+
+Compatibility uses a document-attached primary element with native controls. Player and other service leases remain owned, but the silent loop is paused while primary playback starts, buffers, or plays. The diagnostic status is `delegated`; it describes retention intent, not proof of audible output. Pause returns retention to the silent loop; rejection preserves leases and requires Rearm. Stop releases only the Player lease. Native-control/platform pauses are respected after the startup guard, rather than automatically restarting the station.
+
+Player Play does not prime other consumers. All custom Media Session writes (including background and alert owners) and Audio Session type hints are disabled. The vehicle/browser supplies native media presentation; custom station metadata and Next/Previous platform actions are therefore not expected in the default experiment. Harness transport buttons still work. Alert and recording preferences are unchanged; their own activation paths remain available.
+
+1. Start with recording and alerts inactive. In the harness, tap **VatioBoard native radio** using the default station. Confirm `primaryConnected: true`, `backgroundStatus: delegated`, and `keepAlivePaused: true`.
+2. Check whether other Tesla audio stops, then minimize for 30 seconds and five minutes. Export before changing options. Repeat in the main Player with the same station.
+3. If this succeeds, use **Runtime options** to restore one feature at a time. **Apply and reload** creates a fresh document and retains the entered station pair when session storage is available. The main-Player link carries the currently applied options.
+4. Repeat Pause, Rearm, Play, Next, Stop, MP3/radio handoffs, then combined recording/alerts. Silent-only retention during Pause is a separate hypothesis, even if audible playback works.
+
+| Reload-time query flag | Compatibility default | Set to test |
+| --- | --- | --- |
+| `audioAttach` | `1` | `0`: detached primary element |
+| `audioSilence` | `0` | `1`: silent loop alongside real playback |
+| `audioPrimeOthers` | `0` | `1`: Player gesture activates other consumers |
+| `audioMediaSession` | `0` | `1`: shared adapter publishes metadata/actions; Player state follows actual playback events |
+| `audioSessionHints` | `0` | `1`: runtime writes Audio Session type hints |
+
+Use `audioCompatibility=1` with these flags on the main app. Without it, the main app keeps its existing behavior. Changing flags requires a full navigation/reload. Diagnostics include the applied flags and element attachment. Do not conclude that a specific feature caused the failure until its independent comparison reproduces the difference.
+
+The sections below describe the previous runtime and broader regression matrix. Their custom Miniplayer metadata and simultaneous silent-loop expectations apply to `audioCompatibility=0`, not the default harness compatibility experiment.
+
+## Isolated single-element reference
+
+The native shared-runtime revision also failed physical testing: other vehicle audio played alongside radio, and radio stopped when Chromium was minimized. Do not treat the native revision as a verified Tesla fix.
+
+Open **`https://dev.vatioboard.com/tesla-radio-poc.html`** after deploying this build. For local testing, run `pnpm dev` and use `/tesla-radio-poc.html`. The existing background-audio harness has a link to this page.
+
+This is a byte-for-byte copy of `/home/oscar/frappe-bench/apps/vatiosite/vatiosite/www/radio.html`, the working reference supplied by Oscar. It uses a single visible `<audio controls preload="none">` element, direct station streams and the POC's existing directory search and click analytics. It has no VatioBoard runtime imports, silent PCM, alert/speech activation, custom Media Session/Audio Session writes, Web Audio, heartbeat or recovery timer. Native media controls provide pause/resume; changing stations reuses the same element. HTTP-only stations are disabled on HTTPS.
+
+1. Stop recording before leaving the main app. Open the isolated page as a full page in the same Tesla browser, not inside the SPA or an iframe. Its isolation comes from a new document; it does not keep app services running.
+2. Start a Tesla media app, search for the same HTTPS station that worked in the original POC, and tap the station's **Play** once.
+3. Record whether other vehicle audio stops immediately. Minimize for 30 seconds, then at least five minutes, and record whether the station stays audible.
+4. Repeat with the original `https://dev.vatiolibre.com/radio.html`, using the same station, vehicle and browser session. Record vehicle software and browser versions and both URLs.
+5. If only the original works, compare hosting headers, cached content and site/browser state. If both work, add shared-runtime components individually in a later experiment: metadata/actions, then retention, then alerts. This page intentionally contains none of those integrations yet.
+
+The isolated page has no diagnostics export because adding shared diagnostics would change the reference under test. Record the results manually. Existing harness **POC direct radio** is a separate comparison: it still imports the runtime, so it is not equivalent to this isolated document. The user subsequently reported this reference working; per-duration results remain unrecorded.
+
 ## Prepare the test
 
 1. Confirm the development SPA and radio Worker are running using the checks in `workers/radio-media/README.md`.
@@ -9,15 +71,30 @@ Use this runbook against the hosted development SPA at `https://dev.vatioboard.c
 2. In the Tesla browser, open `https://dev.vatioboard.com/?debugBackground=1`.
 3. Allow location access if GPS recording will be tested.
 4. Open Player, select Radio, and choose a non-HLS station.
-5. Confirm initial playback shows `LIVE · RELAY`. HTTP and HTTPS stations both start on the same relay-backed Web Audio channel used by MP3 music.
+5. Confirm HTTPS stations show `LIVE` and use a direct native media stream. HTTP-only stations and entries without a stored URL show `LIVE · RELAY`; they also use native media output. Radio visualization is unavailable.
 6. Before minimizing anything, start another Tesla audio source and then start VatioBoard radio. Confirm VatioBoard takes over the audible media channel instead of mixing with the other source.
 7. Confirm the Tesla Miniplayer appears with the station title and a square station image (or the square VatioBoard fallback while the station image is being normalized).
 
 The diagnostic flag is stored locally for the browser session. It records lifecycle and media state, but not coordinates, station identifiers, stream URLs, or listening history. Open Radio after returning to VatioBoard to copy or download the report. Use `?debugBackground=0` to disable it.
 
-Radio reuses the same shared two-second silent keep-alive element as music, recording, and camera alerts; it does not create a second loop. A trusted station tap sets playback intent, selects the browser `playback` audio session, and acquires the `player-runtime` lease before requesting station playback. This is the same opportunistic ordering used by the mature music path: Tesla audio ownership is armed inside the gesture and remains continuous while the real source connects or changes.
+Radio retains the existing shared two-second silent keep-alive and independent leases. A station tap starts the actual stream before initiating silent retention and gesture activation for other consumers. Radio never primes its primary element with silence. Media Session metadata and actions remain managed by the shared adapter; they are not evidence that Tesla granted exclusive audio focus.
 
-The Player keeps one long-lived media element for both MP3 and relay radio. They share that physical element, reusable Web Audio graph, `AudioContext`, Player lease, Audio Session, and Media Session owner. Station changes and radio-to-music handoffs replace the source on that same channel without destroying its graph or closing its context. Explicit Player Stop clears the source and Player lease while preserving the same element and reusable graph for the next Play. Normal local/remote MP3 and relay-radio handoffs preserve both. Only a source explicitly declared incompatible with analysis can require replacing a graph-bound element.
+Radio uses native HTML media output, without a MediaElementAudioSourceNode. Direct HTTPS streams omit `crossorigin`; relay streams retain `anonymous` because the Worker requires an Origin header. Native radio-to-radio handoffs reuse the element. Transitioning from a graph-bound MP3 element replaces that incompatible element while retaining all leases. Returning to MP3 can reuse the native element and attach its normal visualization graph. Stop preserves the current element.
+
+## Compare native playback with the POC
+
+Open `/tesla-background-audio.html` on the development host. Both fields default to SomaFM Groove Salad (128k MP3): `https://ice2.somafm.com/groovesalad-128-mp3`, UUID `960cf833-0601-11e8-ae97-52543be04c81` (directory record and stream response checked 2026-09-16). They remain editable; change both together to compare another station. The controls use a compact Tesla layout with separately scrolling state and timeline panes. Test in a fresh page with alerts and recording inactive to isolate playback; baseline modes do not acquire shared leases. STOP TEST and unmount release only resources owned by this harness.
+
+1. **POC direct radio**: fresh visible audio element, direct stream, native controls, no runtime ownership or silent channel.
+2. **Relay native radio**: same native output, station resolved through the relay.
+3. **Relay Web Audio radio**: same relay with audio routed through an AudioContext.
+4. **VatioBoard native radio**: direct stream through the shared runtime, metadata, transport actions and retained Player/harness leases. Use the harness transport buttons in this mode; baseline modes use their native controls.
+
+Each baseline start disposes its previous element and context. Turning off a visualization is not equivalent to removing its audio graph. Baseline event reports include output mode, current time, duration, context state, media state and visibility; frequent time updates update the display without filling exported lifecycle history. Baselines deliberately have no heartbeat or recovery timer.
+
+For each mode, start a Tesla audio app first, start the test radio, verify whether the other app stops, minimize for 30 seconds and then five minutes, and export the report after returning. Record station/URL privately, vehicle software version, browser user agent, output mode, takeover outcome and minimized outcome. Compare the Player shell against the runtime harness as well. Do not infer exclusive focus from the Miniplayer title alone.
+
+The reported pre-change Tesla test failed: VatioBoard stopped immediately on minimize and radio mixed with other vehicle audio, while the direct POC worked. The revised native runtime path also failed the subsequent vehicle test, as recorded above. Hidden-page radio recovery remains deferred; this change targets acquisition/output parity rather than forcing playback against a platform interruption. Direct HTTPS failures retry the direct stream within the existing bound; HTTP/missing URLs select the relay at resolution time, not after a failed direct attempt.
 
 The Player lease is retained while a station connects, buffers, retries, fails, or changes to another station. Pause retains the Player lease; only explicit Stop or terminal queue completion releases it. Recording and armed camera/speed-alert leases are separate, so releasing the Player lease does not stop the shared loop while either of those owners remains active.
 
@@ -27,16 +104,14 @@ Run each applicable combination with the Tesla browser or Player window minimize
 
 | Scenario | Expected result |
 | --- | --- |
-| HTTPS or HTTP relay/Web Audio | The trusted tap arms the shared Player keep-alive first, configures CORS before the relay source, then immediately requests playback on the MP3 analysis element. |
+| HTTPS direct / HTTP relay | The trusted tap configures the native stream and calls play before starting silent retention. |
 | Player minimized | Audio and Tesla Media Session play/pause continue to target the selected station. |
-| Browser minimized | Audio continues, or bounded recovery restores the same station without advancing the queue. |
-| Slow relay response | After 12 seconds the UI reports a slow connection, but keeps the same source request, element, graph, lease, and Media Session intact. |
-| Hard relay failure | A media error starts a privacy-safe station probe and retries the same relay/analysis channel once, then performs one delayed final retry without changing elements. |
-| Web Audio unavailable | Radio remains playable from the relay and visualizers are reported unavailable. |
-| Visuals hidden | Rendering/analyser consumers stop, but the relay source, analysis element, graph, context, and Player lease remain unchanged. |
-| Visuals enabled | The existing **Visuals** toggle attaches to the already active shared graph and produces spectrum/scope data without changing transport. |
-| Suspended graph | The same station, element, and Player lease remain intact; use the normal Play control if a fresh gesture is required. |
-| Audio Session interruption | `interrupted` retains intent, source, graph, and leases. Recovery waits for `active`, a visible lifecycle event, or an explicit user action. |
+| Browser minimized | Acceptance target: audio continues. Record any interruption; hidden-page recovery remains deferred. |
+| Slow response | After 12 seconds the UI reports a slow connection without resetting source or leases. |
+| Hard failure | Bounded immediate and delayed retries retain the same native transport. Only relay failures run relay probes. |
+| Web Audio unavailable | Native radio remains playable; radio visualizers are unavailable. |
+| Visuals toggled during radio | No graph attaches, including while radio is loading. |
+| Audio Session interruption | Intent, source and leases survive. Recovery waits for supported lifecycle/user action. |
 
 ## Cleared-cache MP3-to-radio regression
 
@@ -49,13 +124,11 @@ Repeat this exact sequence before the broader matrix:
 5. Confirm the other source is muted, no competing audio appears during the transition, and radio remains audible for at least five minutes after minimizing the browser.
 6. Restore VatioBoard and download diagnostics before changing playback again.
 
-If startup fails, the report should include `relayEnvironment: "development"`, the Worker build version, and either a relay health state or categorical probe outcome. A healthy probe paired with a media decode error points toward CORS/codec/Web Audio compatibility; a failed probe identifies the directory, target, upstream, or content stage without storing the station URL.
+For relay startup failures, inspect Worker health and privacy-safe probe outcomes. Direct streams do not run relay probes; inspect primary media error and readiness/network state instead.
 
-The report should show the same numeric keep-alive identity, retained `speed-alerts,player-runtime` lease IDs, the same primary/analysis element ID used by the MP3, `analysisGraphPreserved: true`, and `graphClosedDuringHandoff: false`. A new primary element, graph close, or Player lease release between the trusted station tap and radio playback is a regression.
+The report must show unchanged keep-alive identity and retained `speed-alerts,player-runtime` leases. A graph-bound MP3-to-radio transition should log `primary-element-replacement` with reason `incompatible-visualizer-graph`, and `graphClosedDuringHandoff: true`. The new radio element must have no graph. A native station-to-station change must preserve its element. Any Player lease release during either handoff is a regression.
 
-After restoring the browser, verify the station remains selected and the connection status settles on playing. Visible-page lifecycle reconciliation rearms all retained owners and reconciles the same station element and AudioContext. If the browser requires a fresh gesture, use **Rearm background audio** to restore retention without resuming intentionally paused music, or Play to resume music; no alternate radio transport is created.
-
-Use the normal **Visuals** button to test radio spectrum/scope output; there is no separate radio-only visualizer action. Turning it on primes/resumes the already active shared graph without releasing the Player lease or changing the source. Select several stations and confirm the same relay-backed element/graph is reused. Turning Visuals off stops visual rendering only: transport, element, graph, and ownership must not change.
+After restoring the browser, verify the station remains selected. Use **Rearm background audio** to restore retention without resuming intentionally paused radio, or Play to resume it. Toggle Visuals during loading and playback and verify no audio graph appears. Return to MP3 and verify its visualization still works.
 
 Chromium or the vehicle OS may fully suspend or discard a hidden document. A web application cannot override that platform decision, so an explicit recovery tap can still be required after restoration.
 
@@ -90,12 +163,12 @@ Download the background diagnostic JSON from Radio after every run and note:
 
 - Tesla model and software version;
 - test duration;
-- relay transport on the shared analysis element;
+- direct/relay transport and whether the primary element has a graph;
 - whether VatioBoard took over the Tesla audio channel before minimization;
 - whether the Miniplayer showed normalized station artwork or the VatioBoard fallback;
 - whether audio continued, reconnected automatically, or required one tap;
 - whether station changes and Visuals state changes remained free of competing Tesla audio;
-- on iPhone Safari, whether both spectrum and scope produced live analyser data and survived a station change;
+- on iPhone Safari, whether native radio plays and returning to MP3 restores spectrum/scope;
 - whether GPS callbacks continued or resumed after restoration;
 - whether recording and camera-alert intent survived radio pause, stop, failure, and recovery.
 
@@ -151,4 +224,4 @@ Silent PCM at full element volume is an active-media hypothesis, not an exemptio
 
 LongPlay was inspected as historical evidence. Its [original background-audio helper](https://github.com/Hiepler/LongPlay/commit/15a278b1c13979e06723b61e665354e8bbe57cb1) generated PCM silence but used zero element volume. Its [Connect-only migration](https://github.com/Hiepler/LongPlay/commit/3f03403e0e4589322536029e3744bb3786290576) removed the browser Web Playback SDK, silent keep-alive activation, and visibility resume handler. Those changes explain its different ownership goal; they are not adopted here.
 
-**Physical Tesla validation has not been performed in the development environment.** Unit/smoke checks demonstrate software behavior only. Run the matrix on each supported vehicle/browser version before claiming continuous minimized playback or background JavaScript/GPS execution.
+**The new compatibility mode has not been physically validated in a Tesla.** The user-reported results above apply to earlier builds. Unit/smoke checks demonstrate software behavior only. Run the matrix on each supported vehicle/browser version before claiming continuous minimized playback or background JavaScript/GPS execution.

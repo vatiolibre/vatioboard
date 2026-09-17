@@ -239,13 +239,13 @@ export interface AudioRuntimeState {
   shuffle: boolean;
   backgroundMode: boolean;
   sourceType: "blob" | "remote" | "live" | null;
-  sourceTransport: "local" | "backend" | "radio-relay" | null;
+  sourceTransport: "local" | "backend" | "radio-relay" | "radio-direct" | null;
   isLive: boolean;
   seekable: boolean;
   cacheable: boolean;
   analysisEligible: boolean;
   analysisActive: boolean;
-  backgroundPlaybackState: "idle" | "arming" | "armed" | "interrupted" | "blocked";
+  backgroundPlaybackState: "idle" | "arming" | "armed" | "delegated" | "interrupted" | "blocked";
   recoveryRequired: boolean;
   connectionState: "idle" | "connecting" | "slow" | "playing" | "reconnecting" | "unavailable";
   radioFailureClass: null

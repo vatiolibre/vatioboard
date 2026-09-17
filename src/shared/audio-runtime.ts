@@ -13,6 +13,8 @@
  * falling back to remote BFF streaming URLs.
  */
 
+import { audioCompatibility } from "./audio-compatibility.js";
+
 import {
   resolveAudioSource,
   resolveRadioSource,
@@ -30,9 +32,11 @@ import {
 } from "./audio-channel-retainer.js";
 import {
   acquireBackgroundAudioLease,
+  setBackgroundAudioCarrier,
   activateBackgroundAudioFromGesture,
   registerBackgroundAudioGestureHandler,
   recoverBackgroundAudioAutomatically,
+  rearmBackgroundAudio,
   getBackgroundAudioState,
   getBackgroundKeepAliveAudio,
   isBackgroundAudioLeaseActive,
@@ -92,6 +96,7 @@ function isArtworkUrl(ref) {
 // ── State ────────────────────────────────────────────────────────────
 
 let mediaSessionEnabled = true;
+let primaryPlaying = false;
 const PLAYER_MEDIA_SESSION_OWNER = "player-runtime";
 const PLAYER_MEDIA_SESSION_PRIORITY = 10;
 const PLAYER_BACKGROUND_AUDIO_LEASE = "player-runtime";
@@ -335,7 +340,22 @@ function ownElementSource(el: ManagedAudioElement, revoke?: (() => void) | null)
 
 function createManagedAudioElement() {
   bindLifecyclePersistence();
-  const el = new Audio() as ManagedAudioElement;
+  const el = (audioCompatibility.attachedElement
+    ? document.createElement("audio") : new Audio()) as ManagedAudioElement;
+  if (audioCompatibility.attachedElement) {
+    let host = document.getElementById("vatio-primary-audio-host");
+    if (!host) {
+      host = document.createElement("div");
+      host.id = "vatio-primary-audio-host";
+      Object.assign(host.style, { position: "fixed", bottom: "8px", left: "12px", right: "12px", zIndex: "10000" });
+      document.body.append(host);
+    }
+    el.controls = true;
+    el.style.width = "100%";
+    el.style.height = "44px";
+    el.setAttribute("aria-label", "VatioBoard native audio controls");
+    host.replaceChildren(el);
+  }
   resetAudioElementPlaybackRate(el);
   el.preload = "metadata";
   el.playsInline = true;
@@ -398,6 +418,9 @@ function replaceManagedAudioElement() {
  * Returns a promise that resolves to true (primed) or false.
  */
 export function primeAudio() {
+  // Radio's actual stream is its gesture activation. Never replace it with a
+  // silent probe or pause it when another consumer is armed/rearmed.
+  if (state.isLive) return Promise.resolve(true);
   const el = getAudio();
   void resumeVisualizerGraphForElement(el).catch(() => false);
   if (primed) return Promise.resolve(true);
@@ -466,6 +489,10 @@ function isBackgroundModeKeepAliveStale(generation) {
 }
 
 function getDesiredPlaybackState() {
+  if (audioCompatibility.enabled) {
+    if (!state.currentTrack) return "none";
+    return primaryPlaying && !audio?.paused ? "playing" : "paused";
+  }
   if (isBackgroundAudioLeaseActive(PLAYER_BACKGROUND_AUDIO_LEASE)) return "playing";
 
   // Media Session reflects playback intent, not only the current native
@@ -499,6 +526,7 @@ function stopBackgroundModeKeepAlive() {
   backgroundKeepAliveGeneration += 1;
   backgroundKeepAliveArmPending = false;
   releaseBackgroundAudioLease(PLAYER_BACKGROUND_AUDIO_LEASE);
+  if (!audioCompatibility.silentDuringPlayback) setBackgroundAudioCarrier(PLAYER_BACKGROUND_AUDIO_LEASE, false);
   syncMediaSessionPlaybackState();
 }
 
@@ -537,8 +565,20 @@ async function armBackgroundModeKeepAlive() {
   }
 }
 
+function updatePrimaryCarrier() {
+  if (!audioCompatibility.silentDuringPlayback) {
+    setBackgroundAudioCarrier(PLAYER_BACKGROUND_AUDIO_LEASE,
+      Boolean(state.backgroundMode && state.currentTrack && !state.paused));
+  }
+}
+
+function activatePlayerGesture() {
+  if (audioCompatibility.primeOtherConsumers) void activateBackgroundAudioFromGesture();
+}
+
 function syncBackgroundModeKeepAlive() {
   if (wantsBackgroundModeKeepAlive()) {
+    updatePrimaryCarrier();
     void armBackgroundModeKeepAlive();
     return;
   }
@@ -565,10 +605,10 @@ subscribeBackgroundAudioState((snapshot) => {
 });
 
 function shouldResetVisualizerGraph(previousSourceType, nextResolved) {
-  // Normal local/remote/radio sources share the graph. A source explicitly
-  // declared incompatible with analysis needs a fresh, unbound element.
-  return previousSourceType === "blob" && nextResolved?.type === "remote"
-    && nextResolved.analysisEligible === false;
+  // Native radio cannot reuse a graph-bound element. Music continues to
+  // reuse compatible graphs; only incompatible output routes replace it.
+  return nextResolved?.analysisEligible === false
+    && (nextResolved.isLive || (previousSourceType === "blob" && nextResolved.type === "remote"));
 }
 
 function clearRadioTimers() {
@@ -601,6 +641,7 @@ function resetRadioLifecycle() {
 }
 
 function setAudioSessionType(type: VatioBoardAudioSession["type"]) {
+  if (!audioCompatibility.audioSessionHints) return;
   if (lastAudioSessionType === type) return;
   try {
     if (navigator.audioSession) {
@@ -691,10 +732,11 @@ function configureAudioElementSource(
   cancelPrimaryPrime();
   primaryPrimeSourceActive = false;
   ownElementSource(el, resolved.revokeUrl);
-  // Use the same CORS-before-src ordering for every analyzable source. It is
-  // harmless for blob/same-origin MP3s and required by WebKit for the relay.
-  el.crossOrigin = "anonymous";
-  el.preload = "metadata";
+  // Direct stations need no CORS opt-in; the relay requires an Origin header.
+  // Set this before src. Neither radio transport is routed through Web Audio.
+  if (resolved.sourceTransport === "radio-direct") el.removeAttribute("crossorigin");
+  else el.crossOrigin = "anonymous";
+  el.preload = resolved.isLive ? "none" : "metadata";
   el.volume = state.muted ? 0 : state.volume;
   el.muted = state.muted;
   ignoreUnexpectedPauseUntilMs = Date.now() + 250;
@@ -703,6 +745,7 @@ function configureAudioElementSource(
     radioSourceResetCount += 1;
   }
   el.src = resolved.src;
+  if (resolved.isLive) el.load();
   if (countRadioReset) radioSourceConfiguredForAttempt = true;
   resetAudioElementPlaybackRate(el);
 }
@@ -713,7 +756,7 @@ function startConfiguredAudioElement(el: ManagedAudioElement): Promise<void> {
   // Match the working MP3 visualizer lifecycle: resume the already-bound
   // graph first, then ask the media element to play. Calling resume() here is
   // synchronous even though its completion is best-effort and asynchronous.
-  void resumeVisualizerGraphForElement(el).catch(() => false);
+  if (!state.isLive) void resumeVisualizerGraphForElement(el).catch(() => false);
   return Promise.resolve(el.play());
 }
 
@@ -725,7 +768,7 @@ function applyRadioSource(resolved = activeResolvedSource) {
   state.analysisActive = false;
   configureAudioElementSource(el, resolved, { countRadioReset: true });
   recordRadioDiagnostic("radio-transport-configured", {
-    corsMode: "anonymous",
+    corsMode: el.crossOrigin || "none",
     analysisEligible: state.analysisEligible,
     graphPreserved: Boolean(getGraph(el)),
   });
@@ -745,7 +788,7 @@ function mapProbeOutcomeToFailure(outcome: RadioProbeOutcome): AudioRuntimeState
 }
 
 function startRadioFailureProbe(token: number) {
-  if (!isCurrentRadioToken(token) || radioProbeAbortController) return;
+  if (!isCurrentRadioToken(token) || radioProbeAbortController || state.sourceTransport !== "radio-relay") return;
   const uuid = String(state.currentTrack?.station_uuid || "");
   if (!uuid) return;
   const controller = new AbortController();
@@ -931,7 +974,8 @@ function handleRadioConnectionFailure(token = loadRequestToken) {
 
 export async function rearmBackgroundPlayback() {
   // Rearm retention without changing an intentional music pause.
-  const retention = activateBackgroundAudioFromGesture();
+  const retention = audioCompatibility.primeOtherConsumers
+    ? activateBackgroundAudioFromGesture() : rearmBackgroundAudio();
   const playback = !state.paused && state.currentTrack ? play() : Promise.resolve(false);
   const results = await Promise.all([retention, playback]);
   return results.some(Boolean);
@@ -1671,6 +1715,7 @@ async function loadTrack(index, {
 } = {}) {
   const track = state.queue[index];
   if (!track) return;
+  primaryPlaying = false;
   graphClosedDuringHandoff = false;
   const nextIsRadio = track.media_kind === "radio";
   const previousSourceType = state.sourceType;
@@ -1707,14 +1752,15 @@ async function loadTrack(index, {
     : null;
   flushSessionPersistence({ currentTime: requestedStartTime });
   if (autoplay) setAudioSessionType("playback");
-  // Match the mature music path: claim/retain the singleton Player lease from
-  // playback intent, before any station resolution or other asynchronous work.
-  syncBackgroundModeKeepAlive();
+  // Existing leases survive handoffs. On a fresh radio start, issue actual
+  // stream playback before starting the silent channel, all in the same tap.
+  updatePrimaryCarrier();
+  if (!nextIsRadio) syncBackgroundModeKeepAlive();
   syncMediaSessionPlaybackState();
   if (!nextIsRadio) notify();
 
-  if (autoplay && (fromUserGesture || navigator.userActivation?.isActive)) {
-    void activateBackgroundAudioFromGesture();
+  if (autoplay && !nextIsRadio && (fromUserGesture || navigator.userActivation?.isActive)) {
+    activatePlayerGesture();
   }
   let el = getAudio();
   updateMediaSessionMetadata();
@@ -1761,7 +1807,7 @@ async function loadTrack(index, {
 
   const resolvedIsLive = Boolean(resolved.isLive ?? resolved.live ?? (resolved.type === "live"));
 
-  if (!resolvedIsLive && shouldResetVisualizerGraph(previousSourceType, resolved)) {
+  if (shouldResetVisualizerGraph(previousSourceType, resolved)) {
     const hadVisualizerGraph = destroyVisualizerGraphForElement(el);
     if (hadVisualizerGraph) {
       graphClosedDuringHandoff = true;
@@ -1796,11 +1842,11 @@ async function loadTrack(index, {
   state.loading = false;
   consecutiveSkips = 0; // successful load — reset skip counter
   flushSessionPersistence({ currentTime: requestedStartTime });
-  syncBackgroundModeKeepAlive();
+  if (!resolvedIsLive || !autoplay) syncBackgroundModeKeepAlive();
   if (!resolvedIsLive || !autoplay) notify();
 
   if (autoplay && !state.paused) {
-    if (typeof beforePlay === "function") {
+    if (!resolvedIsLive && typeof beforePlay === "function") {
       try { beforePlay(el); } catch { /* visualization preparation is optional */ }
     }
     if (state.backgroundMode && !resolvedIsLive) {
@@ -1817,6 +1863,8 @@ async function loadTrack(index, {
         requestToken,
         fromUserGesture ? "initial-play-trusted-gesture" : "initial-play",
       );
+      syncBackgroundModeKeepAlive();
+      if (fromUserGesture || navigator.userActivation?.isActive) activatePlayerGesture();
       updateMediaSessionMetadata();
       syncMediaSessionPlaybackState();
       notify();
@@ -1943,7 +1991,8 @@ export async function play() {
   state.recoveryRequired = false;
   state.error = null;
   setAudioSessionType("playback");
-  void activateBackgroundAudioFromGesture();
+  updatePrimaryCarrier();
+  activatePlayerGesture();
 
   if (state.isLive && state.connectionState === "unavailable" && state.currentIndex >= 0) {
     await loadTrack(state.currentIndex, { autoplay: true });
@@ -1999,6 +2048,7 @@ export function pause(cause = "explicit-user-pause") {
  * Stop playback and reset position.
  */
 export function stopPlayback() {
+  primaryPlaying = false;
   state.backgroundMode = false;
   cancelPrimaryPrime();
   stopPositionSync();
@@ -2445,8 +2495,12 @@ function recoverPrimaryPlaybackAutomatically() {
 }
 
 function onPause(event?: Event) {
+  primaryPlaying = false;
   const target = (event?.currentTarget || audio) as ManagedAudioElement | null;
   const expectedPauseCause = consumeExpectedPause(target);
+  if (audioCompatibility.attachedElement && !expectedPauseCause && !primaryPrimeSourceActive
+    && internalPauseDepth === 0 && internalPlaybackProbeDepth === 0
+    && Date.now() >= ignoreUnexpectedPauseUntilMs) state.paused = true;
   if (state.paused) clearRadioTimers();
   if (
     state.isLive
@@ -2658,6 +2712,7 @@ function onEmptied() {
 
 function onPlaying() {
   if (internalPlaybackProbeDepth > 0) return;
+  primaryPlaying = true;
   state.loading = false;
   if (state.isLive) {
     if (radioConnectionTimer) clearTimeout(radioConnectionTimer);

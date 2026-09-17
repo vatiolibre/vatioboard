@@ -32,16 +32,16 @@ vi.mock("../../src/shared/audio-source-resolver.js", () => ({
   resolveRadioSource: vi.fn((track) => track?.media_kind === "radio" && Number(track?.hls) === 1
     ? null
     : track?.media_kind === "radio" ? ({
-      src: relay,
+      src: track.url_resolved || relay,
       sourceType: "live",
-      sourceTransport: "radio-relay",
+      sourceTransport: track.url_resolved ? "radio-direct" : "radio-relay",
       isLive: true,
       type: "live",
       transport: "radio-relay",
       live: true,
       seekable: false,
       cacheable: false,
-      analysisEligible: true,
+      analysisEligible: false,
       stationUuid: UUID,
       revokeUrl() {},
     }) : null),
@@ -175,7 +175,31 @@ describe("live radio audio runtime", () => {
 
   afterEach(() => vi.useRealTimers());
 
-  it("keeps bounded radio retries on the relay analysis channel and never caches", async () => {
+  it("plays direct radio without CORS and never primes or visualizes it on rearm", async () => {
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    const { primeAudioElement } = await import("../../src/shared/audio-channel-retainer.js");
+    primeAudioElement.mockClear();
+    const beforePlay = vi.fn();
+    const track = { name: `radio:${UUID}`, title: "Direct", media_kind: "radio",
+      station_uuid: UUID, hls: 0, url_resolved: "https://stream.example/live" };
+    await runtime.playTrackNow(track, { fromUserGesture: true, beforePlay });
+    const element = runtime.getAudioElement();
+    expect(element.src).toBe(track.url_resolved);
+    expect(element.crossOrigin).toBeNull();
+    expect(runtime.getState()).toMatchObject({ analysisEligible: false, sourceTransport: "radio-direct" });
+    expect(beforePlay).not.toHaveBeenCalled();
+    runtime.pause();
+    await runtime.primeAudio();
+    await runtime.rearmBackgroundPlayback();
+    expect(primeAudioElement).not.toHaveBeenCalled();
+    expect(element.paused).toBe(true);
+    expect(element.src).toBe(track.url_resolved);
+    await runtime.playTrackNow({ ...track, name: "radio:next" }, { fromUserGesture: true });
+    expect(runtime.getAudioElement()).toBe(element);
+    expect(preparedGraphs.has(element)).toBe(false);
+  });
+
+  it("keeps bounded radio retries on the native relay channel and never caches", async () => {
     const runtime = await import("../../src/shared/audio-runtime.js");
     runtime.setQueue([
       { name: "finite-a", title: "A", media_kind: "audio" },
@@ -201,10 +225,10 @@ describe("live radio audio runtime", () => {
       isLive: true,
       seekable: false,
       cacheable: false,
-      analysisEligible: true,
+      analysisEligible: false,
       connectionState: "connecting",
     });
-    expect(element.preload).toBe("metadata");
+    expect(element.preload).toBe("none");
 
     element.dispatchEvent(new Event("error"));
     await flushMicrotasks();
@@ -329,7 +353,7 @@ describe("live radio audio runtime", () => {
     });
   });
 
-  it("arms the Player lease and prepares visualization before synchronously playing relay radio", async () => {
+  it("starts the real radio synchronously before retention and skips visualization", async () => {
     const runtime = await import("../../src/shared/audio-runtime.js");
     const order = [];
     acquireBackgroundAudioLease.mockImplementationOnce(() => {
@@ -360,7 +384,7 @@ describe("live radio audio runtime", () => {
     const element = runtime.getAudioElement();
     expect(playSpy).toHaveBeenCalledTimes(1);
     expect(element.src).toBe(relay);
-    expect(order).toEqual(["lease", "visualizer", "play"]);
+    expect(order).toEqual(["play", "lease"]);
     expect(acquireBackgroundAudioLease).toHaveBeenCalledTimes(1);
     expect(clearMediaSessionClient).not.toHaveBeenCalled();
     expect(registerStationClick).not.toHaveBeenCalled();
@@ -368,12 +392,12 @@ describe("live radio audio runtime", () => {
     expect(updateMediaSessionClient.mock.calls.some((call) => call[1]?.metadata)).toBe(true);
     expect(runtime.getState().connectionState).toBe("connecting");
     element.dispatchEvent(new Event("playing"));
-    expect(order).toEqual(["lease", "visualizer", "play"]);
+    expect(order).toEqual(["play", "lease"]);
     await selection;
     playSpy.mockRestore();
   });
 
-  it("retains Player ownership and an externally-created visualizer graph across station changes", async () => {
+  it("retains Player ownership but replaces an incompatible graph across station changes", async () => {
     const runtime = await import("../../src/shared/audio-runtime.js");
     await runtime.playTrackNow({
       name: `radio:${UUID}`,
@@ -387,7 +411,7 @@ describe("live radio audio runtime", () => {
     const visualElement = runtime.getAudioElement();
     preparedGraphs.set(visualElement, { audioContext: { state: "running" } });
     expect(runtime.getState()).toMatchObject({
-      analysisEligible: true,
+      analysisEligible: false,
       sourceTransport: "radio-relay",
     });
     expect(prepareGraphForElement).not.toHaveBeenCalled();
@@ -400,16 +424,16 @@ describe("live radio audio runtime", () => {
       hls: 0,
     }, { fromUserGesture: true });
 
-    expect(runtime.getAudioElement()).toBe(visualElement);
+    expect(runtime.getAudioElement()).not.toBe(visualElement);
     expect(runtime.getState()).toMatchObject({
-      analysisEligible: true,
+      analysisEligible: false,
       sourceTransport: "radio-relay",
     });
     expect(releaseBackgroundAudioLease).not.toHaveBeenCalled();
 
-    expect(runtime.getAudioElement()).toBe(visualElement);
-    expect(preparedGraphs.has(visualElement)).toBe(true);
-    expect(destroyVisualizerGraphForElement).not.toHaveBeenCalledWith(visualElement);
+    expect(runtime.getAudioElement()).not.toBe(visualElement);
+    expect(preparedGraphs.has(visualElement)).toBe(false);
+    expect(destroyVisualizerGraphForElement).toHaveBeenCalledWith(visualElement);
     expect(releaseBackgroundAudioLease).not.toHaveBeenCalled();
 
     runtime.pause();
@@ -447,7 +471,7 @@ describe("live radio audio runtime", () => {
 
     expect(runtime.getState()).toMatchObject({
       sourceTransport: "radio-relay",
-      analysisEligible: true,
+      analysisEligible: false,
       connectionState: "connecting",
     });
     expect(runtime.getAudioElement().src).toBe(relay);
@@ -573,7 +597,7 @@ describe("live radio audio runtime", () => {
     expect(runtime.getState().connectionState).toBe("playing");
   });
 
-  it("reuses the graph-backed MP3 channel for radio without disturbing shared keep-alive owners", async () => {
+  it("replaces the graph-backed MP3 channel for native radio without disturbing shared owners", async () => {
     const runtime = await import("../../src/shared/audio-runtime.js");
     const audioSystem = await import("../../src/shared/audio-system.js");
     runtime.setQueue([{
@@ -612,11 +636,10 @@ describe("live radio audio runtime", () => {
     }, { fromUserGesture: true });
 
     const radioElement = runtime.getAudioElement();
-    expect(radioElement).toBe(musicElement);
+    expect(radioElement).not.toBe(musicElement);
     expect(radioElement.src).toBe(relay);
-    expect(preparedGraphs.get(musicElement)).toBe(musicGraph);
-    expect(destroyVisualizerGraphForElement).not.toHaveBeenCalledWith(musicElement);
-    expect(musicGraph.audioContext.close).not.toHaveBeenCalled();
+    expect(preparedGraphs.has(musicElement)).toBe(false);
+    expect(destroyVisualizerGraphForElement).toHaveBeenCalledWith(musicElement);
     expect(audioSystem.getBackgroundKeepAliveAudio()).toBe(keepAliveElement);
     expect(audioSystem.getBackgroundAudioState().activeLeaseIds).toEqual([
       "player-runtime",
@@ -626,7 +649,7 @@ describe("live radio audio runtime", () => {
     expect(order).toEqual(["radio-play"]);
     expect(runtime.getState()).toMatchObject({
       sourceTransport: "radio-relay",
-      analysisEligible: true,
+      analysisEligible: false,
     });
     await selection;
 
@@ -637,18 +660,18 @@ describe("live radio audio runtime", () => {
       title: "Demo Return",
       media_kind: "audio",
     }, { fromUserGesture: true });
-    expect(runtime.getAudioElement()).toBe(musicElement);
-    expect(preparedGraphs.get(musicElement)).toBe(musicGraph);
+    expect(runtime.getAudioElement()).toBe(radioElement);
+    expect(preparedGraphs.has(musicElement)).toBe(false);
     expect(radioElement.src).toContain("blob:demo-return.mp3");
     expect(releaseBackgroundAudioLease).not.toHaveBeenCalled();
 
     musicElement.dispatchEvent(new Event("playing"));
-    expect(preparedGraphs.get(musicElement)).toBe(musicGraph);
-    expect(destroyVisualizerGraphForElement).not.toHaveBeenCalledWith(musicElement);
+    expect(preparedGraphs.has(musicElement)).toBe(false);
+    expect(destroyVisualizerGraphForElement).toHaveBeenCalledWith(musicElement);
 
     runtime.stopPlayback();
-    expect(destroyVisualizerGraphForElement).not.toHaveBeenCalledWith(musicElement);
-    expect(runtime.getAudioElement()).toBe(musicElement);
+    expect(destroyVisualizerGraphForElement).toHaveBeenCalledWith(musicElement);
+    expect(runtime.getAudioElement()).toBe(radioElement);
     playSpy.mockRestore();
   });
 

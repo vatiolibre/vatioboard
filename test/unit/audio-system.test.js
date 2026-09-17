@@ -8,6 +8,45 @@ describe("audio-system background leases", () => {
     audioSystem = await import("../../src/shared/audio-system.js");
   });
 
+  it("delegates to the primary without releasing independent leases, then rearms silence", async () => {
+    const silent = audioSystem.getBackgroundKeepAliveAudio();
+    const play = vi.spyOn(silent, "play");
+    audioSystem.setBackgroundAudioCarrier("player-runtime", true);
+    await audioSystem.acquireBackgroundAudioLease("player-runtime");
+    await audioSystem.acquireBackgroundAudioLease("recording");
+    await audioSystem.rearmBackgroundAudio();
+    audioSystem.recoverBackgroundAudioAutomatically();
+    expect(play).not.toHaveBeenCalled();
+    expect(audioSystem.getBackgroundAudioState().status).toBe("delegated");
+    expect(audioSystem.isBackgroundAudioLeaseActive("recording")).toBe(true);
+    audioSystem.releaseBackgroundAudioLease("player-runtime");
+    expect(audioSystem.getBackgroundAudioState().activeLeaseIds).toEqual(["recording"]);
+    audioSystem.setBackgroundAudioCarrier("player-runtime", false);
+    await Promise.resolve();
+    expect(play).toHaveBeenCalledTimes(1);
+    expect(silent.paused).toBe(false);
+    audioSystem.releaseBackgroundAudioLease("recording");
+    expect(silent.paused).toBe(true);
+  });
+
+  it("does not let late silent playback overlap a newly delegated primary", async () => {
+    const silent = audioSystem.getBackgroundKeepAliveAudio();
+    let finishPlay;
+    vi.spyOn(silent, "play").mockImplementationOnce(() => new Promise((resolve) => {
+      finishPlay = () => { silent.paused = false; resolve(); };
+    }));
+    const pending = audioSystem.acquireBackgroundAudioLease("recording");
+    audioSystem.setBackgroundAudioCarrier("player-runtime", true);
+    await audioSystem.acquireBackgroundAudioLease("player-runtime");
+    finishPlay();
+    await pending;
+    expect(silent.paused).toBe(true);
+    expect(audioSystem.getBackgroundAudioState()).toMatchObject({
+      status: "delegated", activeLeaseIds: ["recording", "player-runtime"],
+    });
+    audioSystem.disposeAudioSystemForTests();
+  });
+
   it("shares one keep-alive audio element across independent leases", async () => {
     const keepAliveAudio = audioSystem.getBackgroundKeepAliveAudio();
 

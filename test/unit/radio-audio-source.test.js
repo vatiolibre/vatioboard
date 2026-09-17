@@ -53,19 +53,19 @@ function radio(overrides = {}) {
 describe("radio audio source resolution", () => {
   beforeEach(() => getStationByUuid.mockReset());
 
-  it("resolves HTTPS stations to the single analyser-eligible relay source", async () => {
+  it("resolves HTTPS stations directly without analysis or station CORS", async () => {
     const result = await resolveAudioSource(`radio:${UUID}`, radio({
       url_resolved: "https://stream.example.com/live.mp3",
     }));
     expect(result).toMatchObject({
       sourceType: "live",
-      sourceTransport: "radio-relay",
+      sourceTransport: "radio-direct",
       isLive: true,
       seekable: false,
       cacheable: false,
-      analysisEligible: true,
+      analysisEligible: false,
     });
-    expect(result.src).toBe(`https://radio-media.vatioboard.com/v1/stations/${UUID}/stream`);
+    expect(result.src).toBe("https://stream.example.com/live.mp3");
     expect(result).not.toHaveProperty("candidates");
   });
 
@@ -80,6 +80,13 @@ describe("radio audio source resolution", () => {
     });
     expect(result.src).toContain(`/v1/stations/${UUID}/stream`);
     expect(result).not.toHaveProperty("candidates");
+  });
+
+  it.each(["", "http://stream.example/live", "javascript:alert(1)", "not a URL",
+    "https://user:password@stream.example/live"])("uses the native relay fallback for %s", async (url_resolved) => {
+    const result = await resolveAudioSource(`radio:${UUID}`, radio({ url_resolved }));
+    expect(result).toMatchObject({ sourceTransport: "radio-relay", analysisEligible: false });
+    expect(result.src).toContain(`/v1/stations/${UUID}/stream`);
   });
 
   it("rejects HLS and invalid station identities", async () => {

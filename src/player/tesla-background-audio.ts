@@ -1,9 +1,19 @@
+import { audioCompatibility } from "../shared/audio-compatibility.js";
 import * as runtime from "../shared/audio-runtime.js";
 import { acquireBackgroundAudioLease, releaseBackgroundAudioLease } from "../shared/audio-system.js";
-import { downloadBackgroundDiagnostics, getBackgroundDiagnostics } from "../shared/background-diagnostics.js";
+import { downloadBackgroundDiagnostics, getBackgroundDiagnostics, recordBackgroundDiagnostic } from "../shared/background-diagnostics.js";
 import { subscribeAudioDiagnostics, stopAudioLifecycleDiagnostics } from "../shared/audio-lifecycle-diagnostics.js";
 
+import { getRadioStreamRelayUrl, isRadioStationUuid } from "../shared/radio-browser.js";
+
 const LEASE = "tesla-diagnostic";
+// Matching Radio Browser record, checked 2026-09-16. No directory request is
+// needed before the test gesture; both fields remain editable for comparisons.
+const DEFAULT_RADIO = {
+  name: "SomaFM Groove Salad (128k MP3)",
+  stream: "https://ice2.somafm.com/groovesalad-128-mp3",
+  uuid: "960cf833-0601-11e8-ae97-52543be04c81",
+};
 
 /** Small same-document fixtures: no network/auth latency in the START gesture. */
 function testTone(frequency: number): string {
@@ -34,7 +44,39 @@ export function mountTeslaAudioTest(root: HTMLElement) {
   const tracks = urls.map((src, i) => ({ name: `tesla-test-${i}`, title: `Tesla test ${i + 1}`,
     artist: "VatioBoard", album: "Background audio diagnostics", media_kind: "audio", src }));
   let active = false;
+  let baseline: HTMLAudioElement | null = null;
+  let baselineContext: AudioContext | null = null;
+  let baselineCleanup = () => {};
+  const radioInputs = document.createElement("div");
+  radioInputs.className = "radio-inputs";
+  const streamInput = document.createElement("input");
+  streamInput.placeholder = "HTTPS station stream URL";
+  streamInput.type = "url";
+  let station = { stream: DEFAULT_RADIO.stream, uuid: DEFAULT_RADIO.uuid };
+  try {
+    const stored = JSON.parse(sessionStorage.getItem("vatioboard.tesla-audio-station") || "null");
+    if (typeof stored?.stream === "string" && typeof stored?.uuid === "string") station = stored;
+  } catch { /* Storage is optional for this diagnostic page. */ }
+  streamInput.value = station.stream;
+  streamInput.spellcheck = false;
+  streamInput.setAttribute("aria-label", "Station stream URL");
+  const uuidInput = document.createElement("input");
+  uuidInput.placeholder = "Radio Browser station UUID";
+  uuidInput.value = station.uuid;
+  uuidInput.spellcheck = false;
+  uuidInput.setAttribute("aria-label", "Station UUID");
+  const streamLabel = document.createElement("label");
+  streamLabel.append("Station stream URL", streamInput);
+  const uuidLabel = document.createElement("label");
+  uuidLabel.append("Radio Browser station UUID", uuidInput);
+  radioInputs.append(streamLabel, uuidLabel);
+  const stationHint = document.createElement("p");
+  stationHint.className = "station-hint";
+  stationHint.textContent = `Default: ${DEFAULT_RADIO.name}. Edit both fields together to compare another station.`;
+  const baselineHost = document.createElement("div");
+  baselineHost.className = "baseline-player";
   const controls = document.createElement("div");
+  controls.className = "test-controls";
   const status = document.createElement("pre");
   status.setAttribute("aria-live", "polite");
   const timeline = document.createElement("pre");
@@ -49,19 +91,132 @@ export function mountTeslaAudioTest(root: HTMLElement) {
     controls.append(control);
   };
   const stop = () => {
+    baselineCleanup();
+    baselineCleanup = () => {};
+    if (baseline) {
+      baseline.pause();
+      baseline.removeAttribute("src");
+      baseline.load();
+      baseline.remove();
+      baseline = null;
+    }
+    if (baselineContext) void baselineContext.close().catch(() => {});
+    baselineContext = null;
+    releaseBackgroundAudioLease(LEASE);
     if (active) runtime.stopPlayback();
     active = false;
-    releaseBackgroundAudioLease(LEASE);
     stopAudioLifecycleDiagnostics();
     status.textContent = JSON.stringify(runtime.getState(), null, 2);
     timeline.textContent = JSON.stringify(getBackgroundDiagnostics().slice(-40), null, 2);
   };
   button("START TESLA BACKGROUND TEST", () => {
     if (active) return;
+    stop();
     active = true;
-    void acquireBackgroundAudioLease(LEASE);
     runtime.setQueue(tracks);
+    void acquireBackgroundAudioLease(LEASE);
   });
+  const startRadio = (mode: "direct" | "relay" | "graph" | "runtime") => {
+    const stream = new URL(streamInput.value);
+    if (stream.protocol !== "https:") throw new Error("Enter an HTTPS station stream URL.");
+    const uuid = uuidInput.value.trim();
+    if (mode !== "direct" && !isRadioStationUuid(uuid)) throw new Error("Enter the station UUID.");
+    stop();
+    if (mode === "runtime") {
+      active = true;
+      const playback = runtime.playTrackNow({ name: `radio:${uuid}`, title: "Tesla radio test",
+        artist: "VatioBoard", media_kind: "radio", station_uuid: uuid, hls: 0,
+        url_resolved: stream.href }, { fromUserGesture: true });
+      void acquireBackgroundAudioLease(LEASE);
+      return playback;
+    }
+    // Each baseline gets a fresh element: detaching an analyser cannot undo
+    // createMediaElementSource. Baselines deliberately acquire no runtime leases.
+    const element = document.createElement("audio");
+    baseline = element;
+    element.controls = true;
+    element.preload = "none";
+    if (mode !== "direct") element.crossOrigin = "anonymous";
+    const sourceUrl = mode === "direct" ? stream.href : getRadioStreamRelayUrl(uuid);
+    if (!sourceUrl) throw new Error("Radio relay is not configured.");
+    element.src = sourceUrl;
+    baselineHost.append(element);
+    if (mode === "graph") {
+      baselineContext = new AudioContext();
+      const source = baselineContext.createMediaElementSource(element);
+      source.connect(baselineContext.destination);
+      void baselineContext.resume().catch(() => {});
+    }
+    const report = (event: Event) => {
+      const snapshot = { requestedOutputMode: mode, mediaEvent: event.type,
+        visibility: document.visibilityState, paused: element.paused,
+        primaryCurrentTime: element.currentTime, primaryDuration: element.duration,
+        audioContextState: baselineContext?.state || "none", readyState: element.readyState,
+        networkState: element.networkState };
+      status.textContent = JSON.stringify(snapshot, null, 2);
+      if (event.type !== "timeupdate") recordBackgroundDiagnostic("radio-baseline", snapshot);
+      timeline.textContent = JSON.stringify(getBackgroundDiagnostics().slice(-40), null, 2);
+    };
+    const events = ["play", "playing", "pause", "waiting", "stalled", "error", "emptied", "timeupdate"];
+    for (const event of events) element.addEventListener(event, report);
+    document.addEventListener("visibilitychange", report);
+    baselineCleanup = () => {
+      for (const event of events) element.removeEventListener(event, report);
+      document.removeEventListener("visibilitychange", report);
+    };
+    element.load();
+    return element.play();
+  };
+  button("POC direct radio", () => startRadio("direct"));
+  button("Relay native radio", () => startRadio("relay"));
+  button("Relay Web Audio radio", () => startRadio("graph"));
+  button("VatioBoard native radio", () => startRadio("runtime"));
+  const optionsDialog = document.createElement("dialog");
+  optionsDialog.className = "runtime-options";
+  const optionsTitle = document.createElement("h2");
+  optionsTitle.textContent = "Runtime comparison options";
+  const optionsHelp = document.createElement("p");
+  optionsHelp.textContent = "The default matches single-element playback. Change one option at a time. Applying reloads the page and stops this test.";
+  optionsDialog.append(optionsTitle, optionsHelp);
+  const settings = [
+    ["audioAttach", "Attach primary element with native controls", audioCompatibility.attachedElement],
+    ["audioSilence", "Play silent loop during real playback", audioCompatibility.silentDuringPlayback],
+    ["audioPrimeOthers", "Prime other consumers on Player Play", audioCompatibility.primeOtherConsumers],
+    ["audioMediaSession", "Write Media Session metadata and actions", audioCompatibility.mediaSessionWrites],
+    ["audioSessionHints", "Set Audio Session playback hint", audioCompatibility.audioSessionHints],
+  ] as const;
+  const optionInputs = settings.map(([key, label, checked]) => {
+    const row = document.createElement("label");
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.checked = checked;
+    row.append(input, label);
+    optionsDialog.append(row);
+    return { key, input };
+  });
+  const applyOptions = document.createElement("button");
+  applyOptions.textContent = "Apply and reload";
+  applyOptions.addEventListener("click", () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set("audioCompatibility", "1");
+    for (const { key, input } of optionInputs) url.searchParams.set(key, input.checked ? "1" : "0");
+    try { sessionStorage.setItem("vatioboard.tesla-audio-station", JSON.stringify({ stream: streamInput.value, uuid: uuidInput.value })); }
+    catch { /* The default station remains usable if storage is unavailable. */ }
+    stop();
+    window.location.assign(url.href);
+  });
+  const cancelOptions = document.createElement("button");
+  cancelOptions.textContent = "Cancel";
+  cancelOptions.addEventListener("click", () => optionsDialog.close());
+  const appLink = document.createElement("a");
+  const appUrl = new URL("/", window.location.origin);
+  appUrl.searchParams.set("audioCompatibility", "1");
+  appUrl.searchParams.set("debugAudio", "1");
+  for (const [key, , checked] of settings) appUrl.searchParams.set(key, checked ? "1" : "0");
+  appLink.href = appUrl.href;
+  appLink.textContent = "Open main Player with current options";
+  optionsDialog.append(applyOptions, cancelOptions, appLink);
+  button("Runtime options", () => optionsDialog.showModal());
   button("STOP TEST", stop);
   button("Play", () => active && runtime.play());
   button("Pause real track", () => active && runtime.pause());
@@ -79,16 +234,25 @@ export function mountTeslaAudioTest(root: HTMLElement) {
     if (index >= 0) runtime.enqueue([tracks[(index + 1) % tracks.length]]);
   });
   const unsubscribe = subscribeAudioDiagnostics((snapshot) => {
-    status.textContent = JSON.stringify({ ...snapshot, musicPaused: runtime.getState().paused }, null, 2);
+    status.textContent = JSON.stringify({ ...snapshot, musicPaused: runtime.getState().paused, backgroundStatus: runtime.getState().backgroundPlaybackState }, null, 2);
     timeline.textContent = JSON.stringify(getBackgroundDiagnostics().slice(-40), null, 2);
   });
   const section = document.createElement("section");
+  section.className = "diagnostic-panels";
   const stateColumn = document.createElement("div");
   const timelineColumn = document.createElement("div");
-  stateColumn.append("Current state", status);
-  timelineColumn.append("Recent events", timeline);
+  const stateTitle = document.createElement("h2");
+  stateTitle.textContent = "Current state";
+  const timelineTitle = document.createElement("h2");
+  timelineTitle.textContent = "Recent events";
+  status.tabIndex = 0;
+  status.setAttribute("aria-label", "Current audio state");
+  timeline.tabIndex = 0;
+  timeline.setAttribute("aria-label", "Audio event timeline");
+  stateColumn.append(stateTitle, status);
+  timelineColumn.append(timelineTitle, timeline);
   section.append(stateColumn, timelineColumn);
-  root.replaceChildren(controls, section);
+  root.replaceChildren(radioInputs, stationHint, controls, baselineHost, section, optionsDialog);
   return () => {
     stop();
     unsubscribe();

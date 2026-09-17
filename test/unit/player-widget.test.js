@@ -51,6 +51,7 @@ vi.mock("../../src/shared/radio-browser.js", () => ({
 }));
 
 const runtimeMock = {
+  getAudioElement: vi.fn(() => null),
   getState: vi.fn(() => ({
     queue: [],
     currentIndex: -1,
@@ -257,6 +258,8 @@ describe("createPlayerWidget", () => {
   beforeEach(async () => {
     vi.resetModules();
     vi.restoreAllMocks();
+
+    runtimeMock.getAudioElement.mockReset().mockReturnValue(null);
 
     // Re-apply mocks after reset
     vi.doMock("../../src/i18n.js", () => ({
@@ -983,7 +986,6 @@ describe("createPlayerWidget", () => {
       }),
       expect.objectContaining({
         fromUserGesture: true,
-        beforePlay: expect.any(Function),
       }),
     );
     expect(runtimeMock.setQueue).not.toHaveBeenCalled();
@@ -1179,6 +1181,23 @@ describe("createPlayerWidget", () => {
     visualsToggle.click();
     expect(visualsToggle.getAttribute("aria-pressed")).toBe("false");
     expect(runtimeMock.rearmBackgroundPlayback).not.toHaveBeenCalled();
+    widget.destroy();
+  });
+
+  it("never creates a graph when Visuals is toggled during empty-source radio loading", () => {
+    const createContext = vi.fn(function () { this.state = "running"; });
+    Object.defineProperty(window, "AudioContext", { configurable: true, value: createContext });
+    runtimeMock.getAudioElement.mockReturnValue(new Audio());
+    runtimeMock.getState.mockReturnValue(makeRuntimeState({
+      currentTrack: { name: "radio:one", media_kind: "radio" },
+      isLive: true, loading: true, analysisEligible: false, sourceType: "live",
+    }));
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    const toggle = document.querySelector(".player-visualizer-toggle-btn");
+    toggle.click();
+    toggle.click();
+    expect(createContext).not.toHaveBeenCalled();
     widget.destroy();
   });
 
