@@ -381,10 +381,6 @@ function createAudioGateway(
       if (!canUseAudio()) return () => {};
       return service.subscribe(listener);
     },
-    setMediaSessionEnabled(enabled) {
-      if (!canUseAudio()) return;
-      service.setMediaSessionEnabled(enabled);
-    },
     async primeAudio() {
       if (!canUseAudio()) return false;
       return service.primeAudio();

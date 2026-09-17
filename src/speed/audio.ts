@@ -1,8 +1,5 @@
 import {
-  MEDIA_METADATA_MIN_UPDATE_INTERVAL_MS,
-  MEDIA_SESSION_FALLBACK_ARTWORK,
   OVERSPEED_SOUND_URL,
-  RUNTIME_ARTWORK_SIZE,
   SPEED_APP_NAME,
   START_RECORDING_SOUND_URL,
   TRAP_SOUND_URL,
@@ -22,28 +19,17 @@ import {
   isBackgroundAudioLeaseActive,
   releaseBackgroundAudioLease,
 } from "../shared/audio-system.js";
-import {
-  clearMediaSessionClient,
-  updateMediaSessionClient,
-} from "../shared/media-session-adapter.js";
 import { shouldPlayOverspeedSound } from "./alerts.js";
-import { capitalizeText, escapeSvgText, getDistanceDisplay, truncateText } from "./render.js";
 
 export const SPEED_BACKGROUND_AUDIO_LEASE = "speed-alerts";
 // Compatibility export: recording keep-alive is now owned by DriveRecordingService.
 export const SPEED_RECORDING_BACKGROUND_AUDIO_LEASE = "drive-recording";
-const SPEED_MEDIA_SESSION_OWNER = "speed";
-// Keep Speed below the audible player runtime so transport controls remain player-owned.
-const SPEED_MEDIA_SESSION_PRIORITY = 5;
 
 export function createSpeedAudioController({
   state,
   t,
   getAlertUiState,
   convertSpeed,
-  getConfiguredTrapAlertDistanceLabel,
-  getAlertLimitDisplayValue,
-  getSubStatusText,
   getCriticalAlertText,
   onStateChange,
 }) {
@@ -90,48 +76,7 @@ export function createSpeedAudioController({
     return `${Math.round(convertSpeed(state.currentSpeedMs, state.unit))} ${UNIT_CONFIG[state.unit].label}`;
   }
 
-  function getRuntimeTripLabel() {
-    const distance = getDistanceDisplay(state.totalDistanceM, state.distanceUnit);
-    return `${capitalizeText(t("trip"))} ${distance.value} ${distance.unit}`;
-  }
-
-  function getRuntimeBackgroundAudioLabel() {
-    return `${t("backgroundAudio")}: ${state.backgroundMode ? t("on") : t("off")}`;
-  }
-
-  function getRuntimeArtworkStatusBadgeText() {
-    return state.statusKind === "accuracy" && state.lastFixAt > 0
-      ? t("gpsLive")
-      : state.statusText;
-  }
-
-  function getRuntimeArtworkAlertValue(alertState = getAlertUiState()) {
-    if (alertState.trapActive) {
-      return alertState.trapSpeedLabel
-        ? `${alertState.trapDistanceLabel} / ${alertState.trapSpeedLabel}`
-        : alertState.trapDistanceLabel;
-    }
-
-    if (alertState.manualEnabled) {
-      return `${getAlertLimitDisplayValue()} ${UNIT_CONFIG[state.unit].label}`;
-    }
-
-    if (state.trapAlertEnabled && state.trapLoadPending) {
-      return t("loadingTraps");
-    }
-
-    if (state.trapAlertEnabled && state.trapLoadError) {
-      return t("trapUnavailable");
-    }
-
-    if (state.trapAlertEnabled) {
-      return getConfiguredTrapAlertDistanceLabel();
-    }
-
-    return t("off");
-  }
-
-  function getRuntimeMediaTitle(alertState = getAlertUiState()) {
+  function getRuntimeTitle(alertState = getAlertUiState()) {
     if (state.lastFixAt <= 0) {
       return state.statusText;
     }
@@ -141,328 +86,17 @@ export function createSpeedAudioController({
     return criticalAlertText ? `${speedLabel} · ${criticalAlertText}` : speedLabel;
   }
 
-  function getRuntimeMediaArtist(alertState = getAlertUiState()) {
-    if (state.lastFixAt <= 0) {
-      return getRuntimeBackgroundAudioLabel();
-    }
-
-    if (alertState.over || alertState.trapActive) {
-      return state.statusText;
-    }
-
-    return getSubStatusText(alertState);
-  }
-
-  function getRuntimeMediaAlbum() {
-    if (state.lastFixAt <= 0) {
-      return SPEED_APP_NAME;
-    }
-
-    return `${SPEED_APP_NAME} · ${getRuntimeTripLabel()}`;
-  }
-
   function getRuntimePageTitle(alertState = getAlertUiState()) {
-    const title = getRuntimeMediaTitle(alertState);
+    const title = getRuntimeTitle(alertState);
     return title ? `${title} | ${SPEED_APP_NAME}` : t("speedPageTitle");
   }
 
-  function getRuntimeMediaPlaybackState() {
-    if (
-      isBackgroundAudioLeaseActive(SPEED_RECORDING_BACKGROUND_AUDIO_LEASE)
-      || isBackgroundAudioLeaseActive(SPEED_BACKGROUND_AUDIO_LEASE)
-      || !overspeedAudio.paused
-      || !trapAlertAudio.paused
-    ) {
-      return "playing";
-    }
-
-    if (
-      state.backgroundMode
-      || state.alertAudioControlActive
-      || state.backgroundAudioArmPending
-      || state.alertSoundPending
-      || state.trapSoundPending
-    ) {
-      return "paused";
-    }
-
-    return "none";
-  }
-
-  function getRuntimeArtworkPalette(alertState = getAlertUiState()) {
-    if (alertState.over) {
-      return {
-        bgStart: "#21080d",
-        bgEnd: "#4a1017",
-        accent: "#ff7b63",
-        accentSoft: "#ffb39f",
-        panel: "rgba(26, 10, 13, 0.78)",
-        panelBorder: "rgba(255, 176, 158, 0.22)",
-        text: "#fff4f1",
-        muted: "#f8c8be",
-        chip: "rgba(255, 123, 99, 0.16)",
-        chipBorder: "rgba(255, 123, 99, 0.34)",
-      };
-    }
-
-    if (alertState.trapActive) {
-      return {
-        bgStart: "#1c1406",
-        bgEnd: "#4f3108",
-        accent: "#f6c453",
-        accentSoft: "#ffe29e",
-        panel: "rgba(24, 18, 8, 0.78)",
-        panelBorder: "rgba(246, 196, 83, 0.22)",
-        text: "#fff9eb",
-        muted: "#f5dfad",
-        chip: "rgba(246, 196, 83, 0.14)",
-        chipBorder: "rgba(246, 196, 83, 0.28)",
-      };
-    }
-
-    return {
-      bgStart: "#081421",
-      bgEnd: "#163854",
-      accent: "#63e6be",
-      accentSoft: "#93c5fd",
-      panel: "rgba(8, 19, 33, 0.72)",
-      panelBorder: "rgba(147, 197, 253, 0.16)",
-      text: "#f8fbff",
-      muted: "#bfd5ea",
-      chip: "rgba(99, 230, 190, 0.12)",
-      chipBorder: "rgba(147, 197, 253, 0.24)",
-    };
-  }
-
-  function buildRuntimeArtworkModel(alertState = getAlertUiState()) {
-    const speedValue = String(Math.round(convertSpeed(state.currentSpeedMs, state.unit)));
-    const criticalAlertText = getCriticalAlertText(alertState);
-    const sectionLabel = criticalAlertText ? t("alerts") : getRuntimeArtworkStatusBadgeText();
-    const primaryLine = criticalAlertText || getSubStatusText(alertState);
-    const tripDistance = getDistanceDisplay(state.totalDistanceM, state.distanceUnit);
-
-    return {
-      speedValue,
-      unitLabel: UNIT_CONFIG[state.unit].label,
-      statusBadge: truncateText(getRuntimeArtworkStatusBadgeText(), 24),
-      sectionLabel: truncateText(sectionLabel, 24),
-      primaryLine: truncateText(primaryLine || state.statusText, 42),
-      tripLabel: capitalizeText(t("trip")),
-      tripValue: truncateText(`${tripDistance.value} ${tripDistance.unit}`, 16),
-      alertLabel: t("alerts"),
-      alertValue: truncateText(getRuntimeArtworkAlertValue(alertState), 22),
-      backgroundLabel: t("backgroundCompact"),
-      backgroundValue: truncateText(state.backgroundMode ? t("on") : t("off"), 12),
-      palette: getRuntimeArtworkPalette(alertState),
-    };
-  }
-
-  function createRuntimeArtworkDataUrl(alertState = getAlertUiState()) {
-    const model = buildRuntimeArtworkModel(alertState);
-    const {
-      speedValue,
-      unitLabel,
-      statusBadge,
-      sectionLabel,
-      primaryLine,
-      tripLabel,
-      tripValue,
-      alertLabel,
-      alertValue,
-      backgroundLabel,
-      backgroundValue,
-      palette,
-    } = model;
-
-    const svg = `
-<svg xmlns="http://www.w3.org/2000/svg" width="${RUNTIME_ARTWORK_SIZE}" height="${RUNTIME_ARTWORK_SIZE}" viewBox="0 0 512 512" role="img" aria-label="${escapeSvgText(SPEED_APP_NAME)}">
-  <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="${palette.bgStart}" />
-      <stop offset="100%" stop-color="${palette.bgEnd}" />
-    </linearGradient>
-    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="${palette.accent}" />
-      <stop offset="100%" stop-color="${palette.accentSoft}" />
-    </linearGradient>
-    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="10" stdDeviation="18" flood-color="rgba(0,0,0,0.22)" />
-    </filter>
-  </defs>
-  <rect width="512" height="512" rx="44" fill="url(#bg)" />
-  <circle cx="420" cy="96" r="94" fill="${palette.accent}" opacity="0.12" />
-  <circle cx="458" cy="66" r="54" fill="${palette.accentSoft}" opacity="0.12" />
-  <rect x="28" y="28" width="456" height="456" rx="34" fill="rgba(255,255,255,0.03)" stroke="rgba(255,255,255,0.08)" />
-
-  <text x="48" y="62" fill="${palette.muted}" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="700" letter-spacing="2">VATIO SPEED</text>
-  <g filter="url(#shadow)">
-    <rect x="356" y="38" width="108" height="34" rx="17" fill="${palette.chip}" stroke="${palette.chipBorder}" />
-  </g>
-  <text x="410" y="60" text-anchor="middle" fill="${palette.text}" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700">${escapeSvgText(statusBadge)}</text>
-
-  <text x="48" y="116" fill="${palette.muted}" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700" letter-spacing="2">${escapeSvgText(t("speed"))}</text>
-  <text x="48" y="248" fill="${palette.text}" font-family="Arial, Helvetica, sans-serif" font-size="170" font-weight="700">${escapeSvgText(speedValue)}</text>
-  <text x="344" y="248" fill="${palette.accentSoft}" font-family="Arial, Helvetica, sans-serif" font-size="44" font-weight="700">${escapeSvgText(unitLabel)}</text>
-
-  <g filter="url(#shadow)">
-    <rect x="40" y="284" width="432" height="100" rx="28" fill="${palette.panel}" stroke="${palette.panelBorder}" />
-  </g>
-  <text x="64" y="318" fill="${palette.muted}" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="700" letter-spacing="1.5">${escapeSvgText(sectionLabel)}</text>
-  <text x="64" y="356" fill="${palette.text}" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700">${escapeSvgText(primaryLine)}</text>
-
-  <g filter="url(#shadow)">
-    <rect x="40" y="404" width="132" height="72" rx="22" fill="${palette.chip}" stroke="${palette.chipBorder}" />
-    <rect x="190" y="404" width="132" height="72" rx="22" fill="${palette.chip}" stroke="${palette.chipBorder}" />
-    <rect x="340" y="404" width="132" height="72" rx="22" fill="${palette.chip}" stroke="${palette.chipBorder}" />
-  </g>
-
-  <text x="58" y="430" fill="${palette.muted}" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700">${escapeSvgText(tripLabel)}</text>
-  <text x="58" y="460" fill="${palette.text}" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700">${escapeSvgText(tripValue)}</text>
-
-  <text x="208" y="430" fill="${palette.muted}" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700">${escapeSvgText(alertLabel)}</text>
-  <text x="208" y="460" fill="${palette.text}" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700">${escapeSvgText(alertValue)}</text>
-
-  <text x="358" y="430" fill="${palette.muted}" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700">${escapeSvgText(backgroundLabel)}</text>
-  <text x="358" y="460" fill="${palette.text}" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700">${escapeSvgText(backgroundValue)}</text>
-</svg>`.trim();
-
-    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
-  }
-
-  function getRuntimeArtworkSignature(alertState = getAlertUiState()) {
-    const model = buildRuntimeArtworkModel(alertState);
-    return JSON.stringify([
-      model.speedValue,
-      model.unitLabel,
-      model.statusBadge,
-      model.sectionLabel,
-      model.primaryLine,
-      model.tripValue,
-      model.alertValue,
-      model.backgroundValue,
-      model.palette.bgStart,
-      model.palette.bgEnd,
-      model.palette.accent,
-    ]);
-  }
-
-  function getRuntimeMediaArtwork(alertState = getAlertUiState()) {
-    const artworkSignature = getRuntimeArtworkSignature(alertState);
-
-    if (state.runtimeArtworkSignature !== artworkSignature || !state.runtimeArtworkDataUrl) {
-      state.runtimeArtworkDataUrl = createRuntimeArtworkDataUrl(alertState);
-      state.runtimeArtworkSignature = artworkSignature;
-    }
-
-    return [
-      {
-        src: state.runtimeArtworkDataUrl,
-        sizes: `${RUNTIME_ARTWORK_SIZE}x${RUNTIME_ARTWORK_SIZE}`,
-        type: "image/svg+xml",
-      },
-      ...MEDIA_SESSION_FALLBACK_ARTWORK,
-    ];
-  }
-
   function syncRuntimePagePresentation() {
-    const alertState = getAlertUiState();
-    const nextPageTitle = getRuntimePageTitle(alertState);
-
+    const nextPageTitle = getRuntimePageTitle();
     if (state.runtimePageTitle !== nextPageTitle) {
       document.title = nextPageTitle;
       state.runtimePageTitle = nextPageTitle;
     }
-
-    const nextPlaybackState = getRuntimeMediaPlaybackState();
-    if (state.runtimeMediaPlaybackState !== nextPlaybackState) {
-      updateMediaSessionClient(SPEED_MEDIA_SESSION_OWNER, {
-        active: true,
-        priority: SPEED_MEDIA_SESSION_PRIORITY,
-        playbackState: nextPlaybackState,
-      });
-      state.runtimeMediaPlaybackState = nextPlaybackState;
-    }
-
-    const artworkSignature = state.runtimeDynamicArtworkBlocked
-      ? "fallback-artwork"
-      : getRuntimeArtworkSignature(alertState);
-    const metadataTitle = getRuntimeMediaTitle(alertState);
-    const metadataArtist = getRuntimeMediaArtist(alertState);
-    const metadataAlbum = getRuntimeMediaAlbum();
-    const metadataSignature = JSON.stringify([
-      metadataTitle,
-      metadataArtist,
-      metadataAlbum,
-      artworkSignature,
-    ]);
-    const metadataUrgencySignature = JSON.stringify([
-      state.statusKind,
-      state.audioMuted,
-      state.backgroundMode,
-      state.lastFixAt > 0,
-      alertState.source,
-      alertState.over,
-      alertState.trapActive,
-    ]);
-    const now = Date.now();
-
-    if (state.runtimeMediaMetadataSignature === metadataSignature) {
-      return;
-    }
-
-    if (
-      state.runtimeMediaMetadataUpdatedAt > 0
-      && (now - state.runtimeMediaMetadataUpdatedAt) < MEDIA_METADATA_MIN_UPDATE_INTERVAL_MS
-      && state.runtimeMediaMetadataUrgencySignature === metadataUrgencySignature
-    ) {
-      return;
-    }
-
-    const metadataInit = {
-      title: metadataTitle,
-      artist: metadataArtist,
-      album: metadataAlbum,
-      artwork: state.runtimeDynamicArtworkBlocked
-        ? MEDIA_SESSION_FALLBACK_ARTWORK
-        : getRuntimeMediaArtwork(alertState),
-      fallbackArtwork: MEDIA_SESSION_FALLBACK_ARTWORK,
-    };
-
-    updateMediaSessionClient(SPEED_MEDIA_SESSION_OWNER, {
-      active: true,
-      priority: SPEED_MEDIA_SESSION_PRIORITY,
-      metadata: metadataInit,
-    });
-    state.runtimeMediaMetadataSignature = metadataSignature;
-    state.runtimeMediaMetadataUrgencySignature = metadataUrgencySignature;
-    state.runtimeMediaMetadataUpdatedAt = now;
-  }
-
-  function installMediaSessionActionHandlers(handlers) {
-    updateMediaSessionClient(SPEED_MEDIA_SESSION_OWNER, {
-      active: true,
-      priority: SPEED_MEDIA_SESSION_PRIORITY,
-      handlers: {
-        play: () => {
-          handlers.handleRecordingMediaSessionPlay?.({
-            source: "media-session-play",
-            fromUserGesture: true,
-          });
-        },
-        pause: () => {
-          handlers.handleSpeedMediaSessionPause?.({
-            source: "media-session-pause",
-            reason: "speed-media-session-pause-ignored-for-keep-alive",
-          });
-        },
-        stop: () => {
-          handlers.handleSpeedMediaSessionStop?.({
-            source: "media-session-stop",
-            reason: "speed-media-session-stop-ignored-for-keep-alive",
-          });
-        },
-      },
-    });
   }
 
   function wantsBackgroundAudio() {
@@ -473,18 +107,6 @@ export function createSpeedAudioController({
 
   function wantsRecordingKeepAliveAudio() {
     return state.recordingKeepAliveIntended && !state.recordingKeepAliveSuppressed;
-  }
-
-  function isMediaSessionSource(source = "") {
-    return String(source).startsWith("media-session");
-  }
-
-  function isMediaSessionReason(reason = "") {
-    return String(reason).includes("media-session");
-  }
-
-  function shouldIgnoreMediaSessionKeepAliveDisarm({ source = "", reason = "" } = {}) {
-    return isMediaSessionSource(source) || isMediaSessionReason(reason);
   }
 
   function isStaleRecordingKeepAliveArm(revision) {
@@ -566,12 +188,9 @@ export function createSpeedAudioController({
     retainIntent = false,
     suppressed = false,
     blocked = false,
-    source = "",
-    reason = "",
+    source: _source = "",
+    reason: _reason = "",
   } = {}) {
-    if (shouldIgnoreMediaSessionKeepAliveDisarm({ source, reason })) {
-      return false;
-    }
 
     state.recordingKeepAliveRevision = (state.recordingKeepAliveRevision || 0) + 1;
     state.recordingKeepAliveIntended = retainIntent;
@@ -585,9 +204,6 @@ export function createSpeedAudioController({
   }
 
   function suppressRecordingKeepAliveAudio({ blocked = false, source = "", reason = "" } = {}) {
-    if (shouldIgnoreMediaSessionKeepAliveDisarm({ source, reason })) {
-      return false;
-    }
 
     return disarmRecordingKeepAliveAudio({
       retainIntent: state.recordingKeepAliveIntended,
@@ -675,10 +291,7 @@ export function createSpeedAudioController({
     }
   }
 
-  function suppressBackgroundAudioRuntime({ source = "", reason = "" } = {}) {
-    if (shouldIgnoreMediaSessionKeepAliveDisarm({ source, reason })) {
-      return false;
-    }
+  function suppressBackgroundAudioRuntime({ source: _source = "", reason: _reason = "" } = {}) {
 
     state.backgroundAudioRevision += 1;
     state.backgroundAudioSuppressed = true;
@@ -1023,12 +636,9 @@ export function createSpeedAudioController({
 
   function disarmBackgroundAlertAudio({
     fromUserGesture = false,
-    source = "",
-    reason = "",
+    source: _source = "",
+    reason: _reason = "",
   } = {}) {
-    if (shouldIgnoreMediaSessionKeepAliveDisarm({ source, reason })) {
-      return false;
-    }
 
     state.backgroundAudioArmed = false;
     state.backgroundAudioArmPending = false;
@@ -1182,7 +792,6 @@ export function createSpeedAudioController({
     cueController.destroy();
     releaseBackgroundAudioLease(SPEED_RECORDING_BACKGROUND_AUDIO_LEASE);
     releaseBackgroundAudioLease(SPEED_BACKGROUND_AUDIO_LEASE);
-    clearMediaSessionClient(SPEED_MEDIA_SESSION_OWNER);
   }
 
   return {
@@ -1194,7 +803,6 @@ export function createSpeedAudioController({
     dispose,
     handleUserGestureAudioActivation,
     isBackgroundAlertAudioArmed,
-    installMediaSessionActionHandlers,
     isRecordingKeepAliveArmed,
     maybeRecoverRecordingKeepAliveAudio,
     maybeRecoverSuppressedBackgroundAudio,

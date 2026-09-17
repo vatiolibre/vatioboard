@@ -15,15 +15,15 @@ function radioFixture() {
 test("one gesture starts real media; Pause and Rearm retain the silent channel", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/tesla-background-audio.html?audioCompatibility=0");
+  await page.goto("/tesla-background-audio.html");
   const click = (name: string) => page.getByRole("button", { name, exact: true }).click();
   const snapshot = async () => JSON.parse(await page.locator("pre[aria-live]").innerText());
   await click("START TESLA BACKGROUND TEST");
   await expect.poll(async () => (await snapshot()).primaryCurrentTime).toBeGreaterThan(0.1);
   const started = await snapshot();
   expect(started).toMatchObject({
-    paused: false, keepAlivePaused: false, keepAliveLoop: true, keepAliveMuted: false,
-    keepAliveVolume: 1, keepAlivePlaybackRate: 1, mediaSessionPlaybackState: "playing", leaseCount: 2,
+    paused: false, keepAlivePaused: true, keepAliveLoop: true, keepAliveMuted: false,
+    keepAliveVolume: 1, keepAlivePlaybackRate: 1, backgroundStatus: "delegated", leaseCount: 2,
   });
   await click("Pause real track");
   await expect.poll(async () => (await snapshot()).musicPaused).toBe(true);
@@ -35,7 +35,7 @@ test("one gesture starts real media; Pause and Rearm retain the silent channel",
     primaryElementId: started.primaryElementId, keepAliveIdentity: started.keepAliveIdentity,
   });
   await click("Next");
-  await expect.poll(() => page.evaluate(() => navigator.mediaSession.metadata?.title)).toBe("Tesla test 2");
+  await expect.poll(async () => (await snapshot()).musicPaused).toBe(false);
   await click("Seek +10 seconds");
   await expect.poll(async () => (await snapshot()).primaryCurrentTime).toBeGreaterThan(10);
   await click("STOP TEST");
@@ -48,7 +48,7 @@ test("direct radio baseline and runtime both play without station CORS headers",
   // Audible PCM served at a station-like HTTPS URL; intentionally no ACAO.
   const wav = radioFixture();
   await page.route("https://station.example/live", (route) => route.fulfill({ contentType: "audio/wav", body: wav }));
-  await page.goto("/tesla-background-audio.html?audioCompatibility=0");
+  await page.goto("/tesla-background-audio.html");
   await page.getByLabel("Station stream URL").fill("https://station.example/live");
   await page.getByLabel("Station UUID").fill("11111111-1111-4111-8111-111111111111");
   const snapshot = async () => JSON.parse(await page.locator("pre[aria-live]").innerText());
@@ -58,16 +58,16 @@ test("direct radio baseline and runtime both play without station CORS headers",
   await page.getByRole("button", { name: "VatioBoard native radio", exact: true }).click();
   await expect.poll(async () => (await snapshot()).leaseCount).toBe(2);
   await expect.poll(async () => (await snapshot()).primaryCurrentTime).toBeGreaterThan(0.1);
-  await expect(page.locator("audio")).toHaveCount(0);
+  await expect(page.locator("#vatio-primary-audio-host audio")).toBeHidden();
   await page.getByRole("button", { name: "STOP TEST", exact: true }).click();
   await expect.poll(() => page.evaluate(() => navigator.mediaSession.playbackState)).toBe("none");
 });
 
 
-test("compatibility runtime delegates retention and makes no platform writes", async ({ page }) => {
+test("default runtime delegates retention and makes no platform writes", async ({ page }) => {
   await page.addInitScript(() => {
     const events = { plays: [] as { src: string; connected: boolean }[], writes: [] as string[] };
-    Object.assign(window, { compatibilityEvents: events });
+    Object.assign(window, { audioEvents: events });
     const nativePlay = HTMLMediaElement.prototype.play;
     HTMLMediaElement.prototype.play = function () {
       events.plays.push({ src: this.src, connected: this.isConnected });
@@ -96,29 +96,34 @@ test("compatibility runtime delegates retention and makes no platform writes", a
   await click("VatioBoard native radio");
   await expect.poll(async () => (await snapshot()).primaryCurrentTime).toBeGreaterThan(0.1);
   expect(await snapshot()).toMatchObject({ primaryConnected: true, keepAlivePaused: true,
-    backgroundStatus: "delegated", leaseCount: 2, mediaSessionWrites: false, audioSessionHints: false });
-  const events = () => page.evaluate(() => Reflect.get(window, "compatibilityEvents"));
+    backgroundStatus: "delegated", leaseCount: 2, primaryControls: false });
+  const events = () => page.evaluate(() => Reflect.get(window, "audioEvents"));
   expect((await events()).plays).toHaveLength(1);
   expect((await events()).plays[0].connected).toBe(true);
   expect((await events()).writes).toEqual([]);
-  await page.getByLabel("VatioBoard native audio controls").evaluate((el: HTMLAudioElement) => el.pause());
+  await page.getByLabel("VatioBoard audio playback").evaluate((el: HTMLAudioElement) => el.pause());
   await expect.poll(async () => (await snapshot()).musicPaused).toBe(true);
   expect((await snapshot()).leaseCount).toBe(2);
   await click("Rearm keep-alive");
-  expect(await page.getByLabel("VatioBoard native audio controls").evaluate((el: HTMLAudioElement) => el.paused)).toBe(true);
+  expect(await page.getByLabel("VatioBoard audio playback").evaluate((el: HTMLAudioElement) => el.paused)).toBe(true);
   await click("Play");
   await expect.poll(async () => (await snapshot()).backgroundStatus).toBe("delegated");
   expect((await snapshot()).keepAlivePaused).toBe(true);
   await click("STOP TEST");
   expect((await events()).writes).toEqual([]);
-  await click("Runtime options");
-  await expect(page.getByRole("checkbox", { name: "Attach primary element with native controls" })).toBeChecked();
-  await expect(page.getByRole("checkbox", { name: "Play silent loop during real playback" })).not.toBeChecked();
-  await page.getByLabel("Play silent loop during real playback").check();
-  await page.getByRole("button", { name: "Apply and reload" }).click();
-  await expect(page).toHaveURL(/audioSilence=1/);
+  await page.getByText("Audio test summary", { exact: true }).click();
+  await page.getByLabel("Tesla software version (entered manually)").fill("2026.26.6.1");
+  await page.getByLabel("Stops other Tesla audio").selectOption("Pass");
+  await expect(page.getByLabel("Automatic audio observations")).toContainText("Recovery calls:");
+  await expect(page.getByLabel("Stops other Tesla audio")).toHaveValue("Pass");
+  await expect(page.locator("#vatio-primary-audio-host audio")).toBeHidden();
+  expect(await page.locator("#vatio-primary-audio-host").evaluate((el) => el.getBoundingClientRect().height)).toBe(0);
+  // Removed experiment parameters cannot restore a different playback path.
+  await page.goto("/tesla-background-audio.html?audioCompatibility=0&audioSilence=1&audioAttach=0");
+  await page.getByLabel("Station stream URL", { exact: true }).fill("https://station.example/live");
   await click("VatioBoard native radio");
-  await expect.poll(async () => (await snapshot()).keepAlivePaused).toBe(false);
-  expect((await snapshot()).silentDuringPlayback).toBe(true);
+  await expect.poll(async () => (await snapshot()).backgroundStatus).toBe("delegated");
+  expect((await snapshot()).keepAlivePaused).toBe(true);
+  expect((await events()).writes).toEqual([]);
   await click("STOP TEST");
 });

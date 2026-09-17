@@ -89,7 +89,6 @@ function createAudioRuntimeMock() {
       playing: true,
     })),
     subscribe: vi.fn(() => vi.fn()),
-    setMediaSessionEnabled: vi.fn(),
     primeAudio: vi.fn(async () => true),
     play: vi.fn(() => true),
     pause: vi.fn(),

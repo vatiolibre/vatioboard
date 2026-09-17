@@ -418,7 +418,8 @@ describe('speed.html smoke', () => {
     expect(document.getElementById('toggleRecording').getAttribute('aria-label')).toBe(
       'Pause recording'
     );
-    expect(getBrowserMocks().mediaSession.playbackState).toBe('playing');
+    expect(getBrowserMocks().mediaSession.playbackState).toBe('none');
+    expect(getBrowserMocks().mediaSession.setActionHandler).not.toHaveBeenCalled();
     expect(
       audioSystem.isBackgroundAudioLeaseActive(
         audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
@@ -514,7 +515,8 @@ describe('speed.html smoke', () => {
     expect(overspeedAudio?.playCalls).toBe(0);
     expect(trapAlertAudio?.playCalls).toBe(0);
     expect(startRecordingAudio?.playCalls).toBe(1);
-    expect(getBrowserMocks().mediaSession.playbackState).toBe('playing');
+    expect(getBrowserMocks().mediaSession.playbackState).toBe('none');
+    expect(getBrowserMocks().mediaSession.setActionHandler).not.toHaveBeenCalled();
   });
 
   it('quick audio toggle claims background audio and plays a confirmation sound when enabling alerts', async () => {
@@ -595,7 +597,8 @@ describe('speed.html smoke', () => {
     expect(document.getElementById('quickAudioToggle').getAttribute('aria-label')).toBe(
       'Mute alert audio'
     );
-    expect(getBrowserMocks().mediaSession.playbackState).toBe('playing');
+    expect(getBrowserMocks().mediaSession.playbackState).toBe('none');
+    expect(getBrowserMocks().mediaSession.setActionHandler).not.toHaveBeenCalled();
   });
 
   it('offers recovery after recording GPS goes stale while the page is hidden', async () => {

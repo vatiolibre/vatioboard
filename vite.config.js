@@ -102,6 +102,7 @@ function getManualChunk(id) {
 
 export default defineConfig({
   base: "/",
+  define: { "import.meta.env.VITE_BUILD_ID": JSON.stringify(process.env.VITE_BUILD_ID || new Date().toISOString()) },
   plugins: [validateRadioDevelopmentEnvironmentPlugin(), cleanAppRoutePlugin()],
   resolve: {
     alias: [

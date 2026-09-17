@@ -5,7 +5,7 @@ let memoryEnabled = false;
 let memoryEvents: BackgroundDiagnosticEntry[] = [];
 
 const ALLOWED_FIELDS = new Set([
-  "audioAttached", "silentDuringPlayback", "primeOtherConsumers", "mediaSessionWrites", "audioSessionHints", "primaryConnected",
+  "primaryConnected", "primaryControls",
   "action", "hidden", "heartbeat", "wallTime", "performanceTime", "wallDelta", "performanceDelta",
   "leaseCount", "primaryCurrentTime", "keepAliveCurrentTime", "keepAliveDuration",
   "keepAliveLoop", "keepAliveMuted", "keepAliveVolume", "keepAlivePlaybackRate", "keepAliveEnded",
@@ -133,8 +133,43 @@ export function getBackgroundDiagnostics(): BackgroundDiagnosticEntry[] {
   }
 }
 
+export type AudioTestResult = "Not tested" | "Pass" | "Fail";
+const observation = {
+  startedAt: 0, interruptions: 0, recoveryAttempts: 0, recoveryResolved: 0, recoveryRejected: 0,
+  latestLifecycle: "None observed", vehicleVersion: "",
+  results: { takeover: "Not tested", thirtySeconds: "Not tested", fiveMinutes: "Not tested" } as Record<string, AudioTestResult>,
+};
+
+export function getAudioObservation() {
+  if (!observation.startedAt) observation.startedAt = Date.now();
+  return { ...observation, results: { ...observation.results } };
+}
+
+export function setAudioObservationVehicle(version: string) { observation.vehicleVersion = version.slice(0, 80); }
+export function setAudioObservationResult(key: string, value: AudioTestResult) {
+  if (Object.hasOwn(observation.results, key) && ["Not tested", "Pass", "Fail"].includes(value)) observation.results[key] = value;
+}
+
+/** Counts cover this document's observation, independently of bounded event history. */
+export function observeAudioRecovery(reason: string, attempt: Promise<boolean>) {
+  recordBackgroundDiagnostic("audio-recovery-attempt", { reason });
+  return attempt.then((result) => {
+    recordBackgroundDiagnostic(result ? "audio-recovery-resolved" : "audio-recovery-rejected", { reason });
+    return result;
+  }, () => {
+    recordBackgroundDiagnostic("audio-recovery-rejected", { reason });
+    return false;
+  });
+}
+
 export function recordBackgroundDiagnostic(event: string, detail: Record<string, unknown> = {}) {
   if (!isBackgroundDiagnosticsEnabled()) return;
+  if (!observation.startedAt) observation.startedAt = Date.now();
+  if (event === "audio-interruption") observation.interruptions += 1;
+  if (event === "audio-recovery-attempt") observation.recoveryAttempts += 1;
+  if (event === "audio-recovery-resolved") observation.recoveryResolved += 1;
+  if (event === "audio-recovery-rejected") observation.recoveryRejected += 1;
+  if (typeof detail.lifecycle === "string") observation.latestLifecycle = detail.lifecycle.slice(0, 80);
   const entries = getBackgroundDiagnostics();
   entries.push({
     at: Date.now(),
@@ -153,6 +188,7 @@ export function serializeBackgroundDiagnostics() {
   return JSON.stringify({
     version: 1,
     userAgent: typeof navigator === "undefined" ? "" : navigator.userAgent,
+    observation: getAudioObservation(),
     events: getBackgroundDiagnostics(),
   }, null, 2);
 }

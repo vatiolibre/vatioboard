@@ -4,7 +4,6 @@ const UUID = "11111111-1111-4111-8111-111111111111";
 const relay = `https://radio-media.vatioboard.com/v1/stations/${UUID}/stream`;
 const triggerBackgroundCache = vi.fn();
 const registerStationClick = vi.fn().mockResolvedValue(true);
-const updateMediaSessionClient = vi.fn();
 const resumeVisualizerGraphForElement = vi.fn().mockResolvedValue(true);
 let preparedGraphs = new WeakMap();
 const destroyVisualizerGraphForElement = vi.fn((element) => preparedGraphs.delete(element));
@@ -22,10 +21,7 @@ const acquireBackgroundAudioLease = vi.fn(async (leaseId) => {
   return true;
 });
 const releaseBackgroundAudioLease = vi.fn((leaseId) => activeBackgroundLeaseIds.delete(leaseId));
-const clearMediaSessionClient = vi.fn();
-const getNormalizedMediaSessionArtwork = vi.fn().mockResolvedValue([
-  { src: "blob:station-artwork", sizes: "512x512", type: "image/png" },
-]);
+
 
 vi.mock("../../src/shared/audio-source-resolver.js", () => ({
   triggerBackgroundCache,
@@ -59,18 +55,6 @@ vi.mock("../../src/shared/audio-source-resolver.js", () => ({
       revokeUrl() {},
     })),
 }));
-vi.mock("../../src/shared/media-session-adapter.js", () => ({
-  clearMediaSessionClient,
-  updateMediaSessionClient,
-}));
-vi.mock("../../src/shared/media-session-artwork.js", () => ({
-  clearMediaSessionArtworkCache: vi.fn(),
-  DEFAULT_PLAYER_ARTWORK: [
-    { src: "/web-app-manifest-192x192.png", sizes: "192x192", type: "image/png" },
-    { src: "/web-app-manifest-512x512.png", sizes: "512x512", type: "image/png" },
-  ],
-  getNormalizedMediaSessionArtwork,
-}));
 vi.mock("../../src/shared/audio-channel-retainer.js", () => ({
   primeAudioElement: vi.fn().mockResolvedValue(true),
   createSilentLoopAudioUrl: () => "blob:primary-prime",
@@ -81,6 +65,7 @@ vi.mock("../../src/shared/audio-system.js", () => {
   background.paused = true;
   return {
     acquireBackgroundAudioLease,
+    setBackgroundAudioCarrier: vi.fn(),
     getBackgroundAudioState: () => ({
       status: activeBackgroundLeaseIds.size > 0 ? "armed" : "idle",
       activeLeaseIds: Array.from(activeBackgroundLeaseIds),
@@ -140,7 +125,6 @@ describe("live radio audio runtime", () => {
     vi.useFakeTimers();
     triggerBackgroundCache.mockClear();
     registerStationClick.mockClear();
-    updateMediaSessionClient.mockClear();
     destroyVisualizerGraphForElement.mockClear();
     resumeVisualizerGraphForElement.mockReset().mockResolvedValue(true);
     preparedGraphs = new WeakMap();
@@ -158,8 +142,6 @@ describe("live radio audio runtime", () => {
       return true;
     });
     releaseBackgroundAudioLease.mockReset().mockImplementation((leaseId) => activeBackgroundLeaseIds.delete(leaseId));
-    clearMediaSessionClient.mockClear();
-    getNormalizedMediaSessionArtwork.mockClear();
     const audioSession = new EventTarget();
     Object.assign(audioSession, { type: "auto", state: "inactive" });
     Object.defineProperty(navigator, "audioSession", {
@@ -303,7 +285,7 @@ describe("live radio audio runtime", () => {
     expect(element.src).toContain("blob:finite-next");
   });
 
-  it("rejects HLS without advancing and clears Media Session seek/position support for live", async () => {
+  it("rejects HLS without advancing or installing platform handlers", async () => {
     const runtime = await import("../../src/shared/audio-runtime.js");
     await runtime.playTrackNow({
       name: `radio:${UUID}`,
@@ -318,23 +300,7 @@ describe("live radio audio runtime", () => {
     await vi.advanceTimersByTimeAsync(10_000);
     await flushMicrotasks();
 
-    const liveUpdates = updateMediaSessionClient.mock.calls.map((call) => call[1]);
-    const handlers = liveUpdates.find((update) => update?.handlers)?.handlers;
-    expect(handlers).toEqual(expect.objectContaining({
-      play: expect.any(Function),
-      pause: expect.any(Function),
-      stop: expect.any(Function),
-      previoustrack: expect.any(Function),
-      nexttrack: expect.any(Function),
-    }));
-    expect(handlers).not.toHaveProperty("seekto");
-    expect(liveUpdates).toContainEqual(expect.objectContaining({ positionState: null }));
-    expect(liveUpdates).toContainEqual(expect.objectContaining({
-      metadata: expect.objectContaining({
-        artworkUrl: `https://radio-media.vatioboard.com/v1/stations/${UUID}/logo`,
-      }),
-    }));
-    expect(getNormalizedMediaSessionArtwork).not.toHaveBeenCalled();
+    expect(navigator.mediaSession.setActionHandler).not.toHaveBeenCalled();
 
     await runtime.playTrackNow({
       name: `radio:${UUID}`,
@@ -360,9 +326,9 @@ describe("live radio audio runtime", () => {
       order.push("lease");
       return Promise.resolve(true);
     });
-    const nativePlay = Audio.prototype.play;
-    const playSpy = vi.spyOn(Audio.prototype, "play").mockImplementation(function () {
-      expect(navigator.audioSession.type).toBe("playback");
+    const nativePlay = HTMLMediaElement.prototype.play;
+    const playSpy = vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(function () {
+      expect(navigator.audioSession.type).toBe("auto");
       order.push("play");
       return nativePlay.call(this);
     });
@@ -386,10 +352,8 @@ describe("live radio audio runtime", () => {
     expect(element.src).toBe(relay);
     expect(order).toEqual(["play", "lease"]);
     expect(acquireBackgroundAudioLease).toHaveBeenCalledTimes(1);
-    expect(clearMediaSessionClient).not.toHaveBeenCalled();
     expect(registerStationClick).not.toHaveBeenCalled();
-    expect(getNormalizedMediaSessionArtwork).not.toHaveBeenCalled();
-    expect(updateMediaSessionClient.mock.calls.some((call) => call[1]?.metadata)).toBe(true);
+    expect(navigator.mediaSession.setActionHandler).not.toHaveBeenCalled();
     expect(runtime.getState().connectionState).toBe("connecting");
     element.dispatchEvent(new Event("playing"));
     expect(order).toEqual(["play", "lease"]);
@@ -442,7 +406,7 @@ describe("live radio audio runtime", () => {
     expect(releaseBackgroundAudioLease).toHaveBeenCalledWith("player-runtime");
   });
 
-  it("restores Audio Session auto only when the Player is stopped", async () => {
+  it("leaves Audio Session type unchanged through Play, Pause and Stop", async () => {
     const runtime = await import("../../src/shared/audio-runtime.js");
     await runtime.playTrackNow({
       name: `radio:${UUID}`,
@@ -451,9 +415,9 @@ describe("live radio audio runtime", () => {
       station_uuid: UUID,
       hls: 0,
     }, { fromUserGesture: true });
-    expect(navigator.audioSession.type).toBe("playback");
+    expect(navigator.audioSession.type).toBe("auto");
     runtime.pause();
-    expect(navigator.audioSession.type).toBe("playback");
+    expect(navigator.audioSession.type).toBe("auto");
     runtime.stopPlayback();
     expect(navigator.audioSession.type).toBe("auto");
   });
@@ -478,7 +442,7 @@ describe("live radio audio runtime", () => {
     expect(runtime.getAudioElement().crossOrigin).toBe("anonymous");
   });
 
-  it("retains an unexpectedly paused live source until lifecycle reconciliation", async () => {
+  it("respects a native pause and resumes only through Player Play", async () => {
     const runtime = await import("../../src/shared/audio-runtime.js");
     await runtime.playTrackNow({
       name: `radio:${UUID}`,
@@ -493,16 +457,16 @@ describe("live radio audio runtime", () => {
     element.play = vi.fn(nativePlay);
     element.dispatchEvent(new Event("playing"));
 
+    await vi.advanceTimersByTimeAsync(1500);
     element.pause();
     expect(element.play).not.toHaveBeenCalled();
 
-    vi.advanceTimersByTime(251);
-    element.pause();
-    expect(element.play).not.toHaveBeenCalled();
-    expect(runtime.getState().connectionState).toBe("reconnecting");
+    expect(runtime.getState().paused).toBe(true);
     expect(element.src).toBe(relay);
 
     await runtime.reconcileBackgroundPlayback("visibility-visible");
+    expect(element.play).not.toHaveBeenCalled();
+    await runtime.play();
     expect(element.play).toHaveBeenCalledTimes(1);
   });
 
@@ -621,8 +585,8 @@ describe("live radio audio runtime", () => {
       if (leaseId === "player-runtime") order.push("player-lease");
       return Promise.resolve(true);
     });
-    const nativePlay = Audio.prototype.play;
-    const playSpy = vi.spyOn(Audio.prototype, "play").mockImplementation(function () {
+    const nativePlay = HTMLMediaElement.prototype.play;
+    const playSpy = vi.spyOn(HTMLMediaElement.prototype, "play").mockImplementation(function () {
       order.push("radio-play");
       return nativePlay.call(this);
     });
@@ -698,7 +662,7 @@ describe("live radio audio runtime", () => {
       error: "background-playback-blocked",
       paused: false,
     });
-    expect(updateMediaSessionClient.mock.calls.at(-1)?.[1]?.playbackState).toBe("playing");
+    expect(navigator.mediaSession.setActionHandler).not.toHaveBeenCalled();
     vi.advanceTimersByTime(60_000);
     expect(runtime.getState().connectionState).not.toBe("unavailable");
   });
@@ -776,7 +740,7 @@ describe("live radio audio runtime", () => {
     expect(runtime.getAudioElement()).toBe(visualizerElement);
   });
 
-  it("Media Session Play reconciles a paused element even when runtime state said playing", async () => {
+  it("Player Play reconciles a paused element even when runtime state said playing", async () => {
     const runtime = await import("../../src/shared/audio-runtime.js");
     await runtime.playTrackNow({
       name: `radio:${UUID}`,
@@ -791,12 +755,7 @@ describe("live radio audio runtime", () => {
     element.paused = true;
     const nativePlay = element.play.bind(element);
     element.play = vi.fn(nativePlay);
-    const mediaSessionPlay = updateMediaSessionClient.mock.calls
-      .map((call) => call[1]?.handlers?.play)
-      .filter(Boolean)
-      .at(-1);
-
-    mediaSessionPlay();
+    await runtime.play();
     await flushMicrotasks();
 
     expect(element.play).toHaveBeenCalledTimes(1);

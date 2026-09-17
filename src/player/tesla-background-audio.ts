@@ -1,4 +1,4 @@
-import { audioCompatibility } from "../shared/audio-compatibility.js";
+import { mountAudioDiagnosticSummary } from "../shared/audio-diagnostic-summary.js";
 import * as runtime from "../shared/audio-runtime.js";
 import { acquireBackgroundAudioLease, releaseBackgroundAudioLease } from "../shared/audio-system.js";
 import { downloadBackgroundDiagnostics, getBackgroundDiagnostics, recordBackgroundDiagnostic } from "../shared/background-diagnostics.js";
@@ -171,52 +171,6 @@ export function mountTeslaAudioTest(root: HTMLElement) {
   button("Relay native radio", () => startRadio("relay"));
   button("Relay Web Audio radio", () => startRadio("graph"));
   button("VatioBoard native radio", () => startRadio("runtime"));
-  const optionsDialog = document.createElement("dialog");
-  optionsDialog.className = "runtime-options";
-  const optionsTitle = document.createElement("h2");
-  optionsTitle.textContent = "Runtime comparison options";
-  const optionsHelp = document.createElement("p");
-  optionsHelp.textContent = "The default matches single-element playback. Change one option at a time. Applying reloads the page and stops this test.";
-  optionsDialog.append(optionsTitle, optionsHelp);
-  const settings = [
-    ["audioAttach", "Attach primary element with native controls", audioCompatibility.attachedElement],
-    ["audioSilence", "Play silent loop during real playback", audioCompatibility.silentDuringPlayback],
-    ["audioPrimeOthers", "Prime other consumers on Player Play", audioCompatibility.primeOtherConsumers],
-    ["audioMediaSession", "Write Media Session metadata and actions", audioCompatibility.mediaSessionWrites],
-    ["audioSessionHints", "Set Audio Session playback hint", audioCompatibility.audioSessionHints],
-  ] as const;
-  const optionInputs = settings.map(([key, label, checked]) => {
-    const row = document.createElement("label");
-    const input = document.createElement("input");
-    input.type = "checkbox";
-    input.checked = checked;
-    row.append(input, label);
-    optionsDialog.append(row);
-    return { key, input };
-  });
-  const applyOptions = document.createElement("button");
-  applyOptions.textContent = "Apply and reload";
-  applyOptions.addEventListener("click", () => {
-    const url = new URL(window.location.href);
-    url.searchParams.set("audioCompatibility", "1");
-    for (const { key, input } of optionInputs) url.searchParams.set(key, input.checked ? "1" : "0");
-    try { sessionStorage.setItem("vatioboard.tesla-audio-station", JSON.stringify({ stream: streamInput.value, uuid: uuidInput.value })); }
-    catch { /* The default station remains usable if storage is unavailable. */ }
-    stop();
-    window.location.assign(url.href);
-  });
-  const cancelOptions = document.createElement("button");
-  cancelOptions.textContent = "Cancel";
-  cancelOptions.addEventListener("click", () => optionsDialog.close());
-  const appLink = document.createElement("a");
-  const appUrl = new URL("/", window.location.origin);
-  appUrl.searchParams.set("audioCompatibility", "1");
-  appUrl.searchParams.set("debugAudio", "1");
-  for (const [key, , checked] of settings) appUrl.searchParams.set(key, checked ? "1" : "0");
-  appLink.href = appUrl.href;
-  appLink.textContent = "Open main Player with current options";
-  optionsDialog.append(applyOptions, cancelOptions, appLink);
-  button("Runtime options", () => optionsDialog.showModal());
   button("STOP TEST", stop);
   button("Play", () => active && runtime.play());
   button("Pause real track", () => active && runtime.pause());
@@ -252,8 +206,10 @@ export function mountTeslaAudioTest(root: HTMLElement) {
   stateColumn.append(stateTitle, status);
   timelineColumn.append(timelineTitle, timeline);
   section.append(stateColumn, timelineColumn);
-  root.replaceChildren(radioInputs, stationHint, controls, baselineHost, section, optionsDialog);
+  root.replaceChildren(radioInputs, stationHint, controls, baselineHost, section);
+  const disposeSummary = mountAudioDiagnosticSummary(root);
   return () => {
+    disposeSummary();
     stop();
     unsubscribe();
     unsubscribeQueue();

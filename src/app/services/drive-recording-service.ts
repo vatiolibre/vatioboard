@@ -14,10 +14,6 @@ import {
   subscribeBackgroundAudioState,
 } from "../../shared/audio-system.js";
 import {
-  clearMediaSessionClient,
-  updateMediaSessionClient,
-} from "../../shared/media-session-adapter.js";
-import {
   enrichRouteBoundaryPlaces,
   getRouteBoundaryInputSamples,
 } from "../../shared/route-boundary.js";
@@ -32,8 +28,6 @@ import type {
 
 const RECORDING_CONSUMER_ID = "speed-recording";
 export const DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE = "drive-recording";
-const DRIVE_RECORDING_MEDIA_SESSION_OWNER = "drive-recording";
-const DRIVE_RECORDING_MEDIA_SESSION_PRIORITY = 5;
 const ACTIVE_REPLAY_PERSIST_INTERVAL_MS = 5000;
 const REPLAY_PERSIST_CHUNK_SIZE = 200;
 
@@ -185,25 +179,6 @@ export function createDriveRecordingService({
   let keepAlivePromise: Promise<boolean> | null = null;
   let persistTimerId: ReturnType<typeof setTimeout> | null = null;
   let hydrationRevision = 0;
-  function updateMediaSession() {
-    const recording = state.recordingState === "recording";
-    updateMediaSessionClient(DRIVE_RECORDING_MEDIA_SESSION_OWNER, {
-      active: recording,
-      priority: DRIVE_RECORDING_MEDIA_SESSION_PRIORITY,
-      playbackState: recording ? "playing" : "none",
-      metadata: recording ? {
-        title: "Drive recording",
-        artist: "VatioBoard",
-        album: "GPS recording active",
-      } : null,
-      handlers: recording ? {
-        play: () => { void rearmKeepAlive({ fromUserGesture: true, reason: "media-session-play" }); },
-        // Tesla may emit pause/stop when another app opens. Keep recording ownership intact.
-        pause: () => { void persistNow(); },
-        stop: () => { void persistNow(); },
-      } : null,
-    });
-  }
 
   function disarmKeepAlive() {
     state.keepAliveRevision += 1;
@@ -214,7 +189,6 @@ export function createDriveRecordingService({
     state.keepAliveBlocked = false;
     keepAlivePromise = null;
     releaseBackgroundAudioLease(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE);
-    updateMediaSession();
   }
 
   async function rearmKeepAlive({ fromUserGesture = false }: LegacyRecordingRecord = {}) {
@@ -256,7 +230,6 @@ export function createDriveRecordingService({
         state.keepAlivePending = false;
         keepAlivePromise = null;
       }
-      updateMediaSession();
       emit();
     }
   }
@@ -296,12 +269,11 @@ export function createDriveRecordingService({
   const unsubscribeBackgroundAudio = subscribeBackgroundAudioState((backgroundState) => {
     if (destroyed || state.recordingState !== "recording" || !state.keepAliveIntended) return;
     const ownsLease = backgroundState.activeLeaseIds.includes(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE);
-    const armed = ownsLease && backgroundState.status === "armed";
+    const armed = ownsLease && (backgroundState.status === "armed" || backgroundState.status === "delegated");
     state.keepAliveArmed = armed;
     state.keepAlivePending = ownsLease && backgroundState.status === "arming";
     state.keepAliveSuppressed = ownsLease && (backgroundState.status === "interrupted" || backgroundState.status === "blocked");
     state.keepAliveBlocked = ownsLease && backgroundState.status === "blocked";
-    updateMediaSession();
     emit();
   });
   document.addEventListener("visibilitychange", persistForLifecycle);
@@ -504,7 +476,6 @@ export function createDriveRecordingService({
     }
     ensureGpsSubscription();
     void rearmKeepAlive({ fromUserGesture, reason: `${source}-recording-start` });
-    updateMediaSession();
     if (telemetryService) {
       const telemetry = telemetryService.getSnapshot();
       const currentPosition = telemetry.lastPosition;
@@ -649,7 +620,6 @@ export function createDriveRecordingService({
     unsubscribeBackgroundAudio();
     document.removeEventListener("visibilitychange", persistForLifecycle);
     window.removeEventListener("pagehide", persistForLifecycle);
-    clearMediaSessionClient(DRIVE_RECORDING_MEDIA_SESSION_OWNER);
     listeners.clear();
   }
 
@@ -692,7 +662,6 @@ export function createDriveRecordingService({
         ensureGpsSubscription();
         void rearmKeepAlive({ reason: "active-recording-recovery" });
       }
-      updateMediaSession();
       emit();
     } catch {
       // Recovery is best-effort; a fresh recording can still be started.

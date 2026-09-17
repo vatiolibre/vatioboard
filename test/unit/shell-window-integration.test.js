@@ -40,7 +40,6 @@ const runtimeMock = {
   restoreSession: vi.fn().mockResolvedValue(undefined),
   primeAudio: vi.fn().mockResolvedValue(true),
   stopPlayback: vi.fn(),
-  updatePlayerMediaSessionMetadata: vi.fn(),
 };
 
 const catalogMock = {

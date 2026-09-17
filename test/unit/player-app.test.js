@@ -20,7 +20,6 @@ const audioRuntimeMock = {
     playing: false,
   })),
   subscribe: vi.fn(() => vi.fn()),
-  setMediaSessionEnabled: vi.fn(),
   play: vi.fn().mockResolvedValue(true),
   pause: vi.fn(),
   nextTrack: vi.fn().mockResolvedValue(undefined),
@@ -38,7 +37,6 @@ const audioRuntimeMock = {
   restoreSession: vi.fn().mockResolvedValue(undefined),
   primeAudio: vi.fn().mockResolvedValue(true),
   stopPlayback: vi.fn(),
-  updatePlayerMediaSessionMetadata: vi.fn(),
 };
 
 const catalogMock = {
@@ -248,7 +246,6 @@ describe("Player OS app module", () => {
     });
     audioRuntimeMock.subscribe.mockClear();
     audioRuntimeMock.subscribe.mockReturnValue(vi.fn());
-    audioRuntimeMock.setMediaSessionEnabled.mockClear();
     audioRuntimeMock.play.mockClear();
     audioRuntimeMock.pause.mockClear();
     audioRuntimeMock.setQueue.mockClear();
@@ -298,7 +295,6 @@ describe("Player OS app module", () => {
 
     expect(player.runtime?.appId).toBe(modules.PLAYER_APP_ID);
     expect(shellAppRuntimeManager.getRuntime(modules.PLAYER_APP_ID)).toBe(player.runtime);
-    expect(audioRuntimeMock.setMediaSessionEnabled).toHaveBeenCalledWith(true);
     expect(launcher.openApp(modules.PLAYER_APP_ID)).toBe(true);
 
     expect(shellManager.getWindow("player")?.state).toBe("open");
@@ -323,7 +319,6 @@ describe("Player OS app module", () => {
     expect(document.querySelectorAll(".player-panel")).toHaveLength(1);
     expect(document.querySelector(".player-panel")?.hidden).toBe(false);
     expect(shellAppRuntimeManager.getRuntime("vatio.player")?.lifecycle.getState()).toBe("active");
-    expect(audioRuntimeMock.setMediaSessionEnabled).toHaveBeenCalledWith(true);
 
     shellManager.unregisterWindow("player");
     shellAppRuntimeManager.destroy();
@@ -405,7 +400,7 @@ describe("Player OS app module", () => {
     shellManager.destroy();
   });
 
-  it("preserves Media Session/audio runtime behavior from the player controls", async () => {
+  it("preserves audio runtime behavior from the player controls", async () => {
     const modules = await loadModules();
     const { shellManager, shellAppRuntimeManager, launcher } = createShellHarness(modules);
     const player = modules.createPlayerApp({

@@ -157,15 +157,6 @@ function createTrustedClickEvent() {
   return createPromptActivationEvent('click');
 }
 
-function getLatestMediaSessionActionHandler(action) {
-  const calls = getBrowserMocks().mediaSession.setActionHandler.mock.calls;
-  for (let index = calls.length - 1; index >= 0; index -= 1) {
-    const [registeredAction, handler] = calls[index];
-    if (registeredAction === action) return handler;
-  }
-  return null;
-}
-
 function installControllableAudio({ blocked = false, canPlay = null } = {}) {
   const audioInstances = [];
 
@@ -572,7 +563,7 @@ describe('SPA GPS background runtime', () => {
     expect(audioSystem.getBackgroundAudioLeaseCount()).toBe(2);
   }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);
 
-  it('keeps GPS recording and silent leases alive across media-session pause and stop', async () => {
+  it('keeps GPS recording and silent leases after browser audio interruption without platform handlers', async () => {
     await bootHtmlPage('index.html');
     const geolocation = getBrowserMocks().geolocation;
     const nativeClearWatch = geolocation.clearWatch;
@@ -612,8 +603,8 @@ describe('SPA GPS background runtime', () => {
     ).toBe(true);
     expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
 
-    getLatestMediaSessionActionHandler('pause')();
-    getLatestMediaSessionActionHandler('stop')();
+    expect(getBrowserMocks().mediaSession.setActionHandler).not.toHaveBeenCalled();
+    audioSystem.getBackgroundKeepAliveAudio().pause();
     await settleAsyncWork(40);
     emitGeolocationSuccess({
       timestamp: 221000,
@@ -649,7 +640,7 @@ describe('SPA GPS background runtime', () => {
     );
   }, SPA_GPS_BACKGROUND_SMOKE_TIMEOUT_MS);
 
-  it('does not stop GPS recording on media-session stop, while explicit app stop still stops', async () => {
+  it('does not stop GPS recording on browser audio pause, while explicit app stop still stops', async () => {
     await bootHtmlPage('index.html');
     await import('../../src/app/main.js');
     await settleAsyncWork();
@@ -672,7 +663,8 @@ describe('SPA GPS background runtime', () => {
     await settleAsyncWork();
 
     const before = speedModule.__testGetSpeedStateSnapshot();
-    getLatestMediaSessionActionHandler('stop')();
+    expect(getBrowserMocks().mediaSession.setActionHandler).not.toHaveBeenCalled();
+    audioSystem.getBackgroundKeepAliveAudio().pause();
     await settleAsyncWork(40);
 
     const afterMediaStop = speedModule.__testGetSpeedStateSnapshot();
@@ -737,7 +729,7 @@ describe('SPA GPS background runtime', () => {
     });
     document.dispatchEvent(new Event('visibilitychange'));
     window.dispatchEvent(new Event('pagehide'));
-    getLatestMediaSessionActionHandler('pause')();
+    audioSystem.getBackgroundKeepAliveAudio().pause();
     audioSystem.releaseBackgroundAudioLease(audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE);
     await settleAsyncWork();
 
@@ -822,8 +814,8 @@ describe('SPA GPS background runtime', () => {
     ).toBe(true);
     expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
 
-    getLatestMediaSessionActionHandler('pause')();
-    getLatestMediaSessionActionHandler('stop')();
+    expect(getBrowserMocks().mediaSession.setActionHandler).not.toHaveBeenCalled();
+    audioSystem.getBackgroundKeepAliveAudio().pause();
     await settleAsyncWork(40);
 
     expect(

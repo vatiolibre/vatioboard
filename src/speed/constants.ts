@@ -52,8 +52,6 @@ export const TRAP_SOUND_URL = "/audio/near_camera_notification.m4a";
 export const START_RECORDING_SOUND_URL = "/audio/start_recording.m4a";
 
 export const SPEED_APP_NAME = "Vatio Speed";
-export const RUNTIME_ARTWORK_SIZE = 512;
-export const MEDIA_METADATA_MIN_UPDATE_INTERVAL_MS = 1000;
 export const BACKGROUND_KEEPALIVE_SAMPLE_RATE = 22050;
 export const BACKGROUND_KEEPALIVE_DURATION_SECONDS = 2;
 
@@ -130,9 +128,3 @@ export const GEO_ERROR_CODE = {
   POSITION_UNAVAILABLE: 2,
   TIMEOUT: 3,
 };
-
-export const MEDIA_SESSION_FALLBACK_ARTWORK: MediaImage[] = [
-  { src: "/favicon-96x96.png", sizes: "96x96", type: "image/png" },
-  { src: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" },
-  { src: "/img/vatio-board-speed-og-1200x630.jpg", sizes: "1200x630", type: "image/jpeg" },
-];

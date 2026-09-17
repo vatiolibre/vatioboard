@@ -270,7 +270,6 @@ export interface AudioRuntimeState {
 export interface AudioRuntime {
   getState(): AudioRuntimeState;
   subscribe(listener: (state: AudioRuntimeState) => void): Unsubscribe;
-  setMediaSessionEnabled(enabled: boolean): void;
   primeAudio(): Promise<boolean>;
   play(options?: unknown): Promise<boolean> | boolean;
   pause(options?: unknown): void;

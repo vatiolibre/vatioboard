@@ -95,15 +95,6 @@ const PLAYER_SESSION_STORAGE_KEY = "vatioboard_player_session_v2";
 
 let sessionEntrySeed = 0;
 
-function getLatestMediaSessionActionHandler(action) {
-  const calls = navigator.mediaSession.setActionHandler.mock.calls;
-  for (let index = calls.length - 1; index >= 0; index -= 1) {
-    const [registeredAction, handler] = calls[index];
-    if (registeredAction === action) return handler;
-  }
-  return null;
-}
-
 function makeSessionEntry(trackLike, overrides = {}) {
   sessionEntrySeed += 1;
   const base = typeof trackLike === "string"
@@ -722,54 +713,6 @@ describe("audio-source-resolver", () => {
   });
 });
 
-// ── Tests: media-session-adapter ─────────────────────────────────────
-
-describe("media-session-adapter", () => {
-  let setMediaSessionMetadata, setMediaSessionPlaybackState, setMediaSessionPositionState,
-    setMediaSessionActionHandlers, clearMediaSession;
-
-  beforeEach(async () => {
-    vi.resetModules();
-    const mod = await import("../../src/shared/media-session-adapter.js");
-    setMediaSessionMetadata = mod.setMediaSessionMetadata;
-    setMediaSessionPlaybackState = mod.setMediaSessionPlaybackState;
-    setMediaSessionPositionState = mod.setMediaSessionPositionState;
-    setMediaSessionActionHandlers = mod.setMediaSessionActionHandlers;
-    clearMediaSession = mod.clearMediaSession;
-  });
-
-  it("sets metadata on navigator.mediaSession", () => {
-    setMediaSessionMetadata({ title: "Test Song", artist: "Test Artist" });
-    expect(navigator.mediaSession.metadata).toBeTruthy();
-    expect(navigator.mediaSession.metadata.title).toBe("Test Song");
-    expect(navigator.mediaSession.metadata.artist).toBe("Test Artist");
-  });
-
-  it("sets playback state", () => {
-    setMediaSessionPlaybackState("playing");
-    expect(navigator.mediaSession.playbackState).toBe("playing");
-  });
-
-  it("sets action handlers", () => {
-    const play = vi.fn();
-    const pause = vi.fn();
-    setMediaSessionActionHandlers({ play, pause });
-    expect(navigator.mediaSession.setActionHandler).toHaveBeenCalled();
-  });
-
-  it("clears media session", () => {
-    clearMediaSession();
-    expect(navigator.mediaSession.playbackState).toBe("none");
-  });
-
-  it("handles missing setPositionState gracefully", () => {
-    // setPositionState may not exist on our mock — should not throw
-    expect(() => {
-      setMediaSessionPositionState({ duration: 120, position: 30 });
-    }).not.toThrow();
-  });
-});
-
 // ── Tests: audio-cue ─────────────────────────────────────────────────
 
 describe("audio-cue", () => {
@@ -1117,12 +1060,13 @@ describe("audio-runtime", () => {
     expect(runtime.getState().backgroundMode).toBe(true);
 
     await vi.waitFor(() => {
-      expect(keepAliveAudio.paused).toBe(false);
+      expect(keepAliveAudio.paused).toBe(true);
+      expect(runtime.getState().backgroundPlaybackState).toBe("delegated");
     });
 
     runtime.pause();
     expect(keepAliveAudio.paused).toBe(false);
-    expect(navigator.mediaSession.playbackState).toBe("playing");
+    expect(navigator.mediaSession.setActionHandler).not.toHaveBeenCalled();
     runtime.stopPlayback();
     expect(keepAliveAudio.paused).toBe(true);
   });
@@ -1168,36 +1112,21 @@ describe("audio-runtime", () => {
     });
   });
 
-  it("background mode keeps media session alive across track handoff gaps", async () => {
-    runtime.setQueue([TRACK_A, TRACK_B], { autoplay: false });
-
-    await vi.waitFor(() => {
-      expect(runtime.getAudioElement()?.src).toBeTruthy();
-    });
-
-    const keepAliveAudio = createdAudio.find((audio) => audio.src === "blob:test-url");
-    expect(keepAliveAudio).toBeTruthy();
-
-    await runtime.play();
-
-    await vi.waitFor(() => {
-      expect(keepAliveAudio.paused).toBe(false);
-      expect(navigator.mediaSession.playbackState).toBe("playing");
-    });
-
-    const mainAudio = runtime.getAudioElement();
-    mainAudio.pause();
-
-    expect(keepAliveAudio.paused).toBe(false);
-    expect(navigator.mediaSession.playbackState).toBe("playing");
-
-    mainAudio.dispatchEvent(new Event("ended"));
-
-    await vi.waitFor(() => {
-      expect(runtime.getState().currentTrack?.name).toBe("asset_b");
-      expect(keepAliveAudio.paused).toBe(false);
-      expect(navigator.mediaSession.playbackState).toBe("playing");
-    });
+  it("keeps the primary element and lease delegated across track handoffs", async () => {
+    await runtime.playLibraryTrackNow(TRACK_A, [TRACK_A, TRACK_B]);
+    const primary = runtime.getAudioElement();
+    const system = await import("../../src/shared/audio-system.js");
+    expect(primary.isConnected).toBe(true);
+    expect(primary.controls).toBe(false);
+    expect(primary.parentElement.hidden).toBe(true);
+    primary.dispatchEvent(new Event("ended"));
+    await vi.waitFor(() => expect(runtime.getState().currentTrack?.name).toBe("asset_b"));
+    expect(runtime.getAudioElement()).toBe(primary);
+    expect(system.getBackgroundAudioState().activeLeaseIds).toContain("player-runtime");
+    expect(system.getBackgroundKeepAliveAudio().paused).toBe(true);
+    runtime.stopPlayback();
+    expect(runtime.getAudioElement()).toBe(primary);
+    expect(primary.isConnected).toBe(true);
   });
 
   it("stopPlayback resets state and clears Media Session", async () => {
@@ -1215,90 +1144,13 @@ describe("audio-runtime", () => {
     expect(navigator.mediaSession.playbackState).toBe("none");
   });
 
-  it("Media Session pause and stop stay owned by audible player over Speed keep-alive", async () => {
-    const audioSystem = await import("../../src/shared/audio-system.js");
-    const audioModule = await import("../../src/speed/audio.js");
-    const mediaSessionAdapter = await import("../../src/shared/media-session-adapter.js");
-    const speedPause = vi.fn();
-    const speedStop = vi.fn();
-
-    await audioSystem.acquireBackgroundAudioLease(
-      audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE,
-      { shouldContinue: () => true }
-    );
-    await audioSystem.acquireBackgroundAudioLease(
-      audioModule.SPEED_BACKGROUND_AUDIO_LEASE,
-      { shouldContinue: () => true }
-    );
-    mediaSessionAdapter.updateMediaSessionClient("speed", {
-      active: true,
-      priority: 5,
-      playbackState: "playing",
-      handlers: {
-        pause: speedPause,
-        stop: speedStop,
-      },
-    });
-
-    runtime.setQueue([TRACK_A], { autoplay: false });
-    await vi.waitFor(() => {
-      expect(runtime.getState().currentTrack?.name).toBe("asset_a");
-    });
-    await runtime.play();
-
-    getLatestMediaSessionActionHandler("pause")();
-    expect(runtime.getState().paused).toBe(true);
-    expect(speedPause).not.toHaveBeenCalled();
-    expect(
-      audioSystem.isBackgroundAudioLeaseActive(
-        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
-      )
-    ).toBe(true);
-    expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
-
-    await runtime.play();
-    getLatestMediaSessionActionHandler("stop")();
-    expect(runtime.getState().currentTrack).toBeNull();
-    expect(runtime.getState().paused).toBe(true);
-    expect(speedStop).not.toHaveBeenCalled();
-    expect(
-      audioSystem.isBackgroundAudioLeaseActive(
-        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
-      )
-    ).toBe(true);
-    expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
-  });
-
-  it("Media Session uses artwork_ref when it is a URL", async () => {
-    const artTrack = makeTrack("art_track", {
-      artwork_ref: "https://cdn.example.com/cover.jpg",
-    });
-    runtime.setQueue([artTrack], { autoplay: true });
-    await vi.waitFor(() => {
-      const s = runtime.getState();
-      expect(s.currentTrack?.name).toBe("art_track");
-      expect(s.loading).toBe(false);
-    });
-    const meta = navigator.mediaSession.metadata;
-    expect(meta).toBeTruthy();
-    expect(meta.artwork?.[0]?.src).toBe("https://cdn.example.com/cover.jpg");
-  });
-
-  it("Media Session omits artwork for non-URL artwork_ref", async () => {
-    const nameRefTrack = makeTrack("name_ref_track", {
-      artwork_ref: "MEDIA-ASSET-00123",
-    });
-    runtime.setQueue([nameRefTrack], { autoplay: true });
-    await vi.waitFor(() => {
-      const s = runtime.getState();
-      expect(s.currentTrack?.name).toBe("name_ref_track");
-      expect(s.loading).toBe(false);
-    });
-    const meta = navigator.mediaSession.metadata;
-    expect(meta).toBeTruthy();
-    // First artwork entry should be the fallback, not the asset name
-    const firstSrc = meta.artwork?.[0]?.src || "";
-    expect(firstSrc).not.toBe("MEDIA-ASSET-00123");
+  it("does not publish custom platform metadata or actions", async () => {
+    await runtime.playTrackNow({ ...TRACK_A, artwork_ref: "https://cdn.example.com/cover.jpg" });
+    expect(navigator.mediaSession.metadata).toBeNull();
+    expect(navigator.mediaSession.setActionHandler).not.toHaveBeenCalled();
+    runtime.pause();
+    runtime.stopPlayback();
+    expect(navigator.mediaSession.setActionHandler).not.toHaveBeenCalled();
   });
 
   it("ending the last queued track without repeat consumes it and stops cleanly", async () => {
@@ -1523,8 +1375,8 @@ describe("audio-runtime", () => {
   });
 
   it("restoreSession does not show playback error when refresh autoplay is blocked for demo tracks", async () => {
-    const originalPlay = window.Audio.prototype.play;
-    window.Audio.prototype.play = vi.fn(function playBlockedByPolicy() {
+    const originalPlay = HTMLMediaElement.prototype.play;
+    HTMLMediaElement.prototype.play = vi.fn(function playBlockedByPolicy() {
       this.paused = true;
       return Promise.reject(new DOMException("Autoplay blocked", "NotAllowedError"));
     });
@@ -1567,7 +1419,7 @@ describe("audio-runtime", () => {
       expect(saved.currentTime).toBe(27);
       expect(saved.paused).toBe(true);
     } finally {
-      window.Audio.prototype.play = originalPlay;
+      HTMLMediaElement.prototype.play = originalPlay;
     }
   });
 

@@ -1,3 +1,4 @@
+import { mountAudioDiagnosticSummary } from "../shared/audio-diagnostic-summary.js";
 /**
  * Player shell — compact embeddable panel renderer.
  *
@@ -632,6 +633,7 @@ export function createPlayerShell({
   downloadDiagnosticsBtn.type = "button";
   downloadDiagnosticsBtn.textContent = t("playerRadioDownloadDiagnostics");
   radioDiagnostics.append(copyDiagnosticsBtn, downloadDiagnosticsBtn);
+  const disposeSummary = mountAudioDiagnosticSummary(radioDiagnostics);
   radioPane.append(radioSearchForm, radioStatus, radioListUl, radioDiagnostics);
 
   contentPaneStack.append(queuePane, libraryPane, playlistPane, radioPane);
@@ -2060,14 +2062,6 @@ export function createPlayerShell({
             artworkCompact.innerHTML = "";
             artworkCompact.style.backgroundImage = `url(${CSS.escape(artUrl)})`;
             artworkCompact.classList.add("has-image");
-            if (track.media_kind !== "radio") {
-              runtime.updatePlayerMediaSessionMetadata({
-                title: track.title || track.original_filename || track.name || "",
-                artist: track.artist || track.folder_path || "",
-                album: "VatioLibre",
-                artworkUrl: artUrl,
-              });
-            }
           }
         });
       }
@@ -2298,6 +2292,7 @@ export function createPlayerShell({
     closeBtn,
 
     destroy() {
+      disposeSummary();
       unsubscribe();
       document.removeEventListener("visibilitychange", handleVisualizerVisibilityChange);
       clearQueueSaveStatusTimer();

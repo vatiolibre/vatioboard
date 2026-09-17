@@ -87,7 +87,6 @@ const runtimeMock = {
   restoreSession: vi.fn().mockResolvedValue(undefined),
   primeAudio: vi.fn().mockResolvedValue(true),
   stopPlayback: vi.fn(),
-  updatePlayerMediaSessionMetadata: vi.fn(),
 };
 
 vi.mock("../../src/shared/audio-runtime.js", () => runtimeMock);
@@ -127,14 +126,6 @@ vi.mock("../../src/shared/backend-auth.js", () => ({
   getBackendPlaylistsManifest: vi.fn().mockResolvedValue({ ok: false, playlists: [] }),
   getBackendPlaylistsManifestVersion: vi.fn().mockResolvedValue({ ok: false }),
   getBackendPlaylistDetail: vi.fn().mockResolvedValue({ ok: false }),
-}));
-
-vi.mock("../../src/shared/media-session-adapter.js", () => ({
-  setMediaSessionMetadata: vi.fn(),
-  setMediaSessionPlaybackState: vi.fn(),
-  setMediaSessionPositionState: vi.fn(),
-  setMediaSessionActionHandlers: vi.fn(),
-  clearMediaSession: vi.fn(),
 }));
 
 vi.mock("../../src/shared/media-cache.js", () => ({
@@ -317,8 +308,6 @@ describe("createPlayerWidget", () => {
     runtimeMock.restoreSession.mockResolvedValue(undefined);
     runtimeMock.stopPlayback.mockReset();
     runtimeMock.stopPlayback.mockImplementation(() => {});
-    runtimeMock.updatePlayerMediaSessionMetadata.mockReset();
-    runtimeMock.updatePlayerMediaSessionMetadata.mockImplementation(() => {});
     runtimeMock.playTrackNow.mockReset();
     runtimeMock.playTrackNow.mockResolvedValue(true);
     runtimeMock.rearmBackgroundPlayback.mockReset();

@@ -10,7 +10,7 @@ afterEach(() => {
 
 it("starts shared playback from one tap and stops only its own leases", async () => {
   await bootHtmlPage("tesla-background-audio.html");
-  window.history.replaceState(null, "", "/tesla-background-audio.html?audioCompatibility=0");
+  window.history.replaceState(null, "", "/tesla-background-audio.html");
   vi.useFakeTimers();
   vi.spyOn(console, "debug").mockImplementation(() => {});
   // Import without automatic mounting so the test owns cleanup.
@@ -24,8 +24,10 @@ it("starts shared playback from one tap and stops only its own leases", async ()
   click("START TESLA BACKGROUND TEST");
   const primary = runtime.getAudioElement();
   expect(primary.paused).toBe(false);
-  expect(system.getBackgroundKeepAliveAudio().paused).toBe(false);
-  expect(navigator.mediaSession.metadata.title).toBe("Tesla test 1");
+  expect(system.getBackgroundKeepAliveAudio().paused).toBe(true);
+  expect(primary.isConnected).toBe(true);
+  expect(primary.controls).toBe(false);
+  expect(navigator.mediaSession.setActionHandler).not.toHaveBeenCalled();
   const timerCount = vi.getTimerCount();
   click("START TESLA BACKGROUND TEST");
   expect(vi.getTimerCount()).toBe(timerCount);

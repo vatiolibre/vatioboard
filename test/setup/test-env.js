@@ -253,24 +253,22 @@ beforeEach(() => {
     value: FakeAudio,
   });
 
-  // Stub HTMLMediaElement methods that jsdom does not implement to suppress
-  // noisy "Not implemented" warnings from media element lifecycle cleanup
-  // (pause/load calls in destroy paths).
-  for (const method of ["play", "pause", "load"]) {
-    if (!HTMLMediaElement.prototype[method].__stubbed) {
-      const original = HTMLMediaElement.prototype[method];
-      Object.defineProperty(HTMLMediaElement.prototype, method, {
-        configurable: true,
-        writable: true,
-        value: Object.assign(function stubbed() {
-          if (method === "play") {
-            this.dispatchEvent?.(new Event("play"));
-            return Promise.resolve();
-          }
-        }, { __stubbed: true, __original: original }),
-      });
-    }
+  // Real DOM nodes with controllable media state, including attached primary audio.
+  for (const [key, value] of Object.entries({ paused: true, ended: false, duration: 0.5,
+    readyState: 0, networkState: 0, error: null })) {
+    Object.defineProperty(HTMLMediaElement.prototype, key, { configurable: true, writable: true, value });
   }
+  HTMLMediaElement.prototype.play = function () {
+    this.paused = false;
+    this.dispatchEvent(new Event("play"));
+    return Promise.resolve();
+  };
+  HTMLMediaElement.prototype.pause = function () {
+    const changed = !this.paused;
+    this.paused = true;
+    if (changed) this.dispatchEvent(new Event("pause"));
+  };
+  HTMLMediaElement.prototype.load = function () {};
 
   Object.defineProperty(window, "ResizeObserver", {
     configurable: true,

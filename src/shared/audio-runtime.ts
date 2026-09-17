@@ -1,30 +1,15 @@
 /**
- * Shared audio runtime.
- *
- * Singleton-style controller for primary audio playback in the current
- * document.  Owns a long-lived HTMLAudioElement, queue state, and
- * Media Session integration.  Designed to be imported by any page that
- * needs audio playback (player, library, future speed/accel integration).
- *
- * The runtime does NOT own the UI — it exposes state and events so page-
- * specific shells can render whatever controls they need.
- *
- * Local-first: uses audio-source-resolver to prefer pinned/cached blobs,
- * falling back to remote BFF streaming URLs.
+ * Document-owned primary playback, queue and reusable audio graph.
+ * UI shells subscribe to state; routes do not own the element's lifetime.
+ * Local-first source resolution prefers cached/pinned media over remote URLs.
+ * Native browser media handling owns platform presentation and transport.
  */
-
-import { audioCompatibility } from "./audio-compatibility.js";
-
 import {
   resolveAudioSource,
   resolveRadioSource,
   triggerBackgroundCache,
   type ResolvedAudioSource,
 } from "./audio-source-resolver.js";
-import {
-  clearMediaSessionClient,
-  updateMediaSessionClient,
-} from "./media-session-adapter.js";
 import {
   primeAudioElement as primeManagedAudioElement,
   createSilentLoopAudioUrl,
@@ -33,7 +18,6 @@ import {
 import {
   acquireBackgroundAudioLease,
   setBackgroundAudioCarrier,
-  activateBackgroundAudioFromGesture,
   registerBackgroundAudioGestureHandler,
   recoverBackgroundAudioAutomatically,
   rearmBackgroundAudio,
@@ -50,7 +34,7 @@ import {
 } from "./audio-mini-visualizer.js";
 import { getGraph } from "./audio-graph-registry.js";
 import { startAudioLifecycleDiagnostics } from "./audio-lifecycle-diagnostics.js";
-import { recordBackgroundDiagnostic } from "./background-diagnostics.js";
+import { recordBackgroundDiagnostic, observeAudioRecovery } from "./background-diagnostics.js";
 import { loadPlayerSession, savePlayerSession } from "./player-session.js";
 import {
   getRadioLogoUrl,
@@ -89,34 +73,7 @@ const resolveRuntimeAudioSource = resolveAudioSource as (
 ) => Promise<ResolvedAudioSource | null>;
 const savePlayerSessionSnapshot = savePlayerSession as (snapshot: RuntimeTrack) => void;
 
-function isArtworkUrl(ref) {
-  return typeof ref === "string" && (ref.startsWith("http://") || ref.startsWith("https://") || ref.startsWith("/"));
-}
-
-// ── State ────────────────────────────────────────────────────────────
-
-let mediaSessionEnabled = true;
-let primaryPlaying = false;
-const PLAYER_MEDIA_SESSION_OWNER = "player-runtime";
-const PLAYER_MEDIA_SESSION_PRIORITY = 10;
 const PLAYER_BACKGROUND_AUDIO_LEASE = "player-runtime";
-
-/**
- * Enable or disable Media Session management by this runtime.
- * Useful when another controller (e.g. speed audio) owns Media Session.
- * When disabling, immediately clears any existing Media Session state.
- */
-export function setMediaSessionEnabled(enabled) {
-  mediaSessionEnabled = enabled;
-  if (!enabled) {
-    clearMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER);
-    return;
-  }
-
-  updateMediaSessionMetadata();
-  syncMediaSessionPlaybackState();
-  syncPositionState();
-}
 
 const listeners = new Set<(state: AudioRuntimeState) => void>();
 
@@ -169,7 +126,6 @@ let audio: ManagedAudioElement | null = null;
 let currentSourceRevoke: (() => void) | null = null;
 let graphClosedDuringHandoff = false;
 const boundAudioElements = new WeakSet<ManagedAudioElement>();
-let positionSyncTimer: ReturnType<typeof setInterval> | null = null;
 let sessionSaveTimer: ReturnType<typeof setTimeout> | null = null;
 let loadRequestToken = 0;
 let lastPersistedPlaybackSecond = -1;
@@ -190,11 +146,9 @@ let internalPauseDepth = 0;
 let ignoreUnexpectedPauseUntilMs = 0;
 let pendingRadioClickUuid = "";
 let pendingRadioClickQueueId = "";
-let radioArtworkStatus: "idle" | "loading" | "ready" | "failed" = "idle";
 let radioStartupAttemptId = 0;
 let radioSourceResetCount = 0;
 let radioSourceConfiguredForAttempt = false;
-let lastAudioSessionType: VatioBoardAudioSession["type"] | null = null;
 let platformAudioSessionState: VatioBoardAudioSession["state"] | "unknown" = "unknown";
 const expectedPauseCauses = new WeakMap<ManagedAudioElement, { cause: string; expiresAt: number }>();
 const observedAudioContexts = new WeakSet<AudioContext>();
@@ -340,22 +294,17 @@ function ownElementSource(el: ManagedAudioElement, revoke?: (() => void) | null)
 
 function createManagedAudioElement() {
   bindLifecyclePersistence();
-  const el = (audioCompatibility.attachedElement
-    ? document.createElement("audio") : new Audio()) as ManagedAudioElement;
-  if (audioCompatibility.attachedElement) {
-    let host = document.getElementById("vatio-primary-audio-host");
-    if (!host) {
-      host = document.createElement("div");
-      host.id = "vatio-primary-audio-host";
-      Object.assign(host.style, { position: "fixed", bottom: "8px", left: "12px", right: "12px", zIndex: "10000" });
-      document.body.append(host);
-    }
-    el.controls = true;
-    el.style.width = "100%";
-    el.style.height = "44px";
-    el.setAttribute("aria-label", "VatioBoard native audio controls");
-    host.replaceChildren(el);
+  const el = document.createElement("audio") as ManagedAudioElement;
+  let host = document.getElementById("vatio-primary-audio-host");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "vatio-primary-audio-host";
+    host.hidden = true;
+    document.body.append(host);
   }
+  el.controls = false;
+  el.setAttribute("aria-label", "VatioBoard audio playback");
+  host.replaceChildren(el);
   resetAudioElementPlaybackRate(el);
   el.preload = "metadata";
   el.playsInline = true;
@@ -488,46 +437,11 @@ function isBackgroundModeKeepAliveStale(generation) {
   return generation !== backgroundKeepAliveGeneration || !wantsBackgroundModeKeepAlive();
 }
 
-function getDesiredPlaybackState() {
-  if (audioCompatibility.enabled) {
-    if (!state.currentTrack) return "none";
-    return primaryPlaying && !audio?.paused ? "playing" : "paused";
-  }
-  if (isBackgroundAudioLeaseActive(PLAYER_BACKGROUND_AUDIO_LEASE)) return "playing";
-
-  // Media Session reflects playback intent, not only the current native
-  // element state. Tesla can pause both media elements while minimizing;
-  // retaining "playing" keeps the platform transport available for rearm.
-  if (wantsBackgroundModeKeepAlive()) return "playing";
-
-  const el = audio;
-  if (el && !el.paused && !el.ended) {
-    return "playing";
-  }
-
-  if (state.currentTrack || state.loading) {
-    return "paused";
-  }
-
-  return "none";
-}
-
-function syncMediaSessionPlaybackState() {
-  if (!mediaSessionEnabled) return;
-  const playbackState = getDesiredPlaybackState();
-  updateMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER, {
-    active: playbackState !== "none",
-    priority: PLAYER_MEDIA_SESSION_PRIORITY,
-    playbackState,
-  });
-}
-
 function stopBackgroundModeKeepAlive() {
   backgroundKeepAliveGeneration += 1;
   backgroundKeepAliveArmPending = false;
   releaseBackgroundAudioLease(PLAYER_BACKGROUND_AUDIO_LEASE);
-  if (!audioCompatibility.silentDuringPlayback) setBackgroundAudioCarrier(PLAYER_BACKGROUND_AUDIO_LEASE, false);
-  syncMediaSessionPlaybackState();
+  setBackgroundAudioCarrier(PLAYER_BACKGROUND_AUDIO_LEASE, false);
 }
 
 async function armBackgroundModeKeepAlive() {
@@ -537,12 +451,10 @@ async function armBackgroundModeKeepAlive() {
   }
 
   if (isBackgroundAudioLeaseActive(PLAYER_BACKGROUND_AUDIO_LEASE)) {
-    syncMediaSessionPlaybackState();
     return true;
   }
 
   if (backgroundKeepAliveArmPending) {
-    syncMediaSessionPlaybackState();
     return false;
   }
 
@@ -561,19 +473,12 @@ async function armBackgroundModeKeepAlive() {
     return false;
   } finally {
     if (generation === backgroundKeepAliveGeneration) backgroundKeepAliveArmPending = false;
-    syncMediaSessionPlaybackState();
   }
 }
 
 function updatePrimaryCarrier() {
-  if (!audioCompatibility.silentDuringPlayback) {
-    setBackgroundAudioCarrier(PLAYER_BACKGROUND_AUDIO_LEASE,
-      Boolean(state.backgroundMode && state.currentTrack && !state.paused));
-  }
-}
-
-function activatePlayerGesture() {
-  if (audioCompatibility.primeOtherConsumers) void activateBackgroundAudioFromGesture();
+  setBackgroundAudioCarrier(PLAYER_BACKGROUND_AUDIO_LEASE,
+    Boolean(state.backgroundMode && state.currentTrack && !state.paused));
 }
 
 function syncBackgroundModeKeepAlive() {
@@ -586,8 +491,8 @@ function syncBackgroundModeKeepAlive() {
   stopBackgroundModeKeepAlive();
 }
 
-backgroundKeepAliveAudio.addEventListener("play", syncMediaSessionPlaybackState);
-backgroundKeepAliveAudio.addEventListener("pause", syncMediaSessionPlaybackState);
+
+
 
 subscribeBackgroundAudioState((snapshot) => {
   state.backgroundPlaybackState = snapshot.status;
@@ -600,7 +505,6 @@ subscribeBackgroundAudioState((snapshot) => {
     isLive: state.isLive,
     recoveryRequired: state.recoveryRequired,
   });
-  syncMediaSessionPlaybackState();
   notify();
 });
 
@@ -634,23 +538,9 @@ function resetRadioLifecycle() {
   radioConnectionStartedAtMs = 0;
   radioRetryDueAtMs = 0;
   radioStableSinceMs = 0;
-  radioArtworkStatus = "idle";
   state.radioFailureClass = null;
   radioSourceResetCount = 0;
   radioSourceConfiguredForAttempt = false;
-}
-
-function setAudioSessionType(type: VatioBoardAudioSession["type"]) {
-  if (!audioCompatibility.audioSessionHints) return;
-  if (lastAudioSessionType === type) return;
-  try {
-    if (navigator.audioSession) {
-      if (navigator.audioSession.type !== type) navigator.audioSession.type = type;
-      lastAudioSessionType = type;
-    }
-  } catch {
-    // Experimental API implementations may expose a read-only partial object.
-  }
 }
 
 function classifyMediaDuration(el: HTMLMediaElement | null) {
@@ -696,7 +586,6 @@ function recordRadioDiagnostic(event: string, detail: Record<string, unknown> = 
     mediaSessionMetadataPresent: Boolean(navigator.mediaSession?.metadata),
     audioSessionType: navigator.audioSession?.type || "unsupported",
     audioSessionState: platformAudioSessionState,
-    artworkStatus: radioArtworkStatus,
     radioFailureClass: state.radioFailureClass,
     startupAttemptId: radioStartupAttemptId,
     sourceResetCount: radioSourceResetCount,
@@ -885,7 +774,6 @@ function requestRadioElementPlayback(token, cause = "connection") {
     notify();
     return;
   }
-  setAudioSessionType("playback");
 
   let playResult: Promise<void> | void;
   try {
@@ -894,7 +782,13 @@ function requestRadioElementPlayback(token, cause = "connection") {
     handleElementPlayRejection(token, error, cause);
     return;
   }
-  Promise.resolve(playResult).catch((error) => handleElementPlayRejection(token, error, cause));
+  const completion = Promise.resolve(playResult).then(() => true, (error) => {
+    handleElementPlayRejection(token, error, cause);
+    return false;
+  });
+  if (cause.includes("reconnect") || cause.startsWith("lifecycle-")) {
+    void observeAudioRecovery(cause, completion);
+  }
   recordRadioDiagnostic("radio-play-request", {
     reason: cause,
     phase: radioRetryPhase,
@@ -914,7 +808,6 @@ function markRadioUnavailable(error = "station-unavailable") {
   internalPauseDepth = Math.max(0, internalPauseDepth - 1);
   flushSessionPersistence({ currentTime: 0 });
   syncBackgroundModeKeepAlive();
-  syncMediaSessionPlaybackState();
   notify();
 }
 
@@ -974,11 +867,9 @@ function handleRadioConnectionFailure(token = loadRequestToken) {
 
 export async function rearmBackgroundPlayback() {
   // Rearm retention without changing an intentional music pause.
-  const retention = audioCompatibility.primeOtherConsumers
-    ? activateBackgroundAudioFromGesture() : rearmBackgroundAudio();
+  const retention = rearmBackgroundAudio();
   const playback = !state.paused && state.currentTrack ? play() : Promise.resolve(false);
-  const results = await Promise.all([retention, playback]);
-  return results.some(Boolean);
+  return observeAudioRecovery("user-rearm", Promise.all([retention, playback]).then((results) => results.some(Boolean)));
 }
 
 async function resumeGraphWithinGrace(el: ManagedAudioElement) {
@@ -1459,7 +1350,6 @@ function handleAudioSessionStateChange() {
     state.loading = true;
     state.connectionState = "reconnecting";
     syncBackgroundModeKeepAlive();
-    syncMediaSessionPlaybackState();
     notify();
     return;
   }
@@ -1715,7 +1605,6 @@ async function loadTrack(index, {
 } = {}) {
   const track = state.queue[index];
   if (!track) return;
-  primaryPlaying = false;
   graphClosedDuringHandoff = false;
   const nextIsRadio = track.media_kind === "radio";
   const previousSourceType = state.sourceType;
@@ -1751,20 +1640,13 @@ async function loadTrack(index, {
     ? { token: requestToken, queueId: track._queueId, time: requestedStartTime }
     : null;
   flushSessionPersistence({ currentTime: requestedStartTime });
-  if (autoplay) setAudioSessionType("playback");
-  // Existing leases survive handoffs. On a fresh radio start, issue actual
-  // stream playback before starting the silent channel, all in the same tap.
+  // Existing leases survive handoffs. Delegate retention before startup so
+  // the primary is the only media channel started by the Player gesture.
   updatePrimaryCarrier();
   if (!nextIsRadio) syncBackgroundModeKeepAlive();
-  syncMediaSessionPlaybackState();
   if (!nextIsRadio) notify();
 
-  if (autoplay && !nextIsRadio && (fromUserGesture || navigator.userActivation?.isActive)) {
-    activatePlayerGesture();
-  }
   let el = getAudio();
-  updateMediaSessionMetadata();
-  if (mediaSessionEnabled) updateMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER, { positionState: null });
 
   const prepared = consumePreparedTrack(index, track);
   // Radio candidates are deterministic from the station payload, so a trusted
@@ -1798,7 +1680,6 @@ async function loadTrack(index, {
     }
     flushSessionPersistence({ currentTime: requestedStartTime });
     syncBackgroundModeKeepAlive();
-    syncMediaSessionPlaybackState();
     notify();
     // Auto-skip unavailable tracks (with loop guard)
     if (!nextIsRadio) autoSkipUnavailable(autoplay);
@@ -1864,14 +1745,9 @@ async function loadTrack(index, {
         fromUserGesture ? "initial-play-trusted-gesture" : "initial-play",
       );
       syncBackgroundModeKeepAlive();
-      if (fromUserGesture || navigator.userActivation?.isActive) activatePlayerGesture();
-      updateMediaSessionMetadata();
-      syncMediaSessionPlaybackState();
       notify();
       return;
     }
-    updateMediaSessionMetadata();
-    syncMediaSessionPlaybackState();
     const playResult = startConfiguredAudioElement(el);
     playResult.catch((err) => {
       if (requestToken !== loadRequestToken) return;
@@ -1880,23 +1756,17 @@ async function loadTrack(index, {
         state.error = null;
         flushSessionPersistence();
         syncBackgroundModeKeepAlive();
-        syncMediaSessionPlaybackState();
         notify();
         return;
       }
       if (err?.name !== "AbortError") {
         state.error = "playback-failed";
         syncBackgroundModeKeepAlive();
-        syncMediaSessionPlaybackState();
         notify();
       }
     });
   }
 
-  if (!autoplay) {
-    updateMediaSessionMetadata();
-    syncMediaSessionPlaybackState();
-  }
 
   maybePrepareUpcomingTrack({ force: false });
 }
@@ -1990,9 +1860,7 @@ export async function play() {
   state.paused = false;
   state.recoveryRequired = false;
   state.error = null;
-  setAudioSessionType("playback");
   updatePrimaryCarrier();
-  activatePlayerGesture();
 
   if (state.isLive && state.connectionState === "unavailable" && state.currentIndex >= 0) {
     await loadTrack(state.currentIndex, { autoplay: true });
@@ -2009,7 +1877,7 @@ export async function play() {
       void armBackgroundModeKeepAlive();
     }
     if (state.isLive) {
-      requestRadioElementPlayback(loadRequestToken, "user-or-media-session-play");
+      requestRadioElementPlayback(loadRequestToken, "user-play");
       return true;
     }
     applyPendingSeek();
@@ -2018,7 +1886,6 @@ export async function play() {
       if (err?.name !== "AbortError") {
         state.error = "playback-failed";
         syncBackgroundModeKeepAlive();
-        syncMediaSessionPlaybackState();
         notify();
       }
     });
@@ -2041,17 +1908,14 @@ export function pause(cause = "explicit-user-pause") {
   markExpectedPause(getAudio(), cause);
   try { getAudio().pause(); } finally { internalPauseDepth = Math.max(0, internalPauseDepth - 1); }
   syncBackgroundModeKeepAlive();
-  syncMediaSessionPlaybackState();
 }
 
 /**
  * Stop playback and reset position.
  */
 export function stopPlayback() {
-  primaryPlaying = false;
   state.backgroundMode = false;
   cancelPrimaryPrime();
-  stopPositionSync();
   loadRequestToken += 1;
   resetRadioLifecycle();
   pendingRadioClickUuid = "";
@@ -2081,8 +1945,6 @@ export function stopPlayback() {
   graphClosedDuringHandoff = false;
 
   stopBackgroundModeKeepAlive();
-  if (mediaSessionEnabled) clearMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER);
-  setAudioSessionType("auto");
   flushSessionPersistence({ currentTime: 0 });
   notify();
 }
@@ -2142,7 +2004,6 @@ export function seekTo(time) {
   if (Number.isFinite(time) && Number.isFinite(el.duration)) {
     pendingSeek = null;
     el.currentTime = Math.max(0, Math.min(time, el.duration));
-    syncPositionState();
     flushSessionPersistence();
     notify();
   }
@@ -2470,8 +2331,6 @@ function onPlay() {
   }
 
   syncBackgroundModeKeepAlive();
-  syncMediaSessionPlaybackState();
-  startPositionSync();
   maybePrepareUpcomingTrack({ force: false });
   maybePersistPlaybackProgress();
   persistSession();
@@ -2485,22 +2344,25 @@ function recoverPrimaryPlaybackAutomatically() {
     || primaryPrimeSourceActive) return false;
   primaryRecoveryAttempted = true;
   const token = loadRequestToken;
-  void startConfiguredAudioElement(el).catch(() => {
-    if (token !== loadRequestToken || state.paused) return;
+  void observeAudioRecovery("primary-automatic", startConfiguredAudioElement(el).then(() => true).catch(() => {
+    if (token !== loadRequestToken || state.paused) return false;
     state.recoveryRequired = true;
     state.error = "background-playback-blocked";
     notify();
-  });
+    return false;
+  }));
   return true;
 }
 
 function onPause(event?: Event) {
-  primaryPlaying = false;
   const target = (event?.currentTarget || audio) as ManagedAudioElement | null;
   const expectedPauseCause = consumeExpectedPause(target);
-  if (audioCompatibility.attachedElement && !expectedPauseCause && !primaryPrimeSourceActive
+  if (!expectedPauseCause && !primaryPrimeSourceActive
     && internalPauseDepth === 0 && internalPlaybackProbeDepth === 0
-    && Date.now() >= ignoreUnexpectedPauseUntilMs) state.paused = true;
+    && Date.now() >= ignoreUnexpectedPauseUntilMs) {
+    recordBackgroundDiagnostic("audio-interruption", { reason: "primary-unrequested-pause" });
+    state.paused = true;
+  }
   if (state.paused) clearRadioTimers();
   if (
     state.isLive
@@ -2537,8 +2399,6 @@ function onPause(event?: Event) {
   }
   // Only mark paused if not a temporary interruption (e.g. seeking)
   syncBackgroundModeKeepAlive();
-  syncMediaSessionPlaybackState();
-  stopPositionSync();
   flushSessionPersistence();
   notify();
 }
@@ -2557,7 +2417,6 @@ function onEnded() {
   }
   state.remoteSessionActive = false;
   syncBackgroundModeKeepAlive();
-  syncMediaSessionPlaybackState();
 
   if (state.repeat === "one") {
     const el = getAudio();
@@ -2582,7 +2441,6 @@ function onTimeUpdate() {
     return;
   }
   reconcilePendingSeekDuringPlayback();
-  syncPositionState();
   maybePrepareUpcomingTrack({ force: false });
   maybePersistPlaybackProgress();
   notify();
@@ -2592,12 +2450,10 @@ function onLoadedMetadata() {
   if (primaryPrimeSourceActive) return;
   if (state.isLive) {
     recordRadioDiagnostic("radio-loadedmetadata", { mediaEvent: "loadedmetadata" });
-    syncPositionState();
     notify();
     return;
   }
   applyPendingSeek();
-  syncPositionState();
   maybePrepareUpcomingTrack({ force: true });
   maybePersistPlaybackProgress();
   notify();
@@ -2611,7 +2467,6 @@ function onCanPlay() {
     return;
   }
   applyPendingSeek();
-  syncPositionState();
   maybePersistPlaybackProgress();
   notify();
 }
@@ -2648,7 +2503,6 @@ function onError(event) {
   state.loading = false;
   flushSessionPersistence();
   syncBackgroundModeKeepAlive();
-  syncMediaSessionPlaybackState();
   notify();
 }
 
@@ -2664,7 +2518,6 @@ function onWaiting() {
     });
   }
   syncBackgroundModeKeepAlive();
-  syncMediaSessionPlaybackState();
   notify();
 }
 
@@ -2712,7 +2565,6 @@ function onEmptied() {
 
 function onPlaying() {
   if (internalPlaybackProbeDepth > 0) return;
-  primaryPlaying = true;
   state.loading = false;
   if (state.isLive) {
     if (radioConnectionTimer) clearTimeout(radioConnectionTimer);
@@ -2745,107 +2597,14 @@ function onPlaying() {
         radioRetryPhase = "initial";
       }
     }, RADIO_STABLE_RESET_MS);
-    updateMediaSessionMetadata();
     recordRadioDiagnostic("radio-playing", { phase: "primary-playing" });
   }
   if (audio && getGraph(audio)) observeGraphContext(audio);
   syncBackgroundModeKeepAlive();
-  syncMediaSessionPlaybackState();
   applyPendingSeek();
-  syncPositionState();
   maybePersistPlaybackProgress();
   maybePrepareUpcomingTrack({ force: false });
   notify();
-}
-
-// ── Media Session ────────────────────────────────────────────────────
-
-const LIVE_MEDIA_SESSION_HANDLERS = {
-  play: () => { void play(); },
-  pause: () => pause("media-session-pause"),
-  stop: stopPlayback,
-  previoustrack: previousTrack,
-  nexttrack: nextTrack,
-};
-
-const SEEKABLE_MEDIA_SESSION_HANDLERS = {
-  ...LIVE_MEDIA_SESSION_HANDLERS,
-  seekbackward: (details) => seekBackward(details?.seekOffset || 10),
-  seekforward: (details) => seekForward(details?.seekOffset || 10),
-  seekto: (details) => { if (details?.seekTime != null) seekTo(details.seekTime); },
-};
-
-function updateMediaSessionMetadata() {
-  if (!mediaSessionEnabled) return;
-  const track = state.currentTrack;
-  if (!track) return;
-  const artworkUrl = track.artwork_ref && isArtworkUrl(track.artwork_ref)
-    ? track.artwork_ref
-    : state.isLive ? getRadioLogoUrl(track.station_uuid || "") : "";
-
-  if (state.isLive) {
-    radioArtworkStatus = artworkUrl ? "ready" : "failed";
-  }
-
-  updateMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER, {
-    active: true,
-    priority: PLAYER_MEDIA_SESSION_PRIORITY,
-    metadata: {
-      title: track.title || track.original_filename || track.name || "",
-      artist: track.artist || track.folder_path || "",
-      album: track.album || "VatioLibre",
-      artworkUrl,
-    },
-    handlers: state.seekable ? SEEKABLE_MEDIA_SESSION_HANDLERS : LIVE_MEDIA_SESSION_HANDLERS,
-  });
-}
-
-export function updatePlayerMediaSessionMetadata(metadata = {}) {
-  if (!mediaSessionEnabled || state.isLive) return;
-
-  updateMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER, {
-    active: true,
-    priority: PLAYER_MEDIA_SESSION_PRIORITY,
-    metadata,
-  });
-}
-
-function syncPositionState() {
-  if (!mediaSessionEnabled) return;
-  if (state.isLive || !state.seekable) {
-    updateMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER, {
-      active: true,
-      priority: PLAYER_MEDIA_SESSION_PRIORITY,
-      positionState: null,
-    });
-    return;
-  }
-  const el = audio;
-  if (!el) return;
-  updateMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER, {
-    active: true,
-    priority: PLAYER_MEDIA_SESSION_PRIORITY,
-    positionState: {
-      duration: el.duration || 0,
-      position: getCurrentPlaybackTime(),
-      playbackRate: el.playbackRate || 1,
-    },
-  });
-}
-
-function startPositionSync() {
-  stopPositionSync();
-  if (state.isLive) return;
-  positionSyncTimer = setInterval(() => {
-    syncPositionState();
-  }, 1000);
-}
-
-function stopPositionSync() {
-  if (positionSyncTimer) {
-    clearInterval(positionSyncTimer);
-    positionSyncTimer = null;
-  }
 }
 
 // ── Persistence ──────────────────────────────────────────────────────

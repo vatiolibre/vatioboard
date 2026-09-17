@@ -4,7 +4,7 @@ import {
   createDriveRecordingService,
   DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE,
 } from "../../src/app/services/drive-recording-service.js";
-import { getBackgroundKeepAliveAudio, hasBackgroundAudioLease } from "../../src/shared/audio-system.js";
+import { getBackgroundKeepAliveAudio, hasBackgroundAudioLease, setBackgroundAudioCarrier, getBackgroundAudioState } from "../../src/shared/audio-system.js";
 
 function createGpsStoreDouble() {
   const listeners = new Set();
@@ -308,6 +308,29 @@ describe("createDriveRecordingService", () => {
     expect(gpsStore.startConsumer.mock.results[0].value).toHaveBeenCalledTimes(1);
     service.destroy();
     Object.defineProperty(keepAliveAudio, "paused", { configurable: true, value: true });
+  });
+
+  it("keeps recording armed when Player playback delegates retention, then returns to silence", async () => {
+    const service = createDriveRecordingService({
+      gpsStore: createGpsStoreDouble(), replayRepository: createRepositoryDouble(), now: () => 5000,
+    });
+    try {
+      service.startRecording({ fromUserGesture: true });
+      await service.rearmKeepAlive({ fromUserGesture: true });
+      setBackgroundAudioCarrier("player-runtime", true);
+      expect(getBackgroundAudioState().status).toBe("delegated");
+      expect(getBackgroundKeepAliveAudio().paused).toBe(true);
+      expect(service.getSnapshot()).toMatchObject({ state: "recording", keepAliveIntended: true,
+        keepAliveArmed: true, keepAliveSuppressed: false, keepAliveBlocked: false });
+      setBackgroundAudioCarrier("player-runtime", false);
+      await service.rearmKeepAlive({ fromUserGesture: true });
+      expect(service.getSnapshot().keepAliveArmed).toBe(true);
+      expect(hasBackgroundAudioLease(DRIVE_RECORDING_BACKGROUND_AUDIO_LEASE)).toBe(true);
+      expect(getBackgroundKeepAliveAudio().paused).toBe(false);
+    } finally {
+      service.destroy();
+      setBackgroundAudioCarrier("player-runtime", false);
+    }
   });
 
   it("tracks altitude and Speed-compatible trip statistics", async () => {

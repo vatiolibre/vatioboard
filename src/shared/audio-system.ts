@@ -1,13 +1,8 @@
 /**
- * Shared audio system coordinator.
- *
- * Keeps page-level audio features from fighting each other in an SPA:
- * - One silent keep-alive audio element for all background audio requests.
- * - Leases let features ask for background audio without stopping each other.
+ * Independent feature leases share one silent retention channel.
+ * A delegated primary carrier suppresses silence without releasing leases.
  */
-
-import { updateMediaSessionClient, clearMediaSessionClient } from "./media-session-adapter.js";
-import { recordBackgroundDiagnostic } from "./background-diagnostics.js";
+import { recordBackgroundDiagnostic, observeAudioRecovery } from "./background-diagnostics.js";
 import { createAudioChannelRetainer } from "./audio-channel-retainer.js";
 
 export interface BackgroundAudioState {
@@ -48,11 +43,7 @@ let backgroundAudioArmPromise = null;
 let intentionalStopDepth = 0;
 let automaticRecoveryAttempted = false;
 const gestureHandlers = new Set<() => unknown>();
-const retentionHandlers = {
-  play: () => { void activateBackgroundAudioFromGesture(); },
-  pause: () => {},
-  stop: () => {},
-};
+
 
 /** Callbacks must initiate play/resume synchronously and never acquire leases. */
 export function registerBackgroundAudioGestureHandler(handler: () => unknown) {
@@ -74,7 +65,7 @@ export function recoverBackgroundAudioAutomatically() {
   if (primaryCarriers.size || automaticRecoveryAttempted || !hasActiveBackgroundAudioLease()
     || !backgroundKeepAliveAudio.paused || navigator.audioSession?.state === "interrupted") return;
   automaticRecoveryAttempted = true;
-  void rearmBackgroundAudio();
+  void observeAudioRecovery("keep-alive-automatic", rearmBackgroundAudio());
 }
 let backgroundAudioState: BackgroundAudioState = {
   status: "idle",
@@ -117,13 +108,7 @@ function publishBackgroundAudioState(
     revision: backgroundAudioState.revision + 1,
   };
   backgroundAudioState = next;
-  if (next.activeLeaseIds.length && status !== "delegated") {
-    updateMediaSessionClient("background-retention", {
-      active: true, priority: -1, playbackState: "playing",
-      metadata: { title: "VatioBoard", artist: "Background audio active" },
-      handlers: retentionHandlers,
-    });
-  } else clearMediaSessionClient("background-retention");
+
   recordBackgroundDiagnostic("keep-alive-state", { backgroundStatus: status, retainedLeaseIds: next.activeLeaseIds.join(",") });
   for (const listener of backgroundAudioListeners) {
     try { listener(getBackgroundAudioState()); } catch { /* listener isolation */ }
@@ -142,6 +127,7 @@ function stopKeepAliveIntentionally() {
 function handleKeepAliveInterruption(event: Event) {
   if (primaryCarriers.size || intentionalStopDepth > 0 || !backgroundKeepAliveAudio.paused || !hasActiveBackgroundAudioLease()) return;
   if (backgroundAudioState.status === "blocked") return;
+  recordBackgroundDiagnostic("audio-interruption", { reason: "keep-alive", mediaEvent: event.type });
   publishBackgroundAudioState("interrupted", event.type === "ended" ? "ended" : "pause");
   queueMicrotask(recoverBackgroundAudioAutomatically);
 }
