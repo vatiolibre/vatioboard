@@ -1,6 +1,28 @@
-# Tesla audio validation runbook
+# Tesla audio stable-reference runbook
 
-## Current change: restore main, extend native radio only
+## Status: stable, vehicle-accepted reference
+
+On **2026-09-18**, the user reported **Pass** for all three vehicle test groups
+below and confirmed that this codebase works as expected. This implementation is
+now the **stable audio reference** for VatioBoard.
+
+Repository reference at acceptance: `019b918c4a1df6c3c338f33db9258a8c9ba32c58`.
+This identifies the current implementation in the repository; the deployed build
+identifier was not separately supplied in the vehicle report. Vehicle software
+previously reported for this test sequence: **2026.26.6.1**.
+
+| Vehicle test group | User-reported result |
+| --- | --- |
+| 1. Recording and alerts, including minimized GPS/recording behavior | **Pass** |
+| 2. Native radio | **Pass** |
+| 3. Combined recording, alerts and playback, including handoffs | **Pass** |
+
+These are user-reported physical acceptance results for the three test groups,
+not new automated measurements or per-step diagnostic records. Use the tests
+below as the regression checklist for future audio changes. Preserve the
+[reference architecture](tesla-browser-audio-implementation.md#reference-contract-for-future-changes).
+
+## Reference architecture: restored main plus isolated native radio
 
 The recording, alert, GPS and MP3 audio behavior has been restored from local
 `main` / `origin/main` at `715223334fa72765b496ab694156a843ef5e7538`.
@@ -12,7 +34,7 @@ This replaces the experimental delegated/required-silence approaches. There is
 no `retentionTest` mode selector or optional harness GPS consumer. Old
 `retentionTest` and `audioCompatibility` query parameters have no effect.
 
-## Physical evidence so far
+## Historical evidence and acceptance
 
 - Vehicle software reported: **2026.26.6.1**; browser version unavailable.
 - Original main: user reports stable recording/alert ownership and GPS while minimized.
@@ -21,10 +43,12 @@ no `retentionTest` mode selector or optional harness GPS consumer. Old
 - Experimental standalone recording and silent-only harness: failed takeover
   and/or minimized GPS recording in the user's tests. The later narrow session
   declaration change also failed; restoring that declaration alone was insufficient.
-- The user clarified that the combined radio-plus-silence experiment was **not tested**.
-- The restored-main build described here has **not yet been validated in the vehicle**.
+- The earlier experimental combined radio-plus-silence mode was **not tested**.
+  That historical result is distinct from the restored-main integration test.
+- The restored-main implementation is now **vehicle accepted**: the user reported
+  Pass for recording/alerts, native radio, and combined operation as recorded above.
 
-## URLs after deploying this build
+## Reference and regression-test URLs
 
 | Purpose | URL |
 | --- | --- |
@@ -102,10 +126,12 @@ Audio continuity, timer execution and GPS callbacks are different outcomes.
 Minimized pages may remain active; frozen pages suspend tasks; discarded or
 destroyed pages lose the running document. Silent media is not a guarantee
 against those platform states. No automated check establishes Tesla audio focus
-or uninterrupted GPS. This build is a restoration of the reported stable
-architecture, pending the physical checks above.
+or uninterrupted GPS. The physical acceptance above establishes this implementation as the stable
+reference for the reported vehicle tests; it does not guarantee execution after
+freezing, discarding or document destruction, or on every future browser version.
 
 Automated validation for this revision: 2,131 unit/architecture/smoke/GPS tests
 and three Chromium tests passed; typecheck, lint and production build passed.
 See [the implementation report](tesla-browser-audio-implementation.md) for exact
-commands, warnings and the changed-file inventory. These results are not vehicle acceptance.
+commands, warnings and the changed-file inventory. Automated results and the
+user-reported vehicle acceptance above are separate evidence.

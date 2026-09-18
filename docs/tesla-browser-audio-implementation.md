@@ -1,8 +1,47 @@
-# Audio implementation: restore main and isolate native radio
+# Stable audio reference: restored main and isolated native radio
 
-## Decision and evidence
+## Stable-reference designation
 
-The user's latest instruction is to return to the stable original-main approach
+**Accepted on 2026-09-18.** The user reported **Pass** for all three vehicle test
+groups: recording/alerts, native radio, and combined operation. They confirmed
+that this codebase works as expected and designated it as the stable reference.
+The [vehicle runbook](tesla-radio-background-runbook.md) records the acceptance
+and preserves the test sequence for future regressions.
+
+Repository reference at acceptance: `019b918c4a1df6c3c338f33db9258a8c9ba32c58`.
+The vehicle report did not separately identify the deployed build hash. The
+previously reported vehicle software for this sequence is **2026.26.6.1**;
+browser version and per-step diagnostic exports were not supplied.
+
+## Reference contract for future changes
+
+Future audio work must preserve these behaviors and use this implementation as
+the comparison baseline:
+
+- Recording, alerts, Speed and GPS retain the restored main lifecycle, activation,
+  normal audible cues and service Media Session behavior.
+- Shared silent PCM remains detached, looping, unmuted, volume/rate 1, with
+  independent leases. Radio never suppresses recording or alert silence.
+- Native radio uses its own connected, controls-hidden element, separate from
+  MP3's Web Audio graph. Resolved stations start synchronously in the user gesture;
+  direct stations do not require CORS headers and relay uses anonymous CORS.
+- MP3 retains main's playback/graph and Media Session behavior. MP3 Pause releases
+  only the Player lease. Player Stop leaves recording/alert ownership intact;
+  the final silent-channel owner releasing its lease stops silence.
+- Native radio yields platform presentation to the browser while it owns the
+  session; active services regain their existing ownership when it pauses/stops.
+  Keep source/play token guards, bounded radio retries and paused-music Rearm.
+- Diagnostics remain passive. Do not reintroduce universal primary delegation,
+  forced concurrent-silence experiments, global gesture priming or recovery polling
+  as a replacement for this accepted architecture without new comparative evidence.
+
+For changes to these behaviors, run the documented automated checks and repeat
+all three vehicle test groups before declaring the change a stable successor.
+Keep this reference and its acceptance record identifiable for comparison.
+
+## Decision and historical evidence
+
+The implementation decision was to return to the stable original-main approach
 and extend only native radio. The silent-retention and narrower session-declaration
 experiments did not restore vehicle recording/GPS behavior. Steady native radio
 passed. The user explicitly clarified that the combined silent-radio experiment
@@ -11,7 +50,8 @@ was not tested; it is not recorded as a failed combined test.
 The restoration reference is local `main` and `origin/main`, both at
 `715223334fa72765b496ab694156a843ef5e7538`. The exact commit previously tested in
 the vehicle was not supplied. Vehicle software reported is **2026.26.6.1**.
-No physical result for this restoration is claimed.
+The historical main commit is the restoration source; the current stable
+reference and its subsequent physical acceptance are identified above.
 
 ## Why a broader restoration was needed
 
@@ -85,7 +125,7 @@ No Audio Session type hints are added.
 - Explicit Rearm retries current background leases without resuming paused music.
 
 Radio-only and actual recording/alerts now have different, deliberate ownership
-paths. Their combination is implemented but still requires physical validation.
+paths. Their combination passed the user-reported vehicle integration test.
 The main lease implementation's original timing behavior is retained rather than
 reintroducing the experimental coordinator under another name.
 
@@ -129,18 +169,26 @@ zero samples and playback properties.
 Automated Chromium uses intercepted audible PCM station responses. It establishes
 browser playback and isolation, not Tesla audio takeover or minimized GPS behavior.
 
-## Deployment and physical acceptance
+## Physical acceptance and future regression checks
 
-No deployment is performed by this change. After deploying, follow
-[the vehicle runbook](tesla-radio-background-runbook.md): actual standalone recording
-and alerts first, native radio second, then their combination and MP3/radio handoffs.
+The user reported Pass for standalone recording/alerts, native radio, and combined
+operation after executing the supplied vehicle test sequence. This is the physical
+acceptance supporting the stable-reference designation; it is distinct from the
+automated results above. The report gives group-level outcomes, not individual
+step timings or exported traces.
+
+For future builds, follow [the vehicle runbook](tesla-radio-background-runbook.md):
+actual standalone recording and alerts first, native radio second, then their
+combination and MP3/radio handoffs.
 Use https://dev.vatioboard.com/?debugAudio=1 and
 https://dev.vatioboard.com/tesla-background-audio.html.
 
 Minimization, freezing, discarding and document destruction are different states.
 Playing media does not establish continuous JavaScript/GPS execution. Record GPS
 samples during minimized intervals separately from a fix obtained after returning.
-The restored-main build remains pending vehicle acceptance.
+The accepted reference covers the reported vehicle tests. It does not establish
+execution after freezing or destruction, or compatibility with every future
+vehicle/browser version.
 
 ## Changed-file inventory
 
