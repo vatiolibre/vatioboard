@@ -233,7 +233,7 @@ export function createDrivingAlertService({
   }
 
   function getAudioIntended() {
-    return state.audioControlActive && hasEnabledAlertAudioFeature();
+    return state.audioControlActive && !state.audioMuted && hasEnabledAlertAudioFeature();
   }
 
   function computeStatus() {
@@ -603,13 +603,12 @@ export function createDrivingAlertService({
   function primeAudioFromUserGesture() {
     state.audioControlActive = true;
     if (hasActiveAlertFeature()) start({ reason: "user-audio-prime" });
-    const keepAlive = hasEnabledAlertAudioFeature();
+    const keepAlive = hasEnabledAlertAudioFeature() && !state.audioMuted;
     const promise = alertAudio.primeAudioFromUserGesture?.({ keepAlive }) || Promise.resolve(false);
     syncAudio({ fromUserGesture: true });
     emit();
     return promise.then((result) => {
-      // Promise completion is no longer the trusted gesture call stack.
-      syncAudio();
+      syncAudio({ fromUserGesture: true });
       emit();
       return result;
     });

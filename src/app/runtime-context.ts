@@ -48,12 +48,6 @@ export function createRuntimeContext(): RuntimeContext {
   });
   const ttsService = createTtsService() as TtsService;
   const recoveryCoordinator = createRecoveryCoordinator();
-  recoveryCoordinator.register({
-    id: "gps-service",
-    reconcile: (nowMs) => {
-      gpsService.reconcileAfterLifecycle(nowMs);
-    },
-  });
 
   return {
     audioRuntime: audioRuntime as unknown as AudioRuntime,

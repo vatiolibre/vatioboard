@@ -67,6 +67,15 @@ function createController(controllerModule, state, onStateChange = vi.fn()) {
   });
 }
 
+function getLatestMediaSessionActionHandler(action) {
+  const calls = navigator.mediaSession.setActionHandler.mock.calls;
+  for (let index = calls.length - 1; index >= 0; index -= 1) {
+    const [registeredAction, handler] = calls[index];
+    if (registeredAction === action) return handler;
+  }
+  return null;
+}
+
 function installSelectiveAudio({ rejectSource = () => false } = {}) {
   const OriginalAudio = globalThis.Audio;
   const audioInstances = [];
@@ -187,6 +196,84 @@ describe("speed audio recovery", () => {
     await controller.armBackgroundAlertAudio();
 
     expect(audioSystem.getBackgroundAudioLeaseCount()).toBe(1);
+    expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
+  });
+
+  it("ignores media-session pause and stop for silent keep-alive leases", async () => {
+    const state = createState({
+      alertAudioControlActive: true,
+      recordingKeepAliveIntended: true,
+    });
+    const controller = createController(audioModule, state);
+    const setRecordingActive = vi.fn();
+    const handleRecordingAudioInterrupted = vi.fn();
+    const handleRecordingMediaSessionPlay = vi.fn();
+    const handleSpeedMediaSessionPause = vi.fn();
+    const handleSpeedMediaSessionStop = vi.fn();
+
+    await controller.armRecordingKeepAliveAudio({ fromUserGesture: true });
+    await controller.armBackgroundAlertAudio({ fromUserGesture: true });
+
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(true);
+    expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
+
+    controller.installMediaSessionActionHandlers({
+      setRecordingActive,
+      handleRecordingAudioInterrupted,
+      handleRecordingMediaSessionPlay,
+      handleSpeedMediaSessionPause,
+      handleSpeedMediaSessionStop,
+    });
+
+    getLatestMediaSessionActionHandler("pause")();
+    getLatestMediaSessionActionHandler("stop")();
+    getLatestMediaSessionActionHandler("play")();
+
+    expect(setRecordingActive).not.toHaveBeenCalled();
+    expect(handleRecordingAudioInterrupted).not.toHaveBeenCalled();
+    expect(handleSpeedMediaSessionPause).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "media-session-pause" })
+    );
+    expect(handleSpeedMediaSessionStop).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "media-session-stop" })
+    );
+    expect(handleRecordingMediaSessionPlay).toHaveBeenCalledWith(
+      expect.objectContaining({ source: "media-session-play" })
+    );
+    expect(state.recordingKeepAliveSuppressed).toBe(false);
+    expect(state.backgroundAudioSuppressed).toBe(false);
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(true);
+    expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
+  });
+
+  it("guards silent keep-alive disarm paths from media-session sources", async () => {
+    const state = createState({
+      alertAudioControlActive: true,
+      recordingKeepAliveIntended: true,
+    });
+    const controller = createController(audioModule, state);
+
+    await controller.armRecordingKeepAliveAudio({ fromUserGesture: true });
+    await controller.armBackgroundAlertAudio({ fromUserGesture: true });
+
+    expect(controller.suppressRecordingKeepAliveAudio({ source: "media-session-pause" })).toBe(false);
+    expect(controller.disarmBackgroundAlertAudio({ source: "media-session-stop" })).toBe(false);
+    expect(controller.suppressBackgroundAudioRuntime({ reason: "external-media-session-stop" })).toBe(false);
+    expect(state.recordingKeepAliveSuppressed).toBe(false);
+    expect(state.backgroundAudioSuppressed).toBe(false);
+    expect(
+      audioSystem.isBackgroundAudioLeaseActive(
+        audioModule.SPEED_RECORDING_BACKGROUND_AUDIO_LEASE
+      )
+    ).toBe(true);
     expect(audioSystem.isBackgroundAudioLeaseActive(audioModule.SPEED_BACKGROUND_AUDIO_LEASE)).toBe(true);
   });
 

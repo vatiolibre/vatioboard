@@ -82,7 +82,6 @@ export interface GpsService {
   getCurrentPosition(): NormalizedGpsPosition | null;
   requestHighAccuracy(reason?: string): Unsubscribe;
   releaseHighAccuracy(reason?: string): void;
-  reconcileAfterLifecycle(nowMs?: number): boolean;
   installGlobalShim(): boolean;
   destroy(): void;
 }
@@ -268,6 +267,7 @@ export interface AudioRuntimeState {
 }
 
 export interface AudioRuntime {
+  setMediaSessionEnabled?(enabled: boolean): void;
   getState(): AudioRuntimeState;
   subscribe(listener: (state: AudioRuntimeState) => void): Unsubscribe;
   primeAudio(): Promise<boolean>;

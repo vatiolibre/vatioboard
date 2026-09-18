@@ -14,6 +14,8 @@ vi.mock("../../src/shared/environment.js", () => ({
 }));
 
 const runtimeMock = {
+  updatePlayerMediaSessionMetadata: vi.fn(),
+  setMediaSessionEnabled: vi.fn(),
   getState: vi.fn(() => ({
     queue: [],
     currentIndex: -1,

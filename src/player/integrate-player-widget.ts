@@ -8,6 +8,7 @@
  *  - injecting a "Player" launcher button into the page's tools menu list
  *  - showing/hiding the launcher + FAB based on backend auth state
  *  - closing the widget + stopping playback on logout
+ *  - Media Session ownership opt-out for pages that own it themselves
  *
  * Usage (from any page):
  *
@@ -20,7 +21,7 @@ import "../shared/ui/confirm-dialog.less";
 import { createPlayerWidget } from "./player-widget.js";
 import { IconMusic } from "../icons.js";
 import { t } from "../i18n.js";
-import { stopPlayback } from "../shared/audio-runtime.js";
+import { setMediaSessionEnabled, stopPlayback } from "../shared/audio-runtime.js";
 import {
   BACKEND_AUTH_STATE_EVENT,
   getBackendSessionState,
@@ -49,6 +50,7 @@ type PlayerWidgetApi = {
 type IntegratePlayerWidgetOptions = {
   toolsMenuList?: HTMLElement | null;
   toolsMenu?: ToolsMenuController | null;
+  mediaSession?: boolean;
   preload?: "on-open" | "immediate";
   mount?: HTMLElement;
 };
@@ -100,6 +102,7 @@ function insertPlayerButton(toolsMenuList: HTMLElement | null | undefined, butto
  * @param {object} opts
  * @param {HTMLElement} opts.toolsMenuList - Container for menu items
  * @param {{ close: Function }} opts.toolsMenu - Tools menu controller
+ * @param {boolean} [opts.mediaSession=true] - Let player own Media Session
  * @param {"on-open"|"immediate"} [opts.preload="on-open"]
  * @param {HTMLElement} [opts.mount=document.body]
  * @returns {{ widget: object, button: HTMLElement|null }}
@@ -107,6 +110,7 @@ function insertPlayerButton(toolsMenuList: HTMLElement | null | undefined, butto
 export function integratePlayerWidget({
   toolsMenuList,
   toolsMenu,
+  mediaSession = true,
   preload = "on-open",
   mount = document.body,
 }: IntegratePlayerWidgetOptions = {}): IntegratePlayerWidgetResult {
@@ -114,6 +118,9 @@ export function integratePlayerWidget({
   if (toolsMenuList?.querySelector("[data-player-toggle]")) {
     return { widget: null, button: null };
   }
+
+  // Media Session ownership
+  setMediaSessionEnabled(mediaSession);
 
   if (window.__vatioboardSpa && window.__vatioboardPlayerWidget) {
     const existingWidget = window.__vatioboardPlayerWidget as PlayerWidgetApi;

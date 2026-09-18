@@ -244,36 +244,4 @@ describe("createGpsService", () => {
       stale: true,
     });
   });
-
-  it("restarts one stale native watch after lifecycle restoration without duplicating it", () => {
-    vi.useFakeTimers();
-    vi.setSystemTime(1_767_225_600_000);
-    const geolocation = createGeolocationDouble();
-    const service = createGpsService({ geolocation });
-    service.startConsumer("speed-recording");
-    emitPosition(geolocation, { timestamp: Date.now() });
-
-    vi.advanceTimersByTime(10_001);
-    const resumedAt = Date.now();
-
-    expect(service.reconcileAfterLifecycle(resumedAt)).toBe(true);
-    expect(geolocation.clearWatch).toHaveBeenCalledTimes(1);
-    expect(geolocation.watchPosition).toHaveBeenCalledTimes(2);
-
-    expect(service.reconcileAfterLifecycle(resumedAt + 1)).toBe(false);
-    expect(geolocation.clearWatch).toHaveBeenCalledTimes(1);
-    expect(geolocation.watchPosition).toHaveBeenCalledTimes(2);
-
-    emitPosition(geolocation, { timestamp: Date.now() });
-    expect(service.reconcileAfterLifecycle(Date.now() + 1)).toBe(false);
-    expect(geolocation.watchPosition).toHaveBeenCalledTimes(2);
-  });
-
-  it("does not create a GPS watch during lifecycle reconciliation without consumers", () => {
-    const geolocation = createGeolocationDouble();
-    const service = createGpsService({ geolocation });
-
-    expect(service.reconcileAfterLifecycle(Date.now())).toBe(false);
-    expect(geolocation.watchPosition).not.toHaveBeenCalled();
-  });
 });

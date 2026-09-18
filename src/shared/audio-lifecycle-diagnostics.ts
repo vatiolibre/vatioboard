@@ -71,6 +71,8 @@ export function startAudioLifecycleDiagnostics(sources: DiagnosticSources) {
       paused: primary?.paused ?? true, ended: primary?.ended ?? false,
       primaryCurrentTime: primary?.currentTime ?? 0, primaryDuration: primary?.duration ?? 0,
       readyState: primary?.readyState ?? 0, networkState: primary?.networkState ?? 0,
+      keepAliveConnected: keepAlive.isConnected ?? false,
+      keepAliveReadyState: keepAlive.readyState, keepAliveNetworkState: keepAlive.networkState,
       keepAlivePaused: keepAlive.paused, keepAliveEnded: keepAlive.ended,
       keepAliveCurrentTime: keepAlive.currentTime, keepAliveDuration: keepAlive.duration,
       keepAliveLoop: keepAlive.loop, keepAliveMuted: keepAlive.muted,

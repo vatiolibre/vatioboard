@@ -2062,6 +2062,12 @@ export function createPlayerShell({
             artworkCompact.innerHTML = "";
             artworkCompact.style.backgroundImage = `url(${CSS.escape(artUrl)})`;
             artworkCompact.classList.add("has-image");
+            if (track.media_kind !== "radio") runtime.updatePlayerMediaSessionMetadata?.({
+              title: track.title || track.original_filename || track.name || "",
+              artist: track.artist || track.folder_path || "",
+              album: "VatioLibre",
+              artworkUrl: artUrl,
+            });
           }
         });
       }

@@ -476,6 +476,13 @@ const state: AnyRecord = {
   globeSolarSyncFrameId: null,
   globeSolarGeometryDirty: false,
   runtimePageTitle: '',
+  runtimeArtworkSignature: '',
+  runtimeArtworkDataUrl: '',
+  runtimeDynamicArtworkBlocked: false,
+  runtimeMediaMetadataSignature: '',
+  runtimeMediaMetadataUrgencySignature: '',
+  runtimeMediaMetadataUpdatedAt: 0,
+  runtimeMediaPlaybackState: '',
   recordingState: initialReplaySession.recordingState,
   replaySession: initialReplaySession,
 };
@@ -532,6 +539,7 @@ function createInactiveAudioController() {
     disarmRecordingKeepAliveAudio() {},
     dispose() {},
     handleUserGestureAudioActivation() {},
+    installMediaSessionActionHandlers() {},
     isBackgroundAlertAudioArmed: () => false,
     isRecordingKeepAliveArmed: () => false,
     maybeRecoverRecordingKeepAliveAudio: () => false,
@@ -1044,10 +1052,23 @@ function rearmRecordingKeepAliveFromUserGesture(reason = 'recording-keep-alive-u
   return true;
 }
 
+function isMediaSessionSource(source = '') {
+  return String(source).startsWith('media-session');
+}
+
 function handleRecordingKeepAliveLeaseLost({
   blocked = false,
+  source = '',
   reason = 'recording-keep-alive-interrupted',
 } = {}) {
+  if (isMediaSessionSource(source)) {
+    publishSpeedRecordingActivity({
+      persist: true,
+      reason: 'media-session-ignored-recording-keep-alive',
+    });
+    return false;
+  }
+
   const retainIntent = state.recordingState === 'recording' || state.recordingKeepAliveIntended;
   if (!retainIntent) return false;
 
@@ -1068,6 +1089,35 @@ function reconcileRecordingKeepAliveAfterAudioInterruption(
   }
 
   return handleRecordingKeepAliveLeaseLost({ reason });
+}
+
+function handleRecordingMediaSessionPlay({
+  fromUserGesture = true,
+  reason = 'recording-keep-alive-media-session-play',
+} = {}) {
+  if (!wantsRecordingKeepAliveFromGesture()) return false;
+
+  if (state.recordingState === 'recording') {
+    syncRecordingKeepAliveWithRecordingState({ fromUserGesture });
+  } else {
+    audioController.maybeRecoverRecordingKeepAliveAudio({ fromUserGesture });
+  }
+  publishSpeedRecordingActivity({ persist: true, reason });
+  return true;
+}
+
+function handleSpeedMediaSessionPause({
+  reason = 'speed-media-session-pause-ignored-for-keep-alive',
+} = {}) {
+  publishSpeedRecordingActivity({ persist: true, reason });
+  return false;
+}
+
+function handleSpeedMediaSessionStop({
+  reason = 'speed-media-session-stop-ignored-for-keep-alive',
+} = {}) {
+  publishSpeedRecordingActivity({ persist: true, reason });
+  return false;
 }
 
 function shouldIgnoreOpportunisticDrivingAudioGesture(target) {
@@ -1621,6 +1671,9 @@ function createSpeedRouteControllers() {
       t,
       getAlertUiState,
       convertSpeed,
+      getConfiguredTrapAlertDistanceLabel,
+      getAlertLimitDisplayValue,
+      getSubStatusText: (alertState) => speedRenderer.getSubStatusText(alertState),
       getCriticalAlertText: (alertState) => speedRenderer.getCriticalAlertText(alertState),
       onStateChange: () => {
         publishSpeedRecordingActivity();
@@ -3286,6 +3339,11 @@ async function init() {
   }
 
   audioController.attachRuntimeAudioEventListeners();
+  audioController.installMediaSessionActionHandlers({
+    handleRecordingMediaSessionPlay,
+    handleSpeedMediaSessionPause,
+    handleSpeedMediaSessionStop,
+  });
   speedRuntimeLifecycleCleanup = speedRuntime.installLifecycleListeners({
     recoveryHandler: handleSpeedRuntimeRecoveryNeeded,
     persistHandler: () => {

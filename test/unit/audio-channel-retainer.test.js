@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createAudioChannelRetainer,
-  primeAudioElement,
   createSilentLoopAudioUrl,
   resetAudioElementPlaybackRate,
 } from "../../src/shared/audio-channel-retainer.js";
@@ -72,24 +71,4 @@ describe("audio-channel-retainer", () => {
     expect(keepAliveAudio.muted).toBe(false);
     expect(keepAliveAudio.volume).toBe(1);
   });
-});
-
-it("stale priming completion cannot pause, rewind, or mute a newer playback operation", async () => {
-  const audio = new Audio();
-  let resolvePlay;
-  audio.play = vi.fn(() => new Promise((resolve) => { resolvePlay = resolve; }));
-  let current = true;
-  const priming = primeAudioElement(audio, { isCurrent: () => current });
-  current = false;
-  audio.paused = false;
-  audio.currentTime = 25;
-  audio.muted = false;
-  audio.volume = 0.8;
-  const pause = vi.spyOn(audio, "pause");
-  resolvePlay();
-  expect(await priming).toBe(false);
-  expect(pause).not.toHaveBeenCalled();
-  expect(audio.currentTime).toBe(25);
-  expect(audio.muted).toBe(false);
-  expect(audio.volume).toBe(0.8);
 });

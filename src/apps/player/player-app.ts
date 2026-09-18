@@ -11,8 +11,10 @@ import {
   type PlayerShellSettingsStore,
 } from "../../player/player-shell.js";
 import { hasStoredValue, loadText, saveText } from "../../shared/storage.js";
+import type { AudioRuntime } from "../../types/services";
 import type { ShellRuntime } from "../../types/shell";
 import type { ShellAppRuntimeManager, VatioAppRuntime } from "../../app-platform/types";
+
 import { setRadioExternalNetworkAccessCheck } from "../../shared/radio-browser.js";
 
 export const PLAYER_APP_ID = "vatio.player";
@@ -28,6 +30,7 @@ export interface PlayerAppOptions extends Record<string, unknown> {
   runtime?: VatioAppRuntime | null;
   shellAppRuntimeManager?: ShellAppRuntimeManager | null;
   shellManager?: ShellRuntime;
+  audioRuntime?: AudioRuntime | null;
 }
 
 export interface PlayerAppApi extends PlayerWidgetApi {
@@ -80,11 +83,20 @@ function createPlayerSettingsStore(runtime: VatioAppRuntime | null): PlayerShell
   };
 }
 
+function primeRuntimeAudioBoundary(runtime: VatioAppRuntime | null, audioRuntime?: AudioRuntime | null) {
+  const audioService = runtime?.services.audio || audioRuntime || null;
+  if (!audioService) return;
+  try {
+    audioService.setMediaSessionEnabled?.(true);
+  } catch (error) {
+    runtime?.logger.warn("Player runtime audio service could not be primed.", error);
+  }
+}
+
 export function createPlayerApp(options: PlayerAppOptions = {}): PlayerAppApi {
   const runtime = resolvePlayerRuntime(options);
-  setRadioExternalNetworkAccessCheck(runtime
-    ? () => runtime.permissions.require("network.external")
-    : null);
+  primeRuntimeAudioBoundary(runtime, options.audioRuntime || null);
+  setRadioExternalNetworkAccessCheck(runtime ? () => runtime.permissions.require("network.external") : null);
   const widget = createPlayerWidget({
     ...options,
     settingsStore: createPlayerSettingsStore(runtime),

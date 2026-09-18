@@ -1,98 +1,198 @@
-# Tesla-tested audio default implementation
+# Audio implementation: restore main and isolate native radio
 
-## Outcome and evidence
+## Decision and evidence
 
-The user reported both the main Player and runtime harness passing audio takeover, 30-second minimized playback and five-minute minimized playback on Tesla software **2026.26.6.1**. Those tests used an attached primary element with visible native controls. No browser version or exported diagnostics was available.
+The user's latest instruction is to return to the stable original-main approach
+and extend only native radio. The silent-retention and narrower session-declaration
+experiments did not restore vehicle recording/GPS behavior. Steady native radio
+passed. The user explicitly clarified that the combined silent-radio experiment
+was not tested; it is not recorded as a failed combined test.
 
-This revision adopts that configuration as the application default, removes its flags and legacy branches, and hides native controls. It adds a photographable report. **Hidden controls and combined alerts/recording still need physical testing.** The build has not been deployed by this implementation task.
+The restoration reference is local `main` and `origin/main`, both at
+`715223334fa72765b496ab694156a843ef5e7538`. The exact commit previously tested in
+the vehicle was not supplied. Vehicle software reported is **2026.26.6.1**.
+No physical result for this restoration is claimed.
 
-## Previous architecture and weaknesses
+## Why a broader restoration was needed
 
-The shared runtime owned a primary element, reusable visualizer graph, independent Player/alert/recording leases, and a zero-sample PCM retention channel. A shared adapter arbitrated custom Media Session metadata and actions. Player gestures could prime other consumers. The original default used a detached primary element and simultaneous silent retention; the later compatibility experiment attached it, delegated retention, skipped unrelated Player activation, and suppressed platform writes.
+The experimental branch changed the shared lease coordinator, primary delegation,
+gesture activation, recording lifecycle recovery, GPS reconciliation and Media
+Session ownership together. Main's PCM was already a two-second mono 44.1 kHz
+zero-sample WAV, looping, unmuted, volume/rate 1. Attaching that PCM or restoring
+only a session declaration did not recreate the main application.
 
-The vehicle comparison found direct, relay-native, relay-Web-Audio and isolated POC paths worked while the old runtime failed. The combined compatibility configuration then worked, narrowing the investigation to runtime integration without proving which individual change was decisive. Its fixed native-controls host obscured application buttons.
+Main's recording/Speed activation also includes feature-specific handling and
+normal audible cues. A silent-only diagnostic page does not reproduce it. There
+is no evidence establishing one of those differences as the Tesla root cause.
+This change restores the feature implementations together and isolates radio's
+specific native-media requirements.
 
-## Changes and lifecycle
+## Restored baseline
 
-- The primary is always a document-attached audio element in a hidden, zero-layout host outside route ownership. Controls are disabled; application transport controls remain. Stop clears the source and state while preserving identity and reusable graph. The existing graph-bound MP3-to-native-radio replacement exception remains logged.
-- Primary startup/playback intent delegates retention and pauses the silent channel; leases remain continuous through buffering, retries and handoffs. Player Pause retains its lease and attempts silent retention. Player Stop releases only Player ownership. Final-owner release stops silence.
-- Player gestures do not activate unrelated consumers. Alert and recording activation remains feature-specific. Native/browser pauses are respected after startup guards. Rearm preserves intentional music pause; existing recovery budgets and operation tokens remain.
-- Custom Media Session writers, action/position/metadata ownership plumbing, artwork-only helpers and Audio Session type writes are removed. The obsolete `setMediaSessionEnabled`, `updatePlayerMediaSessionMetadata`, widget `mediaSession` option and Player-app audio ownership initialization are removed, rather than retained as no-ops. Read-only platform observation remains.
-- Compatibility configuration and the harness options dialog are removed. Old query switches do nothing; all browsers use the same runtime. The isolated POC and direct/relay comparison modes remain available.
-- The shared diagnostic summary uses the existing observer, with no new timer. It shows build timestamp (or supplied `VITE_BUILD_ID`), elapsed wall time, primary/retention state, owners, interruption/recovery-call totals, latest lifecycle event, and manually entered vehicle version and test outcomes. Counts are document-scoped and independent of bounded event-history rollover. Recovery resolution is explicitly not proof of audible output. Manual entries survive panel remounts, not full navigation.
-- Storage and clipboard are optional. The summary displays in the Player Radio diagnostics area and harness and can be photographed. Export also includes the observation fields; privacy filtering remains in place for event details.
+These source files match the reference main exactly:
 
-## Test changes
+- `src/shared/audio-channel-retainer.ts`
+- `src/app/services/drive-recording-service.ts`
+- `src/app/services/driving-alert-service.ts`
+- `src/app/services/driving-audio-alert-controller.ts`
+- `src/app/services/gps-service.ts`
+- `src/app/runtime-context.ts`
+- `src/shared/recovery-coordinator.ts`
+- `src/speed/audio.ts`
+- `src/speed/constants.ts`
+- `src/speed/speed.ts`
+- `src/player/integrate-player-widget.ts`
 
-Media mocks now provide controllable state on actual DOM audio elements. Obsolete tests of removed platform ownership/metadata APIs were retired; retained Player/radio, lease, GPS, alert and visualizer tests exercise the new behavior. Browser assertions cover attached controls-hidden playback, silent delegation, paused-music Rearm, source handoffs, inert old query switches, no platform writes, and manual report controls. Summary tests cover unavailable storage, repeated mounts without timers and totals surviving history rollover.
+`src/shared/audio-system.ts` restores main's lease logic, with read-only snapshot
+and subscription helpers plus an explicit diagnostic rearm wrapper. There is no
+primary delegation, `requireSilent`, gesture broadcast, or new recovery polling.
+Main's independent owners acquire and release the original detached silent element.
+
+`src/shared/audio-runtime.ts` restores main's MP3 queue, source handling, priming,
+background-mode policy and platform controls. MP3 Pause releases its Player lease;
+Stop retains main's graph cleanup/replacement behavior. Recording and alert leases
+remain independent. This intentionally supersedes the branch's paused-music
+retention and universal persistent-primary policies.
+
+`src/shared/media-session-adapter.ts` restores main's safe API facade and client
+priorities. Recording and Speed again publish their original metadata and actions;
+Player MP3 publishes its normal metadata, artwork, position and transports.
+`setMediaSessionEnabled` plumbing is restored through the service boundary/widget.
+No Audio Session type hints are added.
+
+## Narrow native-radio extension
+
+- A separate document-owned hidden `#vatio-native-radio-host` contains the native
+  radio element. Controls occupy no screen space. MP3's element and graph are
+  separate; switching back reuses its existing element when main permits.
+- Station selection resolves the existing direct/relay URL synchronously and calls
+  native `play()` within the gesture. Direct HTTPS stations need no CORS headers;
+  relay uses anonymous CORS. HLS/invalid sources remain unsupported by the resolver.
+- Radio is excluded from Web Audio graph acquisition and background caching.
+  Existing radio directory, permission checks, relay worker and station UI remain.
+- Radio does not acquire a Player silent lease and cannot suppress feature leases.
+  A recording/alert lease runs the same silent element during station changes,
+  radio Pause and Player Stop. Radio alone retains its native-only baseline.
+- The native client participates in main's priorities. When it wins, prior custom
+  platform metadata/actions are cleared and the browser supplies presentation.
+  When radio pauses/stops, active recording/Speed ownership can resume. The
+  application continues to provide queue and transport controls for radio.
+- Live seek is disabled. Stations reuse the same native element. A startup timeout
+  reports failure; an established stream has at most two delayed retry attempts.
+  Duplicate retry events coalesce; Pause/Stop cancel retries. Operation tokens
+  reject stale source/play completions. Delayed MP3 preparation cannot start the
+  old music element after switching to radio.
+- Explicit Rearm retries current background leases without resuming paused music.
+
+Radio-only and actual recording/alerts now have different, deliberate ownership
+paths. Their combination is implemented but still requires physical validation.
+The main lease implementation's original timing behavior is retained rather than
+reintroducing the experimental coordinator under another name.
+
+## Diagnostics and harness
+
+The existing passive observer, bounded event history, optional JSON export and
+photographable summary remain. Added experiment-only GPS/silent-demand fields and
+modes have been removed; no placeholder GPS readings are shown as measurements.
+Recording validation uses the actual main app's service and sample timestamps.
+The diagnostic heartbeat observes media/lifecycle state; it never recovers audio.
+
+The harness compares native runtime radio, direct POC radio, relay-native radio,
+relay-Web-Audio radio and generated audible PCM through main's finite-track path.
+Stop/unmount releases its own runtime playback and reference elements/contexts,
+subscriptions and diagnostic observer; it does not clear recording/alert leases.
+Repeated starts/mounts are checked for duplicate observation intervals and cleanup.
+
+`retentionTest` and `audioCompatibility` parameters are inert. There is no application
+compatibility switch or optional harness GPS consumer. Photos/manual Pass/Fail are
+supported without clipboard or session storage.
 
 ## Validation
 
+Final automated results (2026-09-18):
+
 | Command | Result |
 | --- | --- |
-| `pnpm test` | Unit/architecture stage passed: 171 files, 2,029 tests. Smoke stage exposed three obsolete Speed assertions expecting custom Media Session writes; these were corrected and the complete smoke command rerun below. |
-| `pnpm run test:smoke` | Passed: 100 general smoke and 14 GPS/background tests. |
-| `pnpm exec vitest run test/unit/drive-recording-service.test.js` | Passed: 9 tests, including the added delegated-retention recording regression. |
-| `pnpm exec vitest run test/unit/audio-diagnostic-summary.test.js` | Passed: 3 tests after the final live-state summary adjustment. |
-| `pnpm exec playwright test test/e2e/tesla-background-audio.spec.ts test/e2e/tesla-radio-poc.spec.ts --project=model-y-2024` | Passed: 4 Chromium tests. |
-| `pnpm run typecheck` | Passed after final source changes. |
-| `pnpm run lint` | Passed: 0 errors, 73 warnings. Final changed summary/recording files also passed targeted lint. |
-| `pnpm run build` | Passed; existing vendor externalization, mixed-import and chunk-size warnings remain. |
-| `git diff --check` | Passed. |
+| `pnpm test` | Pass: 2,017 unit/architecture + 100 smoke + 14 SPA/GPS tests (2,131 total) |
+| `pnpm run typecheck` | Pass |
+| `pnpm run lint` | Pass: 0 errors, 73 warnings |
+| `pnpm run build` | Pass; Vite reported externalization, chunk-splitting and size warnings |
+| `pnpm exec playwright test test/e2e/tesla-background-audio.spec.ts test/e2e/tesla-radio-poc.spec.ts --project=model-y-2024` | Pass: 3 Chromium tests |
 
-Earlier focused runs identified obsolete Media Session expectations and primary-element mocks that targeted the old `Audio` constructor. The tests now exercise DOM media nodes and native platform ownership. A full run started before obsolete tests were removed was stopped; the recorded unit/architecture pass above is from its replacement. No remaining test failures are known.
+The targeted
+suite exercises synchronous native startup, CORS, no graph/cache, MP3 separation,
+stale promises, bounded retries, Pause/Rearm, independent owner release, platform
+ownership return, and harness lifecycle cleanup. Main's original tests exercise
+recording, Speed, GPS, MP3 and Media Session behavior. The PCM test checks WAV format,
+zero samples and playback properties.
 
-Recording's subscription now treats `delegated` as armed while its lease is owned. The dedicated regression confirms recording remains armed through Player delegation and the return to silent retention.
+Automated Chromium uses intercepted audible PCM station responses. It establishes
+browser playback and isolation, not Tesla audio takeover or minimized GPS behavior.
 
-## Vehicle acceptance and limitations
+## Deployment and physical acceptance
 
-Use **https://dev.vatioboard.com/?debugAudio=1** and **https://dev.vatioboard.com/tesla-background-audio.html** after deployment. Follow [the runbook](tesla-radio-background-runbook.md) for hidden-controls takeover/minimization, Pause/Rearm, MP3/radio handoffs, routes, combined recording/alerts, and final-owner shutdown.
+No deployment is performed by this change. After deploying, follow
+[the vehicle runbook](tesla-radio-background-runbook.md): actual standalone recording
+and alerts first, native radio second, then their combination and MP3/radio handoffs.
+Use https://dev.vatioboard.com/?debugAudio=1 and
+https://dev.vatioboard.com/tesla-background-audio.html.
 
-The initial successful configuration had visible controls; hiding them changes one browser-facing property and remains unverified in the vehicle. Silent-only retention remains a hypothesis. Renderer freezing, discard or destruction cannot be overridden by application timers. Missing background GPS callbacks are not continuous route coverage. No automated result is presented as Tesla continuity proof.
+Minimization, freezing, discarding and document destruction are different states.
+Playing media does not establish continuous JavaScript/GPS execution. Record GPS
+samples during minimized intervals separately from a fix obtained after returning.
+The restored-main build remains pending vehicle acceptance.
 
-## Every changed file
+## Changed-file inventory
+
+### Documentation
 
 - `docs/tesla-browser-audio-implementation.md`
 - `docs/tesla-radio-background-runbook.md`
+
+### Application, service and Speed integration
+
 - `src/app-platform/services.ts`
+- `src/app/runtime-context.ts`
 - `src/app/services/drive-recording-service.ts`
+- `src/app/services/driving-alert-service.ts`
+- `src/app/services/driving-audio-alert-controller.ts`
+- `src/app/services/gps-service.ts`
 - `src/apps/player/player-app.ts`
+- `src/speed/audio.ts`
+- `src/speed/constants.ts`
+- `src/speed/speed.ts`
+- `src/types/services.ts`
+
+### Player, shared audio and diagnostics
+
 - `src/player/integrate-player-widget.ts`
 - `src/player/player-shell.ts`
 - `src/player/tesla-background-audio.ts`
-- `src/shared/audio-compatibility.ts`
-- `src/shared/audio-diagnostic-summary.css`
+- `src/shared/audio-channel-retainer.ts`
 - `src/shared/audio-diagnostic-summary.ts`
+- `src/shared/audio-graph-registry.ts`
 - `src/shared/audio-lifecycle-diagnostics.ts`
 - `src/shared/audio-runtime.ts`
 - `src/shared/audio-system.ts`
 - `src/shared/background-diagnostics.ts`
 - `src/shared/media-session-adapter.ts`
-- `src/shared/media-session-artwork.ts`
-- `src/speed/audio.ts`
-- `src/speed/constants.ts`
-- `src/speed/speed.ts`
-- `src/types/services.ts`
+- `src/shared/recovery-coordinator.ts`
 - `tesla-background-audio.html`
+
+### Regression and browser coverage
+
 - `test/e2e/tesla-background-audio.spec.ts`
-- `test/setup/test-env.js`
 - `test/smoke/dev-harness-speed-page.test.js`
 - `test/smoke/dev-harness-tesla-audio-page.test.js`
 - `test/smoke/spa-gps-background.test.js`
-- `test/unit/app-control-platform.test.js`
-- `test/unit/audio-compatibility.test.js`
-- `test/unit/audio-diagnostic-summary.test.js`
+- `test/unit/audio-channel-retainer.test.js`
 - `test/unit/audio-player.test.js`
 - `test/unit/audio-system.test.js`
 - `test/unit/drive-recording-service.test.js`
-- `test/unit/floating-panel-z-order.test.js`
+- `test/unit/driving-audio-activation.test.js`
+- `test/unit/gps-service.test.js`
 - `test/unit/integrate-player-widget.test.js`
-- `test/unit/media-session-adapter.test.js`
-- `test/unit/media-session-artwork.test.js`
-- `test/unit/milkdrop-app.test.js`
-- `test/unit/player-app.test.js`
 - `test/unit/player-widget.test.js`
 - `test/unit/radio-audio-runtime.test.js`
-- `test/unit/shell-window-integration.test.js`
+- `test/unit/recovery-coordinator.test.js`
 - `test/unit/speed-audio-recovery.test.js`
-- `vite.config.js`

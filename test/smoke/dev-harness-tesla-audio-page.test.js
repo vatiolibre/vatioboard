@@ -7,45 +7,46 @@ afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();
 });
-
-it("starts shared playback from one tap and stops only its own leases", async () => {
+it("starts native radio synchronously and unmounts without releasing recording", async () => {
   await bootHtmlPage("tesla-background-audio.html");
   window.history.replaceState(null, "", "/tesla-background-audio.html");
   vi.useFakeTimers();
   vi.spyOn(console, "debug").mockImplementation(() => {});
-  // Import without automatic mounting so the test owns cleanup.
   const root = document.getElementById("tesla-audio-test");
   root.removeAttribute("id");
   const { mountTeslaAudioTest } = await import("../../src/player/tesla-background-audio.js");
   const runtime = await import("../../src/shared/audio-runtime.js");
   const system = await import("../../src/shared/audio-system.js");
+  await system.acquireBackgroundAudioLease("drive-recording");
+  const click = (label) =>
+    [...root.querySelectorAll("button")].find((button) => button.textContent === label).click();
+  const intervals = vi.spyOn(globalThis, "setInterval");
+  const clearInterval = vi.spyOn(globalThis, "clearInterval");
   const unmount = mountTeslaAudioTest(root);
-  const click = (label) => [...root.querySelectorAll("button")].find((button) => button.textContent === label).click();
-  click("START TESLA BACKGROUND TEST");
+  click("VatioBoard native radio");
   const primary = runtime.getAudioElement();
   expect(primary.paused).toBe(false);
-  expect(system.getBackgroundKeepAliveAudio().paused).toBe(true);
   expect(primary.isConnected).toBe(true);
   expect(primary.controls).toBe(false);
-  expect(navigator.mediaSession.setActionHandler).not.toHaveBeenCalled();
-  const timerCount = vi.getTimerCount();
-  click("START TESLA BACKGROUND TEST");
-  expect(vi.getTimerCount()).toBe(timerCount);
+  expect(primary.parentElement.hidden).toBe(true);
+  expect(system.getBackgroundKeepAliveAudio().paused).toBe(false);
+  primary.dispatchEvent(new Event("playing"));
+  await vi.advanceTimersByTimeAsync(1000);
+  click("VatioBoard native radio");
+  primary.dispatchEvent(new Event("playing"));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(intervals.mock.calls.filter(([, delay]) => delay === 2000)).toHaveLength(1);
+  expect(runtime.getAudioElement()).toBe(primary);
   click("Pause real track");
   expect(primary.paused).toBe(true);
-  expect(system.getBackgroundKeepAliveAudio().paused).toBe(false);
-  // More than one complete fixture cycle must not exhaust the Player queue.
-  for (let i = 0; i < 6; i++) {
-    click("Next");
-    await Promise.resolve();
-    expect(runtime.getState().queue).toHaveLength(2);
-    expect(system.hasBackgroundAudioLease("player-runtime")).toBe(true);
-  }
-  await system.acquireBackgroundAudioLease("drive-recording");
-  click("STOP TEST");
+  unmount();
   expect(system.getBackgroundAudioState().activeLeaseIds).toEqual(["drive-recording"]);
   expect(system.getBackgroundKeepAliveAudio().paused).toBe(false);
-  expect(runtime.getAudioElement()).toBe(primary);
-  unmount();
+  await vi.advanceTimersByTimeAsync(1000);
+  const unmountAgain = mountTeslaAudioTest(root);
+  unmountAgain();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(intervals.mock.calls.filter(([, delay]) => delay === 2000)).toHaveLength(2);
+  for (const result of intervals.mock.results) expect(clearInterval).toHaveBeenCalledWith(result.value);
   system.releaseBackgroundAudioLease("drive-recording");
 });

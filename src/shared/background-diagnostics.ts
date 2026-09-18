@@ -5,6 +5,7 @@ let memoryEnabled = false;
 let memoryEvents: BackgroundDiagnosticEntry[] = [];
 
 const ALLOWED_FIELDS = new Set([
+  "keepAliveConnected", "keepAliveReadyState", "keepAliveNetworkState",
   "primaryConnected", "primaryControls",
   "action", "hidden", "heartbeat", "wallTime", "performanceTime", "wallDelta", "performanceDelta",
   "leaseCount", "primaryCurrentTime", "keepAliveCurrentTime", "keepAliveDuration",

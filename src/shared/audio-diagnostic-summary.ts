@@ -1,5 +1,6 @@
 import "./audio-diagnostic-summary.css";
-import { subscribeAudioDiagnostics } from "./audio-lifecycle-diagnostics.js";
+import { getAudioElement } from "./audio-runtime.js";
+import { getAudioDiagnosticSnapshot, subscribeAudioDiagnostics } from "./audio-lifecycle-diagnostics.js";
 import { getBackgroundAudioState, getBackgroundKeepAliveAudio, subscribeBackgroundAudioState } from "./audio-system.js";
 import {
   getAudioObservation, isBackgroundDiagnosticsEnabled, setAudioObservationResult,
@@ -42,7 +43,8 @@ export function mountAudioDiagnosticSummary(root: HTMLElement) {
   root.append(panel);
   function render() {
     const observation = getAudioObservation();
-    const primary = document.querySelector<HTMLAudioElement>("#vatio-primary-audio-host audio");
+    const progress = getAudioDiagnosticSnapshot();
+    const primary = getAudioElement();
     const keepAlive = getBackgroundKeepAliveAudio();
     const retention = getBackgroundAudioState();
     const elapsed = Math.max(0, Math.floor((Date.now() - observation.startedAt) / 1000));
@@ -51,8 +53,11 @@ export function mountAudioDiagnosticSummary(root: HTMLElement) {
       `Observation: ${Math.floor(elapsed / 60)}m ${elapsed % 60}s · ${document.visibilityState}`,
       `Primary attached: ${primary?.isConnected ?? false} · controls: ${primary?.controls ?? false}`,
       `Primary: ${primary?.paused === false ? "playing/requested" : "paused"} · time: ${Number(primary?.currentTime || 0).toFixed(1)}s`,
+      `Media Session declared: ${navigator.mediaSession?.playbackState ?? "unsupported"} (focus not confirmed)`,
       `Retention: ${retention.status} · silent paused: ${keepAlive.paused}`,
       `Owners: ${retention.activeLeaseIds.join(", ") || "none"}`,
+      `Silent attached: ${keepAlive.isConnected ?? false} · time: ${Number(keepAlive.currentTime || 0).toFixed(1)}s`,
+      `Media progress events: primary ${progress.primaryTimeupdates ?? 0} · silent ${progress.keepAliveTimeupdates ?? 0}`,
       `Unrequested pauses: ${observation.interruptions}`,
       `Recovery calls: ${observation.recoveryAttempts} · resolved: ${observation.recoveryResolved} · rejected: ${observation.recoveryRejected}`,
       `Latest lifecycle: ${observation.latestLifecycle}`,

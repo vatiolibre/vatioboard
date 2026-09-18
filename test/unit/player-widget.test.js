@@ -51,6 +51,7 @@ vi.mock("../../src/shared/radio-browser.js", () => ({
 }));
 
 const runtimeMock = {
+  updatePlayerMediaSessionMetadata: vi.fn(),
   getAudioElement: vi.fn(() => null),
   getState: vi.fn(() => ({
     queue: [],
