@@ -114,7 +114,7 @@ function getVisualizerModeLabel(mode) {
 }
 
 function isSafeVisualizerElement(audioElement, stateSnapshot = null) {
-  if (stateSnapshot?.isLive) return false;
+  if (stateSnapshot?.isLive && audioElement?.dataset?.vatioAnalysisOnly !== "true") return false;
   // A source change temporarily clears analysisEligible while the next URL is
   // being resolved. The media element and its graph are still the same at
   // that point, so treating the transient loading state as unsafe destroys a
@@ -676,7 +676,8 @@ export function createPlayerShell({
     }
     saveText(key, value);
   };
-  let visualizerVisible = loadSettingText(VISUALIZER_VISIBLE_STORAGE_KEY, "true") !== "false";
+  let preferredVisualizerVisible = loadSettingText(VISUALIZER_VISIBLE_STORAGE_KEY, "true") !== "false";
+  let visualizerVisible = preferredVisualizerVisible;
   let visualizerMode = normalizeVisualizerMode(loadSettingText(VISUALIZER_MODE_STORAGE_KEY, "spectrum"));
   let visualizerController = null;
   let visualizerMediaElement = null;
@@ -1734,9 +1735,70 @@ export function createPlayerShell({
   playlistBackBtn.addEventListener("click", () => renderPlaylistList());
 
   // ── Visualizer controls ─────────────────────────────────────────
+  const radioScopeOwner = Symbol("player-scope");
+  const radioMilkdropOwner = Symbol("player-milkdrop-preparation");
+  let radioVisualizerTrack = null;
+  let radioVisualizerAttempted = false;
+  let radioVisualizerPending = false;
+  let radioVisualizerOperation = 0;
+  let visualizersDisposed = false;
+
+  function disableRadioVisualizer() {
+    ++radioVisualizerOperation;
+    radioVisualizerPending = false;
+    visualizerVisible = false;
+    stopVisualizer();
+    if ("releaseRadioVisualization" in runtime) runtime.releaseRadioVisualization(radioScopeOwner);
+    syncVisualizerUi();
+  }
+
+  function requestRadioVisualizer() {
+    radioVisualizerAttempted = true;
+    radioVisualizerPending = true;
+    const operation = ++radioVisualizerOperation;
+    resetVisualizerFailure();
+    // Invoke directly: a manual retry must retain the tap's user activation.
+    const result = "requestRadioVisualization" in runtime
+      ? runtime.requestRadioVisualization(radioScopeOwner)
+      : Promise.resolve(false);
+    void Promise.resolve(result).catch(() => false).then((ready) => {
+      if (visualizersDisposed || operation !== radioVisualizerOperation) return;
+      radioVisualizerPending = false;
+      visualizerVisible = ready;
+      visualizerFailed = !ready;
+      if (ready) _gestureUnlocked = true;
+      else if ("releaseRadioVisualization" in runtime) runtime.releaseRadioVisualization(radioScopeOwner);
+      syncVisualizerPlayback();
+    });
+  }
+
+  function syncRadioVisualizer(snapshot) {
+    const track = snapshot.isLive ? snapshot.currentTrack : null;
+    if (track !== radioVisualizerTrack) {
+      radioVisualizerTrack = track;
+      radioVisualizerAttempted = true;
+      disableRadioVisualizer();
+      radioVisualizerAttempted = false;
+      resetVisualizerFailure();
+      visualizerVisible = track ? false : preferredVisualizerVisible;
+    }
+    if (!track || visualizersDisposed) return;
+    if (visualizerVisible && !radioVisualizerPending
+      && Reflect.has(runtime, "getRadioVisualizationStatus")
+      && runtime.getRadioVisualizationStatus() !== "ready") {
+      disableRadioVisualizer();
+    }
+    if (!radioVisualizerAttempted && snapshot.connectionState === "playing"
+      && snapshot.playing && !snapshot.loading && !document.hidden) {
+      requestRadioVisualizer();
+    }
+  }
+
   function getRuntimeAudioElement() {
     try {
-      const audioElement = typeof runtime.getAudioElement === "function"
+      const audioElement = Reflect.has(runtime, "getVisualizationAudioElement")
+        ? runtime.getVisualizationAudioElement()
+        : typeof runtime.getAudioElement === "function"
         ? runtime.getAudioElement()
         : null;
       return audioElement && typeof audioElement.addEventListener === "function"
@@ -1754,9 +1816,15 @@ export function createPlayerShell({
   function prepareVisualizersFromGesture({ force = false } = {}) {
     _gestureUnlocked = true;
     if (!force && !visualizerVisible) return;
+    const snapshot = runtime.getState();
+    if (snapshot.isLive) {
+      if (force && "requestRadioVisualization" in runtime) {
+        requestRadioVisualizer();
+      }
+      return;
+    }
     const audioElement = getRuntimeAudioElement();
     if (!audioElement) return;
-    const snapshot = runtime.getState();
     if (!isSafeVisualizerElement(audioElement, snapshot)) return;
     void prepareGraphFromUserGesture(audioElement);
   }
@@ -1796,6 +1864,8 @@ export function createPlayerShell({
 
     if (!visualizerController.isAvailable) {
       visualizerFailed = true;
+      if (stateSnapshot.isLive) visualizerVisible = false;
+      if ("releaseRadioVisualization" in runtime) runtime.releaseRadioVisualization(radioScopeOwner);
       visualizerController = null;
       visualizerMediaElement = null;
       syncVisualizerUi();
@@ -1822,6 +1892,7 @@ export function createPlayerShell({
   }
 
   function syncVisualizerPlayback(stateSnapshot = runtime.getState()) {
+    syncRadioVisualizer(stateSnapshot);
     const audioElement = getRuntimeAudioElement();
     const hasPlayableSource = Boolean(
       stateSnapshot.currentTrack
@@ -1866,18 +1937,23 @@ export function createPlayerShell({
       if (controller !== visualizerController) return;
       if (!started || !controller.isAvailable) {
         visualizerFailed = true;
+        if (stateSnapshot.isLive) visualizerVisible = false;
+        if ("releaseRadioVisualization" in runtime) runtime.releaseRadioVisualization(radioScopeOwner);
         controller.stop();
         syncVisualizerUi();
       }
     }).catch(() => {
       if (controller !== visualizerController) return;
       visualizerFailed = true;
+      if (stateSnapshot.isLive) visualizerVisible = false;
+      if ("releaseRadioVisualization" in runtime) runtime.releaseRadioVisualization(radioScopeOwner);
       syncVisualizerUi();
     });
   }
 
   function setVisualizerVisible(visible) {
     visualizerVisible = Boolean(visible);
+    preferredVisualizerVisible = visualizerVisible;
     saveSettingText(VISUALIZER_VISIBLE_STORAGE_KEY, visualizerVisible ? "true" : "false");
     syncVisualizerPlayback();
   }
@@ -1886,9 +1962,19 @@ export function createPlayerShell({
   visualizerToggleBtn.addEventListener("pointerup", (e) => e.stopPropagation());
   visualizerToggleBtn.addEventListener("click", (e) => {
     e.stopPropagation();
+    if (runtime.getState().isLive) {
+      radioVisualizerAttempted = true;
+      if (visualizerVisible) disableRadioVisualizer();
+      else {
+        if (radioVisualizerPending) disableRadioVisualizer();
+        requestRadioVisualizer();
+      }
+      return;
+    }
     const nextVisible = !visualizerVisible;
     if (nextVisible) resetVisualizerFailure();
-    prepareVisualizersFromGesture({ force: true });
+    if (nextVisible) prepareVisualizersFromGesture({ force: true });
+    else if ("releaseRadioVisualization" in runtime) runtime.releaseRadioVisualization(radioScopeOwner);
     setVisualizerVisible(nextVisible);
   });
 
@@ -1925,7 +2011,10 @@ export function createPlayerShell({
       milkdropPanel = createMilkdropApp({
         mount: container,
         onOpen: syncMilkdropToggle,
-        onClose: syncMilkdropToggle,
+        onClose: () => {
+          if ("releaseRadioVisualization" in runtime) runtime.releaseRadioVisualization(radioMilkdropOwner);
+          syncMilkdropToggle();
+        },
         shellManager: shellManager || undefined,
         shellAppRuntimeManager,
       });
@@ -1938,10 +2027,17 @@ export function createPlayerShell({
   milkdropToggleBtn.addEventListener("pointerup", (e) => e.stopPropagation());
   milkdropToggleBtn.addEventListener("click", (e) => {
     e.stopPropagation();
-    prepareVisualizersFromGesture({ force: true });
+    if (runtime.getState().isLive && "requestRadioVisualization" in runtime) {
+      if (!milkdropPanel?.isOpen?.()) void runtime.requestRadioVisualization(radioMilkdropOwner);
+    } else prepareVisualizersFromGesture({ force: true });
     void ensureMilkdropPanel().then((panel) => {
       panel?.toggle?.();
       syncMilkdropToggle();
+    }).catch(() => {
+      // Optional visualizer module failure must not affect playback.
+      syncMilkdropToggle();
+    }).finally(() => {
+      if ("releaseRadioVisualization" in runtime) runtime.releaseRadioVisualization(radioMilkdropOwner);
     });
   });
 
@@ -2297,7 +2393,17 @@ export function createPlayerShell({
     /** The close button (widget wires its click handler). */
     closeBtn,
 
+    suspendVisualizations() {
+      if (runtime.getState().isLive) disableRadioVisualizer();
+      stopVisualizer();
+    },
     destroy() {
+      visualizersDisposed = true;
+      ++radioVisualizerOperation;
+      if ("releaseRadioVisualization" in runtime) {
+        runtime.releaseRadioVisualization(radioScopeOwner);
+        runtime.releaseRadioVisualization(radioMilkdropOwner);
+      }
       disposeSummary();
       unsubscribe();
       document.removeEventListener("visibilitychange", handleVisualizerVisibilityChange);

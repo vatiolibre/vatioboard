@@ -1,5 +1,9 @@
 # Stable audio reference: restored main and isolated native radio
 
+> A subsequent [best-effort radio visualization enhancement](radio-visualization-best-effort.md)
+> adds optional analysis through a separate inaudible relay stream. Its vehicle
+> acceptance is pending; the stable reference recorded below is preserved.
+
 ## Stable-reference designation
 
 **Accepted on 2026-09-18.** The user reported **Pass** for all three vehicle test

@@ -1,5 +1,9 @@
 # Tesla audio stable-reference runbook
 
+> A subsequent [best-effort radio visualization enhancement](radio-visualization-best-effort.md)
+> adds optional analysis through a separate inaudible relay stream. Its vehicle
+> acceptance is pending; the stable reference recorded below is preserved.
+
 ## Status: stable, vehicle-accepted reference
 
 On **2026-09-18**, the user reported **Pass** for all three vehicle test groups

@@ -232,3 +232,50 @@ it("restores a saved radio queue without claiming native ownership before Play",
   expect(navigator.mediaSession.metadata.title).toBe("Drive recording");
   adapter.clearMediaSessionClient("recording");
 });
+
+it("keeps native playback and feature leases untouched when optional analysis fails", async () => {
+  await system.acquireBackgroundAudioLease("recording");
+  await runtime.playTrackNow(station());
+  const native = runtime.getAudioElement();
+  const pause = vi.spyOn(native, "pause");
+  const source = native.src;
+  const writes = navigator.mediaSession.setActionHandler.mock.calls.length;
+  const registry = await import("../../src/shared/audio-graph-registry.js");
+  vi.spyOn(registry, "acquireGraph").mockResolvedValue(null);
+  const owner = Symbol("scope");
+  expect(await runtime.requestRadioVisualization(owner)).toBe(false);
+  expect(runtime.getAudioElement()).toBe(native);
+  expect(native.src).toBe(source); expect(native.paused).toBe(false);
+  expect(pause).not.toHaveBeenCalled();
+  expect(system.getBackgroundAudioState().activeLeaseIds).toEqual(["recording"]);
+  expect(navigator.mediaSession.setActionHandler.mock.calls.length).toBe(writes);
+  runtime.releaseRadioVisualization(owner);
+});
+
+it("shares optional analysis across viewers and cleans up on last release, Pause, and hidden", async () => {
+  const registry = await import("../../src/shared/audio-graph-registry.js");
+  const context = Object.assign(new EventTarget(), { state: "running" });
+  const acquire = vi.spyOn(registry, "acquireGraph").mockResolvedValue({ audioContext: context });
+  await runtime.playTrackNow(station());
+  const native = runtime.getAudioElement();
+  const scope = Symbol("scope"), milkdrop = Symbol("milkdrop");
+  await runtime.requestRadioVisualization(scope);
+  const analysis = runtime.getVisualizationAudioElement();
+  await runtime.requestRadioVisualization(milkdrop);
+  expect(acquire).toHaveBeenCalledTimes(1);
+  expect(analysis).not.toBe(native);
+  runtime.releaseRadioVisualization(scope);
+  expect(analysis.paused).toBe(false);
+  runtime.releaseRadioVisualization(milkdrop);
+  expect(analysis.paused).toBe(true); expect(native.paused).toBe(false);
+  await runtime.requestRadioVisualization(scope);
+  runtime.pause(); expect(runtime.getVisualizationAudioElement()).toBeNull();
+  await runtime.play(); await flush();
+  expect(runtime.getRadioVisualizationStatus()).toBe("ready");
+  const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+  document.dispatchEvent(new Event("visibilitychange"));
+  expect(runtime.getVisualizationAudioElement()).toBeNull(); expect(native.paused).toBe(false);
+  hidden.mockReturnValue(false); document.dispatchEvent(new Event("visibilitychange"));
+  expect(runtime.getVisualizationAudioElement()).toBeNull();
+  runtime.releaseRadioVisualization(scope);
+});

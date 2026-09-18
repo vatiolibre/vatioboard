@@ -1,3 +1,6 @@
+import "../styles/player.less";
+import { createMiniAudioVisualizer } from "../shared/audio-mini-visualizer.js";
+import { createMilkdropPanel } from "./milkdrop-panel.js";
 import * as runtime from "../shared/audio-runtime.js";
 import { getBackgroundAudioState, getBackgroundKeepAliveAudio } from "../shared/audio-system.js";
 import { mountAudioDiagnosticSummary } from "../shared/audio-diagnostic-summary.js";
@@ -56,6 +59,50 @@ export function mountTeslaAudioTest(root: HTMLElement) {
     media_kind: "audio",
   }));
   let runtimeOwned = false;
+  const analysisOwner = Symbol("harness-visualizer");
+  let visualizationGeneration = 0;
+  let mini: ReturnType<typeof createMiniAudioVisualizer> | null = null;
+  let miniMode: "scope" | "spectrum" | null = null;
+  let miniElement: HTMLAudioElement | null = null;
+  let milkdrop: ReturnType<typeof createMilkdropPanel> | null = null;
+  const visualizerHost = document.createElement("div");
+  visualizerHost.style.minHeight = "100px";
+  visualizerHost.hidden = true;
+  function stopVisualizations() {
+    visualizationGeneration++;
+    miniMode = null; miniElement = null;
+    mini?.destroy(); mini = null;
+    milkdrop?.destroy(); milkdrop = null;
+    visualizerHost.hidden = true;
+    runtime.releaseRadioVisualization(analysisOwner);
+  }
+  function syncMini() {
+    const element = runtime.getState().isLive ? runtime.getVisualizationAudioElement() : null;
+    if (!miniMode || !element || document.hidden) {
+      mini?.destroy(); mini = null; miniElement = null;
+      visualizerHost.hidden = true;
+      return;
+    }
+    visualizerHost.hidden = false;
+    if (miniElement === element && mini) { mini.setMode(miniMode); return; }
+    mini?.destroy();
+    miniElement = element;
+    const controller = createMiniAudioVisualizer({ mediaElement: element, mount: visualizerHost, mode: miniMode });
+    mini = controller;
+    void controller.start().then(ready => {
+      if (mini !== controller || ready) return;
+      miniMode = null;
+      runtime.releaseRadioVisualization(analysisOwner);
+      syncMini();
+    });
+  }
+  async function showMini(mode: "scope" | "spectrum") {
+    if (!runtimeOwned) return;
+    const token = ++visualizationGeneration;
+    miniMode = mode;
+    await runtime.requestRadioVisualization(analysisOwner);
+    if (token === visualizationGeneration) syncMini();
+  }
   let reference: HTMLAudioElement | null = null;
   let referenceContext: AudioContext | null = null;
   const info = document.createElement("p");
@@ -113,6 +160,7 @@ export function mountTeslaAudioTest(root: HTMLElement) {
     referenceContext = null;
   };
   const stop = () => {
+    stopVisualizations();
     stopReference();
     if (runtimeOwned) runtime.stopPlayback();
     runtimeOwned = false;
@@ -177,6 +225,14 @@ export function mountTeslaAudioTest(root: HTMLElement) {
     runtime.setQueue(tracks);
     observer();
   });
+  button("Radio spectrum", () => showMini("spectrum"));
+  button("Radio scope", () => showMini("scope"));
+  button("Radio Milkdrop", () => {
+    if (!runtimeOwned) return;
+    milkdrop ??= createMilkdropPanel({ mount: root, restoreVisibility: false });
+    return milkdrop.open();
+  });
+  button("Disable visualizations", stopVisualizations);
   button("Play", () => runtimeOwned && runtime.play());
   button("Pause real track", () => runtimeOwned && runtime.pause());
   button("Next", () => runtimeOwned && runtime.nextTrack());
@@ -187,6 +243,7 @@ export function mountTeslaAudioTest(root: HTMLElement) {
   button("Stop everything", stop);
   button("Export report", downloadBackgroundDiagnostics);
   const unsubscribeQueue = runtime.subscribe((snapshot) => {
+    syncMini();
     if (
       runtimeOwned &&
       snapshot.queue.length === 1 &&
@@ -201,13 +258,15 @@ export function mountTeslaAudioTest(root: HTMLElement) {
         ...snapshot,
         musicPaused: runtime.getState().paused,
         backgroundStatus: getBackgroundAudioState().status,
+        visualizationStatus: runtime.getRadioVisualizationStatus(),
+        analysisCurrentTime: runtime.getVisualizationAudioElement()?.currentTime ?? 0,
       },
       null,
       2,
     );
     timeline.textContent = JSON.stringify(getBackgroundDiagnostics().slice(-30), null, 2);
   });
-  root.replaceChildren(info, mainLink, inputs, controls, baselineHost, panels);
+  root.replaceChildren(info, mainLink, inputs, controls, baselineHost, visualizerHost, panels);
   const summaryCleanup = mountAudioDiagnosticSummary(root);
   observer();
   return () => {

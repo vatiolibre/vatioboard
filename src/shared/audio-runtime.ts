@@ -38,6 +38,8 @@ import {
 import { loadPlayerSession, savePlayerSession } from "./player-session.js";
 import { recordBackgroundDiagnostic } from "./background-diagnostics.js";
 import { startAudioLifecycleDiagnostics } from "./audio-lifecycle-diagnostics.js";
+import { createRadioAnalysis } from "./radio-analysis.js";
+import { getRadioStreamRelayUrl, hasRadioExternalNetworkAccess } from "./radio-browser.js";
 import { getGraph } from "./audio-graph-registry.js";
 import type { AudioRuntimeState } from "../types/services";
 
@@ -152,6 +154,40 @@ let radioRetries = 0;
 let radioAttempt = 0;
 let radioHasPlayed = false;
 let radioRetryScheduled = false;
+const radioAnalysisOwners = new Set<symbol>();
+const radioAnalysis = createRadioAnalysis(() => {
+  recordBackgroundDiagnostic("radio-analysis-state", { phase: radioAnalysis.getStatus() });
+  notify();
+});
+let radioAnalysisVisibilityBound = false;
+
+/** Explicit visualizer gestures opt into a separate, inaudible relay stream. */
+export function requestRadioVisualization(owner: symbol) {
+  radioAnalysisOwners.add(owner);
+  if (!radioAnalysisVisibilityBound) {
+    radioAnalysisVisibilityBound = true;
+    window.addEventListener("pagehide", () => radioAnalysis.stop());
+    document.addEventListener("visibilitychange", () => {
+      // Do not restart on return: a visualizer/Play tap can rearm analysis.
+      if (document.hidden) radioAnalysis.stop();
+    });
+  }
+  return startRadioAnalysis();
+}
+export function releaseRadioVisualization(owner: symbol) {
+  radioAnalysisOwners.delete(owner);
+  if (!radioAnalysisOwners.size) radioAnalysis.stop();
+}
+function startRadioAnalysis() {
+  if (!state.isLive || state.paused || document.hidden || !radioAnalysisOwners.size
+      || !hasRadioExternalNetworkAccess()) return Promise.resolve(false);
+  return radioAnalysis.start(getRadioStreamRelayUrl(String(state.currentTrack?.station_uuid || "")));
+}
+export function getVisualizationAudioElement() {
+  return state.isLive ? radioAnalysis.getElement() : audio;
+}
+export function getRadioVisualizationStatus() { return radioAnalysis.getStatus(); }
+
 function clearRadioTimer() {
   if (radioTimer) clearTimeout(radioTimer);
   radioTimer = null;
@@ -214,6 +250,7 @@ function startRadioPlayback(token = loadRequestToken) {
     (error) => {
       if (token !== loadRequestToken || attemptId !== radioAttempt || state.paused) return false;
       if (error?.name === "NotAllowedError") {
+        radioAnalysis.stop();
         clearRadioTimer();
         state.paused = true;
         state.loading = false;
@@ -240,6 +277,7 @@ function failRadio(token = loadRequestToken) {
       void startRadioPlayback(token);
     }, 5000);
   } else {
+    radioAnalysis.stop();
     state.error = "station-unavailable";
     state.connectionState = "unavailable";
     state.loading = false;
@@ -1097,6 +1135,7 @@ async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutopl
   const track = state.queue[index];
   if (!track) return;
   const requestToken = ++loadRequestToken;
+  radioAnalysis.stop();
   radioAttempt++;
   clearRadioTimer(); radioRetries = 0; radioHasPlayed = false;
   state.isLive = track.media_kind === "radio";
@@ -1197,7 +1236,10 @@ async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutopl
     startAudioLifecycleDiagnostics({ getPrimary: () => audio, keepAlive: backgroundKeepAliveAudio,
       getLeaseIds: () => getBackgroundAudioState().activeLeaseIds });
     recordBackgroundDiagnostic("native-radio-source", { sourceTransport: state.sourceTransport, primaryConnected: el.isConnected });
-    if (autoplay) void startRadioPlayback(requestToken);
+    if (autoplay) {
+      void startRadioPlayback(requestToken);
+      void startRadioAnalysis();
+    }
     return;
   }
   if (autoplay) {
@@ -1316,7 +1358,12 @@ export function removeFromQueue(trackRef) {
  * then resolves any deferred track load before starting playback.
  */
 export async function play() {
-  if (state.isLive && radioAudio?.src) { state.paused = false; return startRadioPlayback(); }
+  if (state.isLive && radioAudio?.src) {
+    state.paused = false;
+    const playback = startRadioPlayback();
+    void startRadioAnalysis();
+    return playback;
+  }
   state.paused = false;
 
   const el = getAudio();
@@ -1352,6 +1399,7 @@ export async function play() {
  * Pause playback.
  */
 export function pause() {
+  radioAnalysis.stop();
   radioAttempt++;
   clearRadioTimer();
   state.paused = true;
@@ -1362,6 +1410,7 @@ export function pause() {
  * Stop playback and reset position.
  */
 export function stopPlayback() {
+  radioAnalysis.stop();
   loadRequestToken++; radioAttempt++; clearRadioTimer();
   clearLibraryContinuation();
   state.paused = true;
@@ -1617,7 +1666,8 @@ export function getState() {
     backgroundMode: state.backgroundMode,
     sourceType: state.sourceType,
     sourceTransport: state.sourceTransport, isLive: state.isLive, seekable: !state.isLive,
-    cacheable: state.cacheable, analysisEligible: !state.isLive, analysisActive: Boolean(audio && getGraph(audio)),
+    cacheable: state.cacheable, analysisEligible: state.isLive ? radioAnalysis.getStatus() === "ready" : true,
+    analysisActive: state.isLive ? radioAnalysis.getStatus() === "ready" : Boolean(audio && getGraph(audio)),
     connectionState: state.connectionState, radioFailureClass: null,
     backgroundPlaybackState: getBackgroundAudioState().status,
     recoveryRequired: getBackgroundAudioState().status === "blocked",
@@ -1739,7 +1789,7 @@ function onPlay() {
 }
 
 function onPause() {
-  if (state.isLive && !state.loading) { state.paused = true; clearRadioTimer(); }
+  if (state.isLive && !state.loading) { state.paused = true; clearRadioTimer(); radioAnalysis.stop(); }
   // Only mark paused if not a temporary interruption (e.g. seeking)
   syncBackgroundModeKeepAlive();
   syncMediaSessionPlaybackState();

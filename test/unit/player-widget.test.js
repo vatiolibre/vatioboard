@@ -51,6 +51,8 @@ vi.mock("../../src/shared/radio-browser.js", () => ({
 }));
 
 const runtimeMock = {
+  requestRadioVisualization: vi.fn().mockResolvedValue(false),
+  releaseRadioVisualization: vi.fn(),
   updatePlayerMediaSessionMetadata: vi.fn(),
   getAudioElement: vi.fn(() => null),
   getState: vi.fn(() => ({
@@ -1167,7 +1169,7 @@ describe("createPlayerWidget", () => {
     expect(panel.querySelector(".player-background-recovery-actions")).toBeNull();
     expect(panel.querySelector(".player-background-recovery-btn")).toBeNull();
     const visualsToggle = panel.querySelector(".player-visualizer-toggle-btn");
-    expect(visualsToggle.getAttribute("aria-pressed")).toBe("true");
+    expect(visualsToggle.getAttribute("aria-pressed")).toBe("false");
     visualsToggle.click();
     expect(visualsToggle.getAttribute("aria-pressed")).toBe("false");
     expect(runtimeMock.rearmBackgroundPlayback).not.toHaveBeenCalled();
@@ -1191,7 +1193,7 @@ describe("createPlayerWidget", () => {
     widget.destroy();
   });
 
-  it("reports visualizers unavailable but leaves Radio usable without Web Audio", () => {
+  it("reports visualizers unavailable but leaves Radio usable without Web Audio", async () => {
     Object.defineProperty(window, "AudioContext", { configurable: true, value: undefined });
     runtimeMock.getState.mockReturnValue(makeRuntimeState({
       currentTrack: { name: "radio:one", title: "Live One", media_kind: "radio", station_uuid: "one" },
@@ -1207,10 +1209,85 @@ describe("createPlayerWidget", () => {
     const widget = createPlayerWidget({ floating: false });
     widget.open();
     const panel = document.querySelector(".player-panel");
-    expect(panel.querySelector(".player-visualizer-label").textContent).toBe("mediaPlayerVisualizerUnavailable");
+    await vi.waitFor(() => expect(panel.querySelector(".player-visualizer-label").textContent).toBe("mediaPlayerVisualizerUnavailable"));
     expect(panel.querySelector(".player-background-recovery-actions")).toBeNull();
-    expect(panel.querySelector(".player-visualizer-toggle-btn").getAttribute("aria-pressed")).toBe("true");
+    expect(panel.querySelector(".player-visualizer-toggle-btn").getAttribute("aria-pressed")).toBe("false");
     expect(panel.querySelector(".player-btn-play-main").disabled).toBe(false);
+    widget.destroy();
+  });
+
+  it("attempts radio visuals once after connection and retries on a single tap", async () => {
+    const state = makeRuntimeState({
+      currentTrack: { name: "radio:one", media_kind: "radio" },
+      sourceType: "live", isLive: true, loading: true,
+      connectionState: "connecting", playing: false,
+    });
+    runtimeMock.getState.mockImplementation(() => state);
+    let finish;
+    runtimeMock.requestRadioVisualization.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    const toggle = document.querySelector(".player-visualizer-toggle-btn");
+    const render = runtimeMock.subscribe.mock.calls.at(-1)[0];
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(runtimeMock.requestRadioVisualization).not.toHaveBeenCalled();
+    Object.assign(state, { loading: false, playing: true, connectionState: "playing" });
+    render(state);
+    render(state);
+    expect(runtimeMock.requestRadioVisualization).toHaveBeenCalledTimes(1);
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    finish(false);
+    await vi.waitFor(() => expect(runtimeMock.releaseRadioVisualization).toHaveBeenCalled());
+    await Promise.resolve();
+    render(state);
+    expect(runtimeMock.requestRadioVisualization).toHaveBeenCalledTimes(1);
+    runtimeMock.requestRadioVisualization.mockResolvedValueOnce(true);
+    toggle.click();
+    expect(runtimeMock.requestRadioVisualization).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(toggle.getAttribute("aria-pressed")).toBe("true"));
+    toggle.click();
+    render(state);
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(runtimeMock.requestRadioVisualization).toHaveBeenCalledTimes(2);
+    widget.destroy();
+  });
+
+  it("enables radio visuals automatically only after preparation succeeds", async () => {
+    runtimeMock.getState.mockReturnValue(makeRuntimeState({
+      currentTrack: { name: "radio:one", media_kind: "radio" },
+      sourceType: "live", isLive: true, loading: false,
+      connectionState: "playing", playing: true,
+    }));
+    let finish;
+    runtimeMock.requestRadioVisualization.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    const toggle = document.querySelector(".player-visualizer-toggle-btn");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(runtimeMock.requestRadioVisualization).toHaveBeenCalledTimes(1);
+    finish(true);
+    await vi.waitFor(() => expect(toggle.getAttribute("aria-pressed")).toBe("true"));
+    widget.destroy();
+  });
+
+  it("ignores radio visual preparation that finishes after switching stations", async () => {
+    const state = makeRuntimeState({
+      currentTrack: { name: "radio:one", media_kind: "radio" },
+      sourceType: "live", isLive: true, loading: false,
+      connectionState: "playing", playing: true,
+    });
+    runtimeMock.getState.mockImplementation(() => state);
+    let finish;
+    runtimeMock.requestRadioVisualization.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    const render = runtimeMock.subscribe.mock.calls.at(-1)[0];
+    Object.assign(state, { currentTrack: { name: "radio:two" }, loading: true, connectionState: "connecting" });
+    render(state);
+    finish(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(document.querySelector(".player-visualizer-toggle-btn").getAttribute("aria-pressed")).toBe("false");
     widget.destroy();
   });
 

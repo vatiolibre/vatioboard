@@ -766,6 +766,7 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
 
   function hidePanel({ persist = true, stopPlayback = true }: ShellLifecycleOptions = {}) {
     shell.root.hidden = true;
+    shell.suspendVisualizations?.();
     if (persist) saveVisibility(false);
     if (stopPlayback !== false) runtime.stopPlayback();
     if (typeof onClose === "function") onClose();
@@ -773,6 +774,7 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
 
   function minimizePanel() {
     shell.root.hidden = true;
+    shell.suspendVisualizations?.();
   }
 
   function open(options: ShellLifecycleOptions = {}) {

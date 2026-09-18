@@ -49,6 +49,19 @@ describe("audio-graph-registry", () => {
   });
 
   describe("acquireGraph", () => {
+    it("routes analysis-only media through zero gain while native radio stays unbound", async () => {
+      const output = { gain: { value: 1 }, connect: vi.fn() };
+      fakeAudioContext.createGain = vi.fn(() => output);
+      mediaElement.dataset.vatioAnalysisOnly = "true";
+      const entry = await acquireGraph(mediaElement);
+      expect(entry.sourceNode).toBe(fakeSourceNode);
+      expect(output.gain.value).toBe(0);
+      expect(fakeSourceNode.connect).toHaveBeenCalledWith(output);
+      expect(fakeSourceNode.connect).not.toHaveBeenCalledWith(fakeAudioContext.destination);
+      expect(output.connect).toHaveBeenCalledWith(fakeAudioContext.destination);
+      const native = document.createElement("audio"); native.dataset.vatioNativeRadio = "true";
+      expect(await acquireGraph(native)).toBeNull();
+    });
     it("prepares the source graph from a gesture before media playback starts", async () => {
       const preparation = prepareGraphFromUserGesture(mediaElement);
 
