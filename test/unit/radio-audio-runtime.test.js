@@ -290,26 +290,16 @@ async function saveAndRestoreRadio({ autoplay = true, paused = false } = {}) {
   await flush();
 }
 
-it("restores radio with MP3's Player retainer while preserving native playback and presentation", async () => {
+it("restores radio paused until the selecting Play gesture", async () => {
   await saveAndRestoreRadio();
   const native = runtime.getAudioElement();
-  expect(runtime.getState()).toMatchObject({ restoredRadioSession: true, radioVisualizationAutoStart: false, paused: false });
+  expect(runtime.getState()).toMatchObject({ restoredRadioSession: true, radioVisualizationAutoStart: false, paused: true });
   expect(native.isConnected).toBe(true);
-  expect(native.paused).toBe(false);
-  expect(system.getBackgroundAudioState().activeLeaseIds).toContain("player-runtime");
-  expect(system.getBackgroundKeepAliveAudio().paused).toBe(false);
+  expect(native.paused).toBe(true);
+  expect(system.getBackgroundAudioState().activeLeaseIds).not.toContain("player-runtime");
+  expect(system.getBackgroundKeepAliveAudio().paused).toBe(true);
   expect(navigator.mediaSession.setActionHandler).not.toHaveBeenCalled();
   expect(await (await import("../../src/shared/audio-graph-registry.js")).acquireGraph(native)).toBeNull();
-  runtime.pause();
-  expect(system.getBackgroundAudioState().activeLeaseIds).not.toContain("player-runtime");
-  const primaryPlay = vi.spyOn(native, "play");
-  const silentPlay = vi.spyOn(system.getBackgroundKeepAliveAudio(), "play");
-  const resume = runtime.play();
-  expect(primaryPlay).toHaveBeenCalled();
-  expect(silentPlay).toHaveBeenCalled();
-  await resume;
-  await flush();
-  expect(system.getBackgroundAudioState().activeLeaseIds).toContain("player-runtime");
 });
 
 it("keeps independent feature leases when restored radio stops or a fresh station is selected", async () => {
@@ -328,28 +318,78 @@ it("does not autoplay or acquire a Player lease for a saved paused station", asy
   expect(system.getBackgroundAudioState().activeLeaseIds).toEqual([]);
 });
 
+it("runs the real restored-demo lifecycle before restored radio resumes", async () => {
+  await runtime.playTrackNow(station());
+  const sessions = await import("../../src/shared/player-session.js");
+  const saved = sessions.loadPlayerSession();
+  runtime.stopPlayback();
+  sessions.savePlayerSession({ ...saved, paused: true });
+
+  await runtime.restoreSession([{
+    name: "demo:focus",
+    title: "Focus clip",
+    media_kind: "audio",
+    src: "/audio/demo/focus.mp3",
+    _demo: true,
+  }], { autoplay: false });
+
+  const sourceResolver = await import("../../src/shared/audio-source-resolver.js");
+  expect(sourceResolver.resolveAudioSource).toHaveBeenCalledWith("demo:focus", expect.objectContaining({ _demo: true }));
+  const preparedResolveCount = sourceResolver.resolveAudioSource.mock.calls
+    .filter(([name]) => name === "demo:focus").length;
+  expect(runtime.getState().currentTrack?.media_kind).toBe("radio");
+  expect(document.querySelector("#vatio-radio-focus-host audio")).toBeNull();
+  expect(runtime.getState()).toMatchObject({
+    restoredRadioSession: true,
+    radioFocusPrepared: true,
+    paused: true,
+  });
+
+  const native = runtime.getAudioElement();
+  const nativePlay = vi.spyOn(native, "play");
+  const handoff = runtime.play();
+  await flush();
+  const demo = runtime.getAudioElement();
+  expect(demo).not.toBe(native);
+  expect(demo.src).toBe("blob:music");
+  expect(demo.paused).toBe(false);
+  expect(nativePlay).not.toHaveBeenCalled();
+  demo.currentTime = 0.1;
+  demo.dispatchEvent(new Event("playing"));
+  demo.dispatchEvent(new Event("timeupdate"));
+  await flush();
+  native.dispatchEvent(new Event("playing"));
+  await handoff;
+  expect(nativePlay).toHaveBeenCalledTimes(1);
+  await flush();
+  expect(runtime.getState()).toMatchObject({ paused: false, isLive: true, radioFocusHandoffPending: false });
+  expect(runtime.getState().currentTrack?.media_kind).toBe("radio");
+  expect(runtime.getState().queue.some((track) => track.name === "demo:focus")).toBe(false);
+  expect(sourceResolver.resolveAudioSource.mock.calls.filter(([name]) => name === "demo:focus").length)
+    .toBe(preparedResolveCount);
+  expect(system.getBackgroundAudioState().activeLeaseIds).toContain("player-runtime");
+});
+
 it("releases restored retention on blocked native autoplay and allows a Play retry", async () => {
   await runtime.playTrackNow(station());
-  const native = runtime.getAudioElement();
   const sessions = await import("../../src/shared/player-session.js");
   const saved = sessions.loadPlayerSession();
   runtime.stopPlayback();
   sessions.savePlayerSession(saved);
-  vi.spyOn(native, "play").mockRejectedValueOnce(new DOMException("Gesture required", "NotAllowedError"));
   await runtime.restoreSession([], { autoplay: true });
   await flush();
-  expect(runtime.getState()).toMatchObject({ paused: true, error: "playback-blocked" });
+  expect(runtime.getState()).toMatchObject({ paused: true, error: null });
   expect(system.getBackgroundAudioState().activeLeaseIds).toEqual([]);
   await runtime.play();
   await flush();
-  expect(native.paused).toBe(false);
+  expect(runtime.getAudioElement().paused).toBe(false);
   expect(system.getBackgroundAudioState().activeLeaseIds).toContain("player-runtime");
 });
 
-it("keeps restored native radio playing if the silent carrier is rejected", async () => {
-  vi.spyOn(system.getBackgroundKeepAliveAudio(), "play").mockRejectedValue(new DOMException("Gesture required", "NotAllowedError"));
+it("does not arm the background carrier before restored radio Play", async () => {
   await saveAndRestoreRadio();
-  expect(runtime.getAudioElement().paused).toBe(false);
+  expect(runtime.getAudioElement().paused).toBe(true);
+  expect(system.getBackgroundKeepAliveAudio().paused).toBe(true);
   expect(runtime.getState().error).toBeNull();
   expect(runtime.getState().restoredRadioSession).toBe(true);
 });
@@ -375,6 +415,7 @@ it("recovers an active radio on cached-page return only once and never after exp
 
 it("retains silence during restored radio retries and releases it after terminal failure", async () => {
   await saveAndRestoreRadio();
+  await runtime.play();
   const native = runtime.getAudioElement();
   const silent = system.getBackgroundKeepAliveAudio();
   native.dispatchEvent(new Event("playing"));

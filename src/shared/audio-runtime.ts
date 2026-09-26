@@ -41,6 +41,7 @@ import { startAudioLifecycleDiagnostics } from "./audio-lifecycle-diagnostics.js
 import { createRadioAnalysis } from "./radio-analysis.js";
 import { getRadioStreamRelayUrl, hasRadioExternalNetworkAccess } from "./radio-browser.js";
 import { getGraph } from "./audio-graph-registry.js";
+import { isDemoTrackName } from "./track-source-policy.js";
 import type { AudioRuntimeState } from "../types/services";
 
 // TODO(ts-migration): player/library track payloads are still owned by JS feature modules.
@@ -154,9 +155,16 @@ let radioRetries = 0;
 let radioAttempt = 0;
 let radioHasPlayed = false;
 let radioRetryScheduled = false;
-// A restored session has no selecting gesture. Reuse MP3's existing retention
-// carrier, while keeping the audible station on its native element.
+type PreparedRadioTakeover = {
+  track: RuntimeTrack;
+  resolved: ResolvedAudioSource;
+};
+let preparedRadioTakeover: PreparedRadioTakeover | null = null;
+let radioTakeoverPending: Promise<boolean> | null = null;
+let restoredRadioTakeoverActive = false;
+let lastRadioFocusTrack: RuntimeTrack | null = null;
 let restoredRadioSession = false;
+let restoredRadioReason: "saved-session" | "pageshow" | null = null;
 let explicitPauseRevision = 0;
 const radioAnalysisOwners = new Set<symbol>();
 const radioAnalysis = createRadioAnalysis(() => {
@@ -197,6 +205,42 @@ function clearRadioTimer() {
   radioTimer = null;
   radioRetryScheduled = false;
 }
+
+function isRadioFocusTrack(track: RuntimeTrack | null | undefined) {
+  return Boolean(
+    track
+      && track.media_kind !== "radio"
+      && (track._demo === true || isDemoTrackName(track.name)),
+  );
+}
+
+function clearRadioFocusPreparation() {
+  if (preparedRadioTakeover?.resolved?.revokeUrl) {
+    try { preparedRadioTakeover.resolved.revokeUrl(); } catch { /* ignore */ }
+  }
+  preparedRadioTakeover = null;
+  radioTakeoverPending = null;
+}
+
+/**
+ * Prepare a real public demo track before a restored-radio Play gesture.
+ * The source is resolved during boot so the eventual play() call is
+ * synchronous from the user's gesture and does not depend on network work.
+ */
+async function prepareRadioFocus(track: RuntimeTrack | null | undefined) {
+  clearRadioFocusPreparation();
+  if (!isRadioFocusTrack(track)) return false;
+
+  const resolved = await resolveRuntimeAudioSource(track.name, track);
+  // A takeover must already be locally available. Public demo files are
+  // stable static sources; a demo that would require a protected/backend
+  // download is not eligible for the selecting-gesture path.
+  if (!resolved || resolved.type === "live"
+      || (resolved.type === "remote" && !track.src)) return false;
+  preparedRadioTakeover = { track: ensureQueueEntry(track), resolved };
+  return true;
+}
+
 function selectAudioForTrack(live: boolean) {
   if (live) {
     stopPositionSync();
@@ -241,14 +285,18 @@ function startRadioPlayback(token = loadRequestToken) {
   state.loading = true;
   state.connectionState = radioRetries ? "reconnecting" : "connecting";
   radioTimer = setTimeout(() => failRadio(token), 12000);
-  // Native media play must precede any awaited work in the selecting gesture.
+  // Restored radio follows the MP3 retention ordering: initiate the shared
+  // Player carrier before native playback. Both play() calls are still issued
+  // synchronously from the selecting gesture; do not await the carrier here.
+  syncBackgroundModeKeepAlive();
+
+  // Native media play must not be delayed by awaited work in the gesture.
   let attempt: Promise<void>;
   try {
     attempt = el.play();
   } catch (error) {
     attempt = Promise.reject(error);
   }
-  syncBackgroundModeKeepAlive();
   notify();
   return Promise.resolve(attempt).then(
     () => token === loadRequestToken,
@@ -807,6 +855,7 @@ async function prepareNextTrackSource(index) {
 }
 
 function maybePrepareUpcomingTrack({ force = false } = {}) {
+  if (restoredRadioTakeoverActive) return;
   if (state.isLive) return;
   if (state.paused) return;
 
@@ -843,6 +892,13 @@ function consumePreparedTrack(index, track) {
   const prepared = preparedNext;
   clearPreparedNext({ keepResolved: true });
   return prepared?.resolved || null;
+}
+
+function consumePreparedRadioTakeover(track) {
+  if (!preparedRadioTakeover || preparedRadioTakeover.track?._queueId !== track?._queueId) return null;
+  const prepared = preparedRadioTakeover;
+  preparedRadioTakeover = null;
+  return prepared.resolved;
 }
 
 function normalizePlaybackTime(time) {
@@ -962,7 +1018,17 @@ function bindLifecyclePersistence() {
     if (!event.persisted || token !== loadRequestToken || returningPauseRevision !== explicitPauseRevision
       || !state.isLive || !state.currentTrack) return;
     restoredRadioSession = true;
+    restoredRadioReason = "pageshow";
     radioAnalysis.stop();
+    if (lastRadioFocusTrack) {
+      state.paused = true;
+      radioAudio?.pause();
+      clearRadioTimer();
+      syncBackgroundModeKeepAlive();
+      recordBackgroundDiagnostic("native-radio-restoration", { reason: "pageshow", automaticNativeRestoration: false });
+      void prepareRadioFocus(lastRadioFocusTrack).then(() => notify());
+      return;
+    }
     state.paused = false;
     enableBackgroundModeForPlaybackStart();
     recordBackgroundDiagnostic("native-radio-restoration", { reason: "pageshow", automaticNativeRestoration: true });
@@ -1160,9 +1226,18 @@ function autoSkipUnavailable(autoplay = !state.paused) {
 async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutoplayError = false, restored = false } = {}) {
   const track = state.queue[index];
   if (!track) return;
+  if (track.media_kind === "radio" && !restored) lastRadioFocusTrack = null;
+  if (preparedRadioTakeover && track.media_kind === "radio" && !restored) {
+    clearRadioFocusPreparation();
+  }
+  if (preparedRadioTakeover && track.media_kind !== "radio"
+      && preparedRadioTakeover.track?._queueId !== track._queueId) {
+    clearRadioFocusPreparation();
+  }
   const requestToken = ++loadRequestToken;
   radioAnalysis.stop();
   restoredRadioSession = restored && track.media_kind === "radio";
+  restoredRadioReason = restoredRadioSession ? "saved-session" : null;
   radioAttempt++;
   clearRadioTimer(); radioRetries = 0; radioHasPlayed = false;
   state.isLive = track.media_kind === "radio";
@@ -1196,7 +1271,8 @@ async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutopl
   let el = getAudio();
   const previousSourceType = state.sourceType;
 
-  const prepared = consumePreparedTrack(index, track);
+  const prepared = consumePreparedTrack(index, track)
+    || consumePreparedRadioTakeover(track);
   const resolved = state.isLive ? resolveRadioSource(track) : prepared || await resolveAudioSource(track.name, track);
   if (loadRequestToken !== requestToken || state.currentTrack?._queueId !== track._queueId) {
     if (!prepared && resolved?.revokeUrl) {
@@ -1307,6 +1383,126 @@ async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutopl
 
 // ── Public API ───────────────────────────────────────────────────────
 
+function waitForPlaybackAdvancing(el: ManagedAudioElement, token: number, queueId: string) {
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    let started = false;
+    let previousTime = Number(el.currentTime || 0);
+    const startedAt = Date.now();
+    const finish = (advanced: boolean) => {
+      if (settled) return;
+      settled = true;
+      el.removeEventListener("playing", onPlaying);
+      el.removeEventListener("timeupdate", onTimeUpdateForTakeover);
+      clearInterval(poll);
+      clearTimeout(timeout);
+      resolve(advanced);
+    };
+    const check = () => {
+      if (token !== loadRequestToken || state.currentTrack?._queueId !== queueId || state.paused) {
+        finish(false);
+        return;
+      }
+      const currentTime = Number(el.currentTime || 0);
+      if (!el.paused && ((currentTime > previousTime + 0.01) || (started && currentTime > 0))) {
+        finish(true);
+        return;
+      }
+      previousTime = currentTime;
+      if (Date.now() - startedAt >= 5000) finish(false);
+    };
+    function onPlaying() {
+      started = true;
+      check();
+    }
+    function onTimeUpdateForTakeover() { check(); }
+    const poll = setInterval(check, 100);
+    const timeout = setTimeout(() => finish(false), 5200);
+    el.addEventListener("playing", onPlaying);
+    el.addEventListener("timeupdate", onTimeUpdateForTakeover);
+    check();
+  });
+}
+
+function waitForRadioPlayback(token: number, queueId: string) {
+  return new Promise<boolean>((resolve) => {
+    let settled = false;
+    const finish = (playing: boolean) => {
+      if (settled) return;
+      settled = true;
+      radioAudio?.removeEventListener("playing", onPlaying);
+      clearInterval(poll);
+      clearTimeout(timeout);
+      resolve(playing);
+    };
+    const check = () => {
+      if (token !== loadRequestToken || state.currentTrack?._queueId !== queueId || state.paused) {
+        finish(false);
+      } else if (radioHasPlayed || state.connectionState === "playing") {
+        finish(true);
+      } else if (state.connectionState === "unavailable" || state.error) {
+        finish(false);
+      }
+    };
+    function onPlaying() { finish(true); }
+    const poll = setInterval(check, 100);
+    const timeout = setTimeout(() => finish(false), 12_500);
+    radioAudio?.addEventListener("playing", onPlaying);
+    check();
+  });
+}
+
+async function startRestoredRadioViaDemo() {
+  if (radioTakeoverPending) return radioTakeoverPending;
+  if (!state.isLive || state.paused || !preparedRadioTakeover || !state.currentTrack) {
+    return startRadioPlayback();
+  }
+
+  const radioQueueId = state.currentTrack._queueId;
+  const demoTrack = preparedRadioTakeover.track;
+  const demoQueueId = demoTrack._queueId;
+  const queueBeforeTakeover = state.queue.slice();
+  const takeover = (async () => {
+    clearPreparedNext();
+    restoredRadioTakeoverActive = true;
+    state.queue = prepareQueueEntries([demoTrack, ...queueBeforeTakeover]);
+    state.currentIndex = 0;
+    state.currentTrack = state.queue[0];
+    state.paused = false;
+    flushSessionPersistence({ currentTime: 0 });
+    notify();
+
+    // This is the ordinary local restored-demo lifecycle: loadTrack resolves
+    // the prepared local source, primes the managed element, resumes its
+    // visualizer graph, arms the Player lease, and starts real decoded audio.
+    await loadTrack(0, { autoplay: true });
+    const demoElement = audio;
+    if (!demoElement || !(await waitForPlaybackAdvancing(demoElement, loadRequestToken, demoQueueId))) {
+      return false;
+    }
+
+    const radioIndex = state.queue.findIndex((track) => track?._queueId === radioQueueId);
+    if (radioIndex < 0 || state.paused) return false;
+
+    // Keep the active runtime/lease while loadTrack swaps the managed local
+    // element back to the native radio element and starts the restored station.
+    await loadTrack(radioIndex, { autoplay: true, restored: true });
+    if (state.currentTrack?._queueId !== radioQueueId) return false;
+    if (!(await waitForRadioPlayback(loadRequestToken, radioQueueId))) return false;
+    removeQueueEntryAt(0);
+    state.currentIndex = Math.max(0, state.currentIndex);
+    state.currentTrack = state.queue[state.currentIndex] || state.currentTrack;
+    flushSessionPersistence({ currentTime: 0 });
+    notify();
+    return state.isLive && !state.paused;
+  })().finally(() => {
+    restoredRadioTakeoverActive = false;
+    if (radioTakeoverPending === takeover) radioTakeoverPending = null;
+  });
+  radioTakeoverPending = takeover;
+  return takeover;
+}
+
 /**
  * Set the queue and optionally start playback.
  *
@@ -1393,6 +1589,9 @@ export async function play() {
   if (state.isLive && radioAudio?.src) {
     state.paused = false;
     enableBackgroundModeForPlaybackStart();
+    if (restoredRadioSession && preparedRadioTakeover) {
+      return startRestoredRadioViaDemo();
+    }
     const playback = startRadioPlayback();
     void startRadioAnalysis();
     return playback;
@@ -1433,6 +1632,7 @@ export async function play() {
  */
 export function pause() {
   explicitPauseRevision++;
+  radioTakeoverPending = null;
   radioAnalysis.stop();
   radioAttempt++;
   clearRadioTimer();
@@ -1445,6 +1645,9 @@ export function pause() {
  * Stop playback and reset position.
  */
 export function stopPlayback() {
+  clearRadioFocusPreparation();
+  restoredRadioTakeoverActive = false;
+  lastRadioFocusTrack = null;
   radioAnalysis.stop();
   loadRequestToken++; radioAttempt++; clearRadioTimer();
   clearLibraryContinuation();
@@ -1452,6 +1655,7 @@ export function stopPlayback() {
   state.currentIndex = -1;
   state.currentTrack = null;
   restoredRadioSession = false;
+  restoredRadioReason = null;
   state.sourceType = null;
   state.loading = false;
   state.error = null;
@@ -1707,6 +1911,9 @@ export function getState() {
     connectionState: state.connectionState, radioFailureClass: null,
     radioVisualizationAutoStart: !restoredRadioSession,
     restoredRadioSession,
+    restoredRadioReason,
+    radioFocusPrepared: Boolean(preparedRadioTakeover?.resolved?.src),
+    radioFocusHandoffPending: Boolean(radioTakeoverPending),
     backgroundPlaybackState: getBackgroundAudioState().status,
     recoveryRequired: getBackgroundAudioState().status === "blocked",
     loading: state.loading,
@@ -1746,6 +1953,7 @@ export function subscribe(listener) {
 export async function restoreSession(availableTracks, { autoplay = false } = {}) {
   const session = loadPlayerSession();
   clearLibraryContinuation();
+  clearRadioFocusPreparation();
 
   state.volume = session.volume;
   state.muted = session.muted;
@@ -1785,10 +1993,22 @@ export async function restoreSession(availableTracks, { autoplay = false } = {})
         : 0;
 
   if (startIndex >= 0) {
-    state.paused = session.paused;
+    const restoredTrack = restoredQueue[startIndex];
+    if (restoredTrack?.media_kind === "radio") {
+      const focusTrack = Array.isArray(availableTracks)
+        ? availableTracks.find((track) => isRadioFocusTrack(track))
+        : null;
+      lastRadioFocusTrack = focusTrack || null;
+      await prepareRadioFocus(focusTrack);
+    }
+    // Restored radio must wait for the selecting Play gesture. Its prepared
+    // local demo is the source that establishes Tesla ownership; starting the
+    // native station here would bypass that production playback lifecycle.
+    const restoredRadio = restoredTrack?.media_kind === "radio";
+    state.paused = restoredRadio ? true : session.paused;
     await loadTrack(startIndex, {
       startTime: session.currentTime || 0,
-      autoplay: autoplay && !session.paused,
+      autoplay: !restoredRadio && autoplay && !session.paused,
       suppressAutoplayError: true,
       restored: true,
     });

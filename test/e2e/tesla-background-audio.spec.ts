@@ -140,19 +140,63 @@ test("best-effort relay analysis feeds visualizers without binding or stopping n
   expect(errors).toEqual([]);
 });
 
-test("saved radio survives a document reload with native playback and the Player retainer", async ({ page }) => {
+test("saved radio waits for Play, then uses the restored local-demo lifecycle", async ({ page }) => {
   await page.route("https://station.example/**", route =>
     route.fulfill({ contentType: "audio/wav", body: radioFixture() }));
+  // Restored sessions intentionally do not persist direct stream URLs. The
+  // resolver falls back to the station UUID relay, so cover that transport in
+  // the reload path as well as the fresh direct-stream path.
+  await page.route("**/v1/stations/*/stream", route =>
+    route.fulfill({ contentType: "audio/wav", body: radioFixture(), headers: { "Access-Control-Allow-Origin": "*" } }));
   await page.goto("/tesla-background-audio.html");
   await page.getByLabel("Station stream URL").fill("https://station.example/restored");
   await page.getByRole("button", { name: "VatioBoard native radio", exact: true }).click();
   await expect.poll(() => page.locator("#vatio-native-radio-host audio").evaluate((el: HTMLAudioElement) => el.currentTime)).toBeGreaterThan(0.1);
   await page.reload();
+  await page.evaluate(() => {
+    const order: string[] = [];
+    const originalPlay = HTMLMediaElement.prototype.play;
+    (window as Window & { __radioPlayOrder?: string[] }).__radioPlayOrder = order;
+    HTMLMediaElement.prototype.play = function patchedPlay() {
+      order.push(this.dataset.vatioNativeRadio === "true" ? "radio" : "retainer");
+      return originalPlay.call(this);
+    };
+  });
   // The harness does not restore automatically; invoke the same boot entry point
   // as the application, without a click in this fresh document.
   await page.evaluate(async () => {
     const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
-    await runtime.restoreSession([], { autoplay: true });
+    await runtime.restoreSession([{
+      name: "demo:focus",
+      title: "Focus clip",
+      media_kind: "audio",
+      src: "/audio/demo/sb_titan.mp3",
+      _demo: true,
+    }], { autoplay: true });
+  });
+  await expect.poll(() => page.evaluate(async () => {
+    const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
+    const system = await import(/* @vite-ignore */ String("/src/shared/audio-system.ts"));
+    return {
+      restored: runtime.getState().restoredRadioSession,
+      paused: runtime.getState().paused,
+      silentPlaying: !system.getBackgroundKeepAliveAudio().paused,
+      owners: system.getBackgroundAudioState().activeLeaseIds,
+      analysis: runtime.getRadioVisualizationStatus(),
+      playOrder: (window as Window & { __radioPlayOrder?: string[] }).__radioPlayOrder || [],
+    };
+  })).toMatchObject({ restored: true, paused: true, silentPlaying: false, owners: [], analysis: "idle", playOrder: [] });
+  await page.evaluate(async () => {
+    const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
+    const play = runtime.play();
+    const demo = runtime.getAudioElement();
+    await new Promise(resolve => setTimeout(resolve, 100));
+    demo.currentTime = 0.2;
+    demo.dispatchEvent(new Event("playing"));
+    demo.dispatchEvent(new Event("timeupdate"));
+    await new Promise(resolve => setTimeout(resolve, 100));
+    runtime.getAudioElement()?.dispatchEvent(new Event("playing"));
+    await play;
   });
   await expect.poll(() => page.evaluate(async () => {
     const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
@@ -163,8 +207,9 @@ test("saved radio survives a document reload with native playback and the Player
       silentPlaying: !system.getBackgroundKeepAliveAudio().paused,
       owners: system.getBackgroundAudioState().activeLeaseIds,
       analysis: runtime.getRadioVisualizationStatus(),
+      playOrder: (window as Window & { __radioPlayOrder?: string[] }).__radioPlayOrder || [],
     };
-  })).toEqual({ restored: true, primaryAdvancing: true, silentPlaying: true, owners: ["player-runtime"], analysis: "idle" });
+  })).toMatchObject({ restored: true, primaryAdvancing: false, silentPlaying: true, owners: ["player-runtime"], analysis: "idle" });
   await expect(page.locator("#vatio-native-radio-host audio")).toBeHidden();
   await page.evaluate(async () => {
     const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
