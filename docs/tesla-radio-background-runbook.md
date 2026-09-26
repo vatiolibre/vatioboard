@@ -1,7 +1,10 @@
 # Tesla audio stable-reference runbook
 
-> Refresh/revisit radio recovery is now a separate [candidate under vehicle validation](radio-session-restoration.md).
-> It reuses MP3 retention for restored radio and keeps restored visuals manual; the prior acceptance does not cover this change.
+> Refresh/revisit radio recovery is covered by [user-reported Tesla-browser
+> physical acceptance](radio-session-restoration.md#physical-acceptance) dated
+> 2026-09-26. The station restores after refresh/revisit, follows the local-demo
+> activation path on Play, acquires Tesla audio ownership and continues when
+> minimized.
 
 > A subsequent [best-effort radio visualization enhancement](radio-visualization-best-effort.md)
 > adds optional analysis through a separate inaudible relay stream. Its vehicle
@@ -18,13 +21,14 @@ This identifies the current implementation in the repository; the deployed build
 identifier was not separately supplied in the vehicle report. Vehicle software
 previously reported for this test sequence: **2026.26.6.1**.
 
-| Vehicle test group | User-reported result |
-| --- | --- |
-| 1. Recording and alerts, including minimized GPS/recording behavior | **Pass** |
-| 2. Native radio | **Pass** |
-| 3. Combined recording, alerts and playback, including handoffs | **Pass** |
+| Vehicle test group                                                    | User-reported result |
+| --------------------------------------------------------------------- | -------------------- |
+| 1. Recording and alerts, including minimized GPS/recording behavior   | **Pass**             |
+| 2. Native radio                                                       | **Pass**             |
+| 3. Combined recording, alerts and playback, including handoffs        | **Pass**             |
+| 4. Restored radio after refresh/revisit, including minimized playback | **Pass**             |
 
-These are user-reported physical acceptance results for the three test groups,
+These are user-reported physical acceptance results for the four test groups,
 not new automated measurements or per-step diagnostic records. Use the tests
 below as the regression checklist for future audio changes. Preserve the
 [reference architecture](tesla-browser-audio-implementation.md#reference-contract-for-future-changes).
@@ -54,15 +58,21 @@ no `retentionTest` mode selector or optional harness GPS consumer. Old
   That historical result is distinct from the restored-main integration test.
 - The restored-main implementation is now **vehicle accepted**: the user reported
   Pass for recording/alerts, native radio, and combined operation as recorded above.
+- On **2026-09-26**, the user separately reported **Pass** for restored radio after
+  refresh and revisit in the Tesla browser: saved station metadata returned, Play
+  completed the local-demo activation path, Tesla audio ownership was acquired,
+  competing Tesla audio was interrupted and playback continued while minimized.
+  Tesla software/browser versions, deployed build hash and per-step diagnostics
+  were not supplied.
 
 ## Reference and regression-test URLs
 
-| Purpose | URL |
-| --- | --- |
-| Actual recording, alerts, MP3 and radio | https://dev.vatioboard.com/?debugAudio=1 |
-| Radio/MP3 comparison harness | https://dev.vatioboard.com/tesla-background-audio.html |
-| Unchanged isolated native-radio reference | https://dev.vatioboard.com/tesla-radio-poc.html |
-| Original reference | https://dev.vatiolibre.com/radio.html |
+| Purpose                                   | URL                                                    |
+| ----------------------------------------- | ------------------------------------------------------ |
+| Actual recording, alerts, MP3 and radio   | https://dev.vatioboard.com/?debugAudio=1               |
+| Radio/MP3 comparison harness              | https://dev.vatioboard.com/tesla-background-audio.html |
+| Unchanged isolated native-radio reference | https://dev.vatioboard.com/tesla-radio-poc.html        |
+| Original reference                        | https://dev.vatiolibre.com/radio.html                  |
 
 Use a fresh document for each independent test. Record the build shown in
 **Audio test summary**, vehicle version, and results. Photographs are sufficient;
@@ -119,6 +129,19 @@ The harness's **START TESLA BACKGROUND TEST** generates audible PCM tones throug
 main's finite-track path. It is not a recording test or an actual MP3 fixture.
 **STOP TEST**, **Stop everything**, and unmount stop only harness-owned playback.
 The comparison page retains direct, relay-native and relay-Web-Audio reference buttons.
+
+## Test 4 — restored radio after refresh or revisit
+
+1. Start a known-good radio station in VatioBoard and verify it is playing.
+2. Refresh the page and confirm the saved station metadata returns without
+   immediately starting the native station.
+3. Press Play once. Confirm the real local demo activates the managed playback
+   runtime first, then the restored station starts and the Player lease remains
+   active across the handoff.
+4. Confirm competing Tesla audio is interrupted/muted and playback continues
+   after minimizing the Tesla browser.
+5. Repeat after navigating away and revisiting VatioBoard. Record this as
+   user-observed physical evidence, separately from automated Chromium tests.
 
 ## Recording results
 

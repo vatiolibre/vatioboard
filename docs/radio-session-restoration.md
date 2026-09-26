@@ -1,5 +1,19 @@
 # Radio restoration after refresh or revisit
 
+## Physical acceptance
+
+**User-reported vehicle verification: Pass on 2026-09-26.** The restored-radio
+implementation was tested in the Tesla browser and confirmed to restore saved
+stations after both refresh and revisit. After Play, the restored session follows
+the working local-demo activation lifecycle, acquires Tesla vehicle audio
+ownership, interrupts competing Tesla audio, and continues playing when the
+Tesla browser is minimized.
+
+This is user-reported physical acceptance, not an automated browser measurement.
+Tesla software/browser versions, deployed build hash, and per-step diagnostic
+exports were not supplied. Fresh radio playback and unrelated audio-service
+ownership remained unchanged in the reported verification.
+
 ## Evidence and comparison
 
 The user reports that MP3 restores successfully, takes Tesla audio focus and keeps
@@ -8,11 +22,11 @@ vehicle audio and stops when minimized. This is a separate failure from the
 previously accepted native-radio tests. The Tesla audio-focus decision is not
 exposed by the browser; a resolved `play()` promise does not establish focus.
 
-| Path | Retention and activation before this change |
-| --- | --- |
-| MP3 restore | Restores the queue, enables background mode, acquires `player-runtime` silence, resumes its existing graph, primes and plays music; publishes managed Media Session state |
-| Radio restore | Restores station metadata and native source paused; Play first runs the real restored local-demo lifecycle, then swaps that active managed session to native radio |
-| Radio visualization | After `playing`, automatically opens a second inaudible relay stream and AudioContext, even after autoplay restoration |
+| Path                | Retention and activation before this change                                                                                                                               |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| MP3 restore         | Restores the queue, enables background mode, acquires `player-runtime` silence, resumes its existing graph, primes and plays music; publishes managed Media Session state |
+| Radio restore       | Restores station metadata and native source paused; Play first runs the real restored local-demo lifecycle, then swaps that active managed session to native radio        |
+| Radio visualization | After `playing`, automatically opens a second inaudible relay stream and AudioContext, even after autoplay restoration                                                    |
 
 The missing Player carrier is confirmed in code. The optional second stream is
 another possible cause of the delayed focus change, **not a proven Tesla cause**.
@@ -48,11 +62,11 @@ Chrome also treats media autoplay and AudioContext activation separately; see
   and primary/silent progress. The bounded event log records
   `native-radio-restoration` with `saved-session` or `pageshow` as its reason.
 
-This is a recovery candidate pending vehicle acceptance. Reusing MP3's carrier
-does not prove identical Tesla behavior; native radio still intentionally leaves
-platform presentation to the browser.
+This implementation is accepted for the reported Tesla-browser refresh/revisit
+scenario. Continue using the checks below as a regression checklist; they do not
+claim compatibility with every future Tesla software or browser version.
 
-## Vehicle checks (parked)
+## Vehicle regression checklist (parked)
 
 Open https://dev.vatioboard.com/?debugAudio=1 after deploying this build.
 
@@ -77,5 +91,5 @@ Open https://dev.vatioboard.com/?debugAudio=1 after deploying this build.
 8. Repeat with recording/alerts enabled; Player Stop must leave their silence active.
    Finally retest MP3 restoration and fresh radio selection.
 
-Do not mark this candidate stable until these checks pass in the vehicle. Record
-Tesla software version, build identity and whether visuals were enabled.
+For future runs, record Tesla software version, build identity and whether visuals
+were enabled. Keep the physical result separate from automated browser results.

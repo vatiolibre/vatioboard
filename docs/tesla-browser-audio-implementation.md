@@ -1,7 +1,10 @@
 # Stable audio reference: restored main and isolated native radio
 
-> Refresh/revisit radio recovery is now a separate [candidate under vehicle validation](radio-session-restoration.md).
-> It reuses MP3 retention for restored radio and keeps restored visuals manual; the prior acceptance does not cover this change.
+> Refresh/revisit radio recovery is now covered by [user-reported Tesla-browser
+> physical acceptance](radio-session-restoration.md#physical-acceptance) dated
+> 2026-09-26. The acceptance covers saved-station restoration after refresh and
+> revisit, Play-driven local-demo activation, Tesla audio ownership, competing
+> audio interruption and minimized-browser playback.
 
 > A subsequent [best-effort radio visualization enhancement](radio-visualization-best-effort.md)
 > adds optional analysis through a separate inaudible relay stream. Its vehicle
@@ -32,6 +35,10 @@ the comparison baseline:
 - Native radio uses its own connected, controls-hidden element, separate from
   MP3's Web Audio graph. Resolved stations start synchronously in the user gesture;
   direct stations do not require CORS headers and relay uses anonymous CORS.
+- A restored radio session remains paused until Play, then reuses the production
+  restored-local-demo lifecycle before transitioning to native radio. The local
+  demo must genuinely advance before the station is started; the active Player
+  runtime/lease is preserved across the transition.
 - MP3 retains main's playback/graph and Media Session behavior. MP3 Pause releases
   only the Player lease. Player Stop leaves recording/alert ownership intact;
   the final silent-channel owner releasing its lease stops silence.
@@ -158,13 +165,13 @@ supported without clipboard or session storage.
 
 Final automated results (2026-09-18):
 
-| Command | Result |
-| --- | --- |
-| `pnpm test` | Pass: 2,017 unit/architecture + 100 smoke + 14 SPA/GPS tests (2,131 total) |
-| `pnpm run typecheck` | Pass |
-| `pnpm run lint` | Pass: 0 errors, 73 warnings |
-| `pnpm run build` | Pass; Vite reported externalization, chunk-splitting and size warnings |
-| `pnpm exec playwright test test/e2e/tesla-background-audio.spec.ts test/e2e/tesla-radio-poc.spec.ts --project=model-y-2024` | Pass: 3 Chromium tests |
+| Command                                                                                                                     | Result                                                                     |
+| --------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `pnpm test`                                                                                                                 | Pass: 2,017 unit/architecture + 100 smoke + 14 SPA/GPS tests (2,131 total) |
+| `pnpm run typecheck`                                                                                                        | Pass                                                                       |
+| `pnpm run lint`                                                                                                             | Pass: 0 errors, 73 warnings                                                |
+| `pnpm run build`                                                                                                            | Pass; Vite reported externalization, chunk-splitting and size warnings     |
+| `pnpm exec playwright test test/e2e/tesla-background-audio.spec.ts test/e2e/tesla-radio-poc.spec.ts --project=model-y-2024` | Pass: 3 Chromium tests                                                     |
 
 The targeted
 suite exercises synchronous native startup, CORS, no graph/cache, MP3 separation,
@@ -178,6 +185,20 @@ browser playback and isolation, not Tesla audio takeover or minimized GPS behavi
 
 ## Physical acceptance and future regression checks
 
+### Restored-radio acceptance — 2026-09-26
+
+The user reported **Pass** in the Tesla browser for radio restoration after a
+refresh and after revisiting VatioBoard. Saved station metadata returned, Play
+completed the local-demo activation path, Tesla vehicle audio ownership was
+acquired, competing Tesla audio was interrupted, and playback continued while
+the browser was minimized. Fresh radio playback and unrelated audio-service
+ownership were not changed by this restoration-specific behavior.
+
+This acceptance is user-reported physical evidence, separate from automated
+Chromium tests and from the earlier 2026-09-18 stable-reference acceptance.
+Tesla software/browser versions, deployed build hash and per-step diagnostic
+exports were not supplied.
+
 The user reported Pass for standalone recording/alerts, native radio, and combined
 operation after executing the supplied vehicle test sequence. This is the physical
 acceptance supporting the stable-reference designation; it is distinct from the
@@ -185,8 +206,8 @@ automated results above. The report gives group-level outcomes, not individual
 step timings or exported traces.
 
 For future builds, follow [the vehicle runbook](tesla-radio-background-runbook.md):
-actual standalone recording and alerts first, native radio second, then their
-combination and MP3/radio handoffs.
+actual standalone recording and alerts first, native radio second, restored-radio
+refresh/revisit checks, then their combination and MP3/radio handoffs.
 Use https://dev.vatioboard.com/?debugAudio=1 and
 https://dev.vatioboard.com/tesla-background-audio.html.
 
