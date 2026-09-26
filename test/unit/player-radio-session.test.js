@@ -54,8 +54,14 @@ describe("player session v3 radio persistence", () => {
       codec: "MP3",
       bitrate: 128,
       src: "",
-      artwork_ref: "",
+      artwork_ref: `https://radio-media.vatioboard.com/v1/stations/${UUID}/logo`,
     });
+  });
+
+  it("keeps durable radio logo URLs while excluding temporary audio URLs", () => {
+    savePlayerSession({ queueEntries: [radioEntry()], currentEntryId: "radio-entry", currentIndex: 0 });
+    const restored = loadPlayerSession();
+    expect(restored.queueEntries[0].artwork_ref).toBe(radioEntry().artwork_ref);
   });
 
   it("migrates v2 finite queues into v3 without dropping duplicates", () => {

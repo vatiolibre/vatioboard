@@ -31,6 +31,7 @@ import {
   getValidRadioMediaBase,
   radioBrowser,
   radioStationToTrack,
+  getRadioLogoUrl,
   type RadioBrowserStation,
 } from "../shared/radio-browser.js";
 import {
@@ -198,6 +199,17 @@ async function resolveArtworkUrl(track) {
   if (track.artwork_ref && isArtworkUrl(track.artwork_ref)) {
     artworkUrlCache.set(track.name, track.artwork_ref);
     return track.artwork_ref;
+  }
+
+  // Older saved radio sessions predate durable artwork persistence. Rebuild
+  // their relay logo URL from the stable station UUID instead of attempting
+  // to resolve an expired object URL or protected media asset.
+  if (track.media_kind === "radio" && track.station_uuid) {
+    const logoUrl = getRadioLogoUrl(String(track.station_uuid));
+    if (logoUrl) {
+      artworkUrlCache.set(track.name, logoUrl);
+      return logoUrl;
+    }
   }
 
   // Resolve artwork for tracks with embedded artwork OR snapshot tracks
@@ -1788,7 +1800,8 @@ export function createPlayerShell({
       && runtime.getRadioVisualizationStatus() !== "ready") {
       disableRadioVisualizer();
     }
-    if (!radioVisualizerAttempted && snapshot.connectionState === "playing"
+    if (!radioVisualizerAttempted && snapshot.radioVisualizationAutoStart !== false
+      && snapshot.connectionState === "playing"
       && snapshot.playing && !snapshot.loading && !document.hidden) {
       requestRadioVisualizer();
     }
@@ -2156,7 +2169,10 @@ export function createPlayerShell({
           if (lastArtworkTrackName !== trackName) return;
           if (artUrl) {
             artworkCompact.innerHTML = "";
-            artworkCompact.style.backgroundImage = `url(${CSS.escape(artUrl)})`;
+            const escapedArtworkUrl = typeof CSS?.escape === "function"
+              ? CSS.escape(artUrl)
+              : artUrl.replace(/["\\\n\r]/g, "\\$&");
+            artworkCompact.style.backgroundImage = `url(${escapedArtworkUrl})`;
             artworkCompact.classList.add("has-image");
             if (track.media_kind !== "radio") runtime.updatePlayerMediaSessionMetadata?.({
               title: track.title || track.original_filename || track.name || "",

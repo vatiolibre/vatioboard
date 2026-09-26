@@ -21,6 +21,7 @@ const radioMocks = vi.hoisted(() => ({
   searchStations: vi.fn(),
   hasExternalAccess: vi.fn(() => true),
   getValidBase: vi.fn(() => "https://radio-media.vatioboard.com"),
+  getRadioLogoUrl: vi.fn((uuid) => `https://radio-media.vatioboard.com/v1/stations/${uuid}/logo`),
   getRelayHealth: vi.fn().mockResolvedValue({
     ok: true, status: "ready", environment: "development", version: "test",
   }),
@@ -29,6 +30,7 @@ const radioMocks = vi.hoisted(() => ({
 vi.mock("../../src/shared/radio-browser.js", () => ({
   hasRadioExternalNetworkAccess: radioMocks.hasExternalAccess,
   getValidRadioMediaBase: radioMocks.getValidBase,
+  getRadioLogoUrl: radioMocks.getRadioLogoUrl,
   getRadioRelayHealth: radioMocks.getRelayHealth,
   radioBrowser: {
     getPopularStations: radioMocks.getPopularStations,
@@ -1266,6 +1268,26 @@ describe("createPlayerWidget", () => {
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
     expect(runtimeMock.requestRadioVisualization).toHaveBeenCalledTimes(1);
     finish(true);
+    await vi.waitFor(() => expect(toggle.getAttribute("aria-pressed")).toBe("true"));
+    widget.destroy();
+  });
+
+  it("leaves restored radio visuals off until explicitly requested", async () => {
+    runtimeMock.getState.mockReturnValue(makeRuntimeState({
+      currentTrack: { name: "radio:restored", media_kind: "radio" },
+      sourceType: "live", isLive: true, loading: false,
+      connectionState: "playing", playing: true, radioVisualizationAutoStart: false,
+    }));
+    runtimeMock.requestRadioVisualization.mockResolvedValueOnce(true);
+    const widget = createPlayerWidget({ floating: false });
+    widget.open();
+    const toggle = document.querySelector(".player-visualizer-toggle-btn");
+    expect(toggle.getAttribute("aria-pressed")).toBe("false");
+    expect(runtimeMock.requestRadioVisualization).not.toHaveBeenCalled();
+    runtimeMock.subscribe.mock.calls.at(-1)[0](runtimeMock.getState());
+    expect(runtimeMock.requestRadioVisualization).not.toHaveBeenCalled();
+    toggle.click();
+    expect(runtimeMock.requestRadioVisualization).toHaveBeenCalledTimes(1);
     await vi.waitFor(() => expect(toggle.getAttribute("aria-pressed")).toBe("true"));
     widget.destroy();
   });

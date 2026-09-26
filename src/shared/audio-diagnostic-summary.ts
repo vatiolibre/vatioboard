@@ -1,5 +1,5 @@
 import "./audio-diagnostic-summary.css";
-import { getAudioElement } from "./audio-runtime.js";
+import { getAudioElement, getState } from "./audio-runtime.js";
 import { getAudioDiagnosticSnapshot, subscribeAudioDiagnostics } from "./audio-lifecycle-diagnostics.js";
 import { getBackgroundAudioState, getBackgroundKeepAliveAudio, subscribeBackgroundAudioState } from "./audio-system.js";
 import {
@@ -51,6 +51,7 @@ export function mountAudioDiagnosticSummary(root: HTMLElement) {
     automatic.textContent = [
       `Build: ${import.meta.env.VITE_BUILD_ID || "development"}`,
       `Observation: ${Math.floor(elapsed / 60)}m ${elapsed % 60}s · ${document.visibilityState}`,
+      `Restored radio retention: ${getState().restoredRadioSession ? "yes (visuals manual)" : "no"}`,
       `Primary attached: ${primary?.isConnected ?? false} · controls: ${primary?.controls ?? false}`,
       `Primary: ${primary?.paused === false ? "playing/requested" : "paused"} · time: ${Number(primary?.currentTime || 0).toFixed(1)}s`,
       `Media Session declared: ${navigator.mediaSession?.playbackState ?? "unsupported"} (focus not confirmed)`,

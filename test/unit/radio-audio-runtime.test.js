@@ -279,3 +279,126 @@ it("shares optional analysis across viewers and cleans up on last release, Pause
   expect(runtime.getVisualizationAudioElement()).toBeNull();
   runtime.releaseRadioVisualization(scope);
 });
+
+async function saveAndRestoreRadio({ autoplay = true, paused = false } = {}) {
+  await runtime.playTrackNow(station());
+  const sessions = await import("../../src/shared/player-session.js");
+  const saved = sessions.loadPlayerSession();
+  runtime.stopPlayback();
+  sessions.savePlayerSession({ ...saved, paused });
+  await runtime.restoreSession([], { autoplay });
+  await flush();
+}
+
+it("restores radio with MP3's Player retainer while preserving native playback and presentation", async () => {
+  await saveAndRestoreRadio();
+  const native = runtime.getAudioElement();
+  expect(runtime.getState()).toMatchObject({ restoredRadioSession: true, radioVisualizationAutoStart: false, paused: false });
+  expect(native.isConnected).toBe(true);
+  expect(native.paused).toBe(false);
+  expect(system.getBackgroundAudioState().activeLeaseIds).toContain("player-runtime");
+  expect(system.getBackgroundKeepAliveAudio().paused).toBe(false);
+  expect(navigator.mediaSession.setActionHandler).not.toHaveBeenCalled();
+  expect(await (await import("../../src/shared/audio-graph-registry.js")).acquireGraph(native)).toBeNull();
+  runtime.pause();
+  expect(system.getBackgroundAudioState().activeLeaseIds).not.toContain("player-runtime");
+  const primaryPlay = vi.spyOn(native, "play");
+  const silentPlay = vi.spyOn(system.getBackgroundKeepAliveAudio(), "play");
+  const resume = runtime.play();
+  expect(primaryPlay).toHaveBeenCalled();
+  expect(silentPlay).toHaveBeenCalled();
+  await resume;
+  await flush();
+  expect(system.getBackgroundAudioState().activeLeaseIds).toContain("player-runtime");
+});
+
+it("keeps independent feature leases when restored radio stops or a fresh station is selected", async () => {
+  await system.acquireBackgroundAudioLease("recording");
+  await saveAndRestoreRadio();
+  await runtime.playTrackNow(station("two"));
+  expect(runtime.getState()).toMatchObject({ restoredRadioSession: false, radioVisualizationAutoStart: true });
+  expect(system.getBackgroundAudioState().activeLeaseIds).toEqual(["recording"]);
+  runtime.stopPlayback();
+  expect(system.getBackgroundKeepAliveAudio().paused).toBe(false);
+});
+
+it("does not autoplay or acquire a Player lease for a saved paused station", async () => {
+  await saveAndRestoreRadio({ paused: true });
+  expect(runtime.getAudioElement().paused).toBe(true);
+  expect(system.getBackgroundAudioState().activeLeaseIds).toEqual([]);
+});
+
+it("releases restored retention on blocked native autoplay and allows a Play retry", async () => {
+  await runtime.playTrackNow(station());
+  const native = runtime.getAudioElement();
+  const sessions = await import("../../src/shared/player-session.js");
+  const saved = sessions.loadPlayerSession();
+  runtime.stopPlayback();
+  sessions.savePlayerSession(saved);
+  vi.spyOn(native, "play").mockRejectedValueOnce(new DOMException("Gesture required", "NotAllowedError"));
+  await runtime.restoreSession([], { autoplay: true });
+  await flush();
+  expect(runtime.getState()).toMatchObject({ paused: true, error: "playback-blocked" });
+  expect(system.getBackgroundAudioState().activeLeaseIds).toEqual([]);
+  await runtime.play();
+  await flush();
+  expect(native.paused).toBe(false);
+  expect(system.getBackgroundAudioState().activeLeaseIds).toContain("player-runtime");
+});
+
+it("keeps restored native radio playing if the silent carrier is rejected", async () => {
+  vi.spyOn(system.getBackgroundKeepAliveAudio(), "play").mockRejectedValue(new DOMException("Gesture required", "NotAllowedError"));
+  await saveAndRestoreRadio();
+  expect(runtime.getAudioElement().paused).toBe(false);
+  expect(runtime.getState().error).toBeNull();
+  expect(runtime.getState().restoredRadioSession).toBe(true);
+});
+
+it("recovers an active radio on cached-page return only once and never after explicit Pause", async () => {
+  await runtime.playTrackNow(station());
+  const native = runtime.getAudioElement();
+  window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+  native.pause(); // Browser interruption, not a user Pause.
+  const play = vi.spyOn(native, "play");
+  window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+  window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+  await flush();
+  expect(play).toHaveBeenCalledTimes(1);
+  expect(runtime.getState().restoredRadioSession).toBe(true);
+  expect(system.getBackgroundAudioState().activeLeaseIds).toContain("player-runtime");
+  window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+  runtime.pause();
+  window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+  expect(play).toHaveBeenCalledTimes(1);
+  expect(native.paused).toBe(true);
+});
+
+it("retains silence during restored radio retries and releases it after terminal failure", async () => {
+  await saveAndRestoreRadio();
+  const native = runtime.getAudioElement();
+  const silent = system.getBackgroundKeepAliveAudio();
+  native.dispatchEvent(new Event("playing"));
+  const pause = vi.spyOn(silent, "pause");
+  for (let retry = 0; retry < 2; retry++) {
+    native.dispatchEvent(new Event("error"));
+    expect(silent.paused).toBe(false);
+    await vi.advanceTimersByTimeAsync(5000);
+    native.dispatchEvent(new Event("playing"));
+  }
+  expect(pause).not.toHaveBeenCalled();
+  native.dispatchEvent(new Event("error"));
+  expect(runtime.getState().connectionState).toBe("unavailable");
+  expect(system.getBackgroundAudioState().activeLeaseIds).toEqual([]);
+  expect(silent.paused).toBe(true);
+});
+
+it.each(["stop", "station change"])("does not restore a cached station after %s", async (action) => {
+  await runtime.playTrackNow(station());
+  window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+  if (action === "stop") runtime.stopPlayback();
+  else await runtime.playTrackNow(station("new"));
+  const play = vi.spyOn(runtime.getAudioElement(), "play");
+  window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+  expect(play).not.toHaveBeenCalled();
+  expect(runtime.getState().restoredRadioSession).toBe(false);
+});

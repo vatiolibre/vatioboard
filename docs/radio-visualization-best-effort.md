@@ -11,7 +11,9 @@ and its physical acceptance remain unchanged.
 
 - Audible radio keeps its connected native element, original direct/relay source,
   CORS policy and native Media Session ownership. It is never bound to Web Audio.
-- Scope/spectrum starts disabled for each radio station. Once native radio reports
+- Radio restored after refresh/revisit stays manual-only to protect native audio
+  startup. See [radio restoration](radio-session-restoration.md).
+- Scope/spectrum starts disabled for each newly selected radio station. Once native radio reports
   playing, the Player makes one automatic attempt to enable analysis. Only success
   turns the toggle on; browser restrictions leave it off for a single-tap retry.
   This does not change the saved MP3 visualizer preference. Milkdrop opens manually.

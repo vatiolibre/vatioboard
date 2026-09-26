@@ -1,5 +1,8 @@
 # Stable audio reference: restored main and isolated native radio
 
+> Refresh/revisit radio recovery is now a separate [candidate under vehicle validation](radio-session-restoration.md).
+> It reuses MP3 retention for restored radio and keeps restored visuals manual; the prior acceptance does not cover this change.
+
 > A subsequent [best-effort radio visualization enhancement](radio-visualization-best-effort.md)
 > adds optional analysis through a separate inaudible relay stream. Its vehicle
 > acceptance is pending; the stable reference recorded below is preserved.

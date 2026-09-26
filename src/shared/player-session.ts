@@ -274,7 +274,7 @@ function normalizeQueueEntry(entry: unknown): PlayerQueueEntry | null {
     album: str(record.album),
     genre: str(record.genre),
     duration: numOrNull(record.duration),
-    artwork_ref: sanitizeArtworkRef(record.artwork_ref),
+    artwork_ref: sanitizeArtworkRef(record.artwork_ref, str(record.media_kind) || "audio"),
     media_kind: str(record.media_kind) || "audio",
     original_filename: str(record.original_filename),
     content_hash: str(record.content_hash),
@@ -300,11 +300,14 @@ function sanitizeStableSrc(src: unknown): string {
   return value;
 }
 
-function sanitizeArtworkRef(ref: unknown): string {
+function sanitizeArtworkRef(ref: unknown, mediaKind = "audio"): string {
   const value = str(ref);
   if (!value) return "";
   if (value.startsWith("blob:") || value.startsWith("data:")) return "";
-  if (/^https?:\/\//i.test(value)) return "";
+  // Radio logos are durable relay URLs and must survive a page reload.
+  // Embedded media artwork may be signed or temporary, so keep its stable
+  // asset identity instead of persisting the resolved URL.
+  if (/^https?:\/\//i.test(value)) return mediaKind === "radio" ? value : "";
   return value;
 }
 

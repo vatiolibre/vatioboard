@@ -139,3 +139,35 @@ test("best-effort relay analysis feeds visualizers without binding or stopping n
   await expect(page.locator("#vatio-native-radio-host audio")).toHaveAttribute("data-original", "yes");
   expect(errors).toEqual([]);
 });
+
+test("saved radio survives a document reload with native playback and the Player retainer", async ({ page }) => {
+  await page.route("https://station.example/**", route =>
+    route.fulfill({ contentType: "audio/wav", body: radioFixture() }));
+  await page.goto("/tesla-background-audio.html");
+  await page.getByLabel("Station stream URL").fill("https://station.example/restored");
+  await page.getByRole("button", { name: "VatioBoard native radio", exact: true }).click();
+  await expect.poll(() => page.locator("#vatio-native-radio-host audio").evaluate((el: HTMLAudioElement) => el.currentTime)).toBeGreaterThan(0.1);
+  await page.reload();
+  // The harness does not restore automatically; invoke the same boot entry point
+  // as the application, without a click in this fresh document.
+  await page.evaluate(async () => {
+    const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
+    await runtime.restoreSession([], { autoplay: true });
+  });
+  await expect.poll(() => page.evaluate(async () => {
+    const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
+    const system = await import(/* @vite-ignore */ String("/src/shared/audio-system.ts"));
+    return {
+      restored: runtime.getState().restoredRadioSession,
+      primaryAdvancing: runtime.getAudioElement()?.currentTime > 0.1,
+      silentPlaying: !system.getBackgroundKeepAliveAudio().paused,
+      owners: system.getBackgroundAudioState().activeLeaseIds,
+      analysis: runtime.getRadioVisualizationStatus(),
+    };
+  })).toEqual({ restored: true, primaryAdvancing: true, silentPlaying: true, owners: ["player-runtime"], analysis: "idle" });
+  await expect(page.locator("#vatio-native-radio-host audio")).toBeHidden();
+  await page.evaluate(async () => {
+    const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
+    runtime.stopPlayback();
+  });
+});
