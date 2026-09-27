@@ -14,6 +14,8 @@ vi.mock("../../src/shared/environment.js", () => ({
 }));
 
 const runtimeMock = {
+  updatePlayerMediaSessionMetadata: vi.fn(),
+  setMediaSessionEnabled: vi.fn(),
   getState: vi.fn(() => ({
     queue: [],
     currentIndex: -1,
@@ -46,7 +48,6 @@ const runtimeMock = {
   setQueue: vi.fn(),
   restoreSession: vi.fn().mockResolvedValue(undefined),
   primeAudio: vi.fn().mockResolvedValue(true),
-  setMediaSessionEnabled: vi.fn(),
   stopPlayback: vi.fn(),
 };
 
@@ -191,7 +192,6 @@ describe("integratePlayerWidget", () => {
     }));
 
     runtimeMock.subscribe.mockReturnValue(vi.fn());
-    runtimeMock.setMediaSessionEnabled.mockClear();
     runtimeMock.stopPlayback.mockClear();
 
     backendAuthMock = await import("../../src/shared/backend-auth.js");
@@ -440,32 +440,6 @@ describe("integratePlayerWidget", () => {
     integratePlayerWidget({ toolsMenuList: list, toolsMenu: menu });
 
     expect(document.querySelector(".player-fab")).toBeNull();
-  });
-
-  // ── Media Session ────────────────────────────────────────────
-
-  it("calls setMediaSessionEnabled(true) by default", () => {
-    const list = makeToolsMenuList();
-    integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() } });
-    expect(runtimeMock.setMediaSessionEnabled).toHaveBeenCalledWith(true);
-  });
-
-  it("calls setMediaSessionEnabled(false) when mediaSession: false", () => {
-    const list = makeToolsMenuList();
-    integratePlayerWidget({ toolsMenuList: list, toolsMenu: { close: vi.fn() }, mediaSession: false });
-    expect(runtimeMock.setMediaSessionEnabled).toHaveBeenCalledWith(false);
-  });
-
-  it("Media Session false then true does not leak across integrations", () => {
-    const list1 = makeToolsMenuList();
-    integratePlayerWidget({ toolsMenuList: list1, toolsMenu: { close: vi.fn() }, mediaSession: false });
-    expect(runtimeMock.setMediaSessionEnabled).toHaveBeenCalledWith(false);
-
-    runtimeMock.setMediaSessionEnabled.mockClear();
-
-    const list2 = makeToolsMenuList();
-    integratePlayerWidget({ toolsMenuList: list2, toolsMenu: { close: vi.fn() }, mediaSession: true });
-    expect(runtimeMock.setMediaSessionEnabled).toHaveBeenCalledWith(true);
   });
 
   // ── Duplicate injection guard ────────────────────────────────

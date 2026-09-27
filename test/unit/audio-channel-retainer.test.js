@@ -28,6 +28,10 @@ describe("audio-channel-retainer", () => {
 
       expect(wav.getUint32(24, true)).toBe(44100);
       expect(wav.getUint32(28, true)).toBe(44100 * 2);
+      expect(wav.getUint16(20, true)).toBe(1);
+      expect(wav.getUint16(34, true)).toBe(16);
+      expect(wav.getUint32(40, true)).toBe(wav.byteLength - 44);
+      expect(new Uint8Array(wav.buffer, 44).every((sample) => sample === 0)).toBe(true);
     } finally {
       URL.createObjectURL = originalCreateObjectURL;
     }
@@ -63,5 +67,8 @@ describe("audio-channel-retainer", () => {
     expect(keepAliveAudio.defaultPlaybackRate).toBe(1);
     expect(keepAliveAudio.playbackRate).toBe(1);
     expect(keepAliveAudio.paused).toBe(false);
+    expect(keepAliveAudio.loop).toBe(true);
+    expect(keepAliveAudio.muted).toBe(false);
+    expect(keepAliveAudio.volume).toBe(1);
   });
 });

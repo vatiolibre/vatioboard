@@ -40,6 +40,11 @@ describe("isVisualizerSafeSource", () => {
     expect(isVisualizerSafeSource("https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=AUDIO-1")).toBe(true);
   });
 
+  it("returns true for the configured radio relay origin", () => {
+    expect(isVisualizerSafeSource("https://radio-media.vatioboard.com/v1/stations/id/stream")).toBe(true);
+    expect(isVisualizerSafeSource("https://radio-media.dev.vatioboard.com/v1/stations/id/stream")).toBe(false);
+  });
+
   it("returns false for arbitrary cross-origin URLs", () => {
     expect(isVisualizerSafeSource("https://cdn.example.com/audio.mp3")).toBe(false);
     expect(isVisualizerSafeSource("https://other-domain.com/stream")).toBe(false);
@@ -79,5 +84,10 @@ describe("requiresCrossOriginForAnalysis", () => {
 
   it("returns true for BFF API URLs matching the current environment", () => {
     expect(requiresCrossOriginForAnalysis("https://api.vatioboard.com/api/method/vatiolibre.vatiolibre.media_assets.download_my_media_asset?name=AUDIO-1")).toBe(true);
+  });
+
+  it("requires anonymous CORS for the configured radio relay origin", () => {
+    expect(requiresCrossOriginForAnalysis("https://radio-media.vatioboard.com/v1/stations/id/stream")).toBe(true);
+    expect(requiresCrossOriginForAnalysis("https://radio-media.dev.vatioboard.com/v1/stations/id/stream")).toBe(false);
   });
 });

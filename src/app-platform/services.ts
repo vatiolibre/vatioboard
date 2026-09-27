@@ -63,6 +63,16 @@ const DENIED_AUDIO_STATE: AudioRuntimeState = {
   shuffle: false,
   backgroundMode: false,
   sourceType: null,
+  sourceTransport: null,
+  isLive: false,
+  seekable: true,
+  cacheable: false,
+  analysisEligible: false,
+  analysisActive: false,
+  backgroundPlaybackState: "idle",
+  recoveryRequired: false,
+  connectionState: "idle",
+  radioFailureClass: null,
   currentTrack: null,
   loading: false,
   error: "permission-denied",
@@ -372,8 +382,7 @@ function createAudioGateway(
       return service.subscribe(listener);
     },
     setMediaSessionEnabled(enabled) {
-      if (!canUseAudio()) return;
-      service.setMediaSessionEnabled(enabled);
+      if (canUseAudio()) service.setMediaSessionEnabled?.(enabled);
     },
     async primeAudio() {
       if (!canUseAudio()) return false;
@@ -391,6 +400,18 @@ function createAudioGateway(
       if (!canUseAudio()) return;
       service.stopPlayback(options);
     },
+    playTrackNow: service.playTrackNow
+      ? (track, options) => {
+          if (!canUseAudio()) return false;
+          return service.playTrackNow?.(track, options) ?? false;
+        }
+      : undefined,
+    rearmBackgroundPlayback: service.rearmBackgroundPlayback
+      ? () => {
+          if (!canUseAudio()) return false;
+          return service.rearmBackgroundPlayback?.() ?? false;
+        }
+      : undefined,
   };
 }
 

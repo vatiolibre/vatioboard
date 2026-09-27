@@ -40,7 +40,6 @@ const runtimeMock = {
   restoreSession: vi.fn().mockResolvedValue(undefined),
   primeAudio: vi.fn().mockResolvedValue(true),
   stopPlayback: vi.fn(),
-  updatePlayerMediaSessionMetadata: vi.fn(),
 };
 
 const catalogMock = {
@@ -140,6 +139,7 @@ function installMocks() {
 
   vi.doMock("../../src/shared/audio-graph-registry.js", () => ({
     primeAudioContext: vi.fn(),
+    prepareGraphFromUserGesture: vi.fn().mockResolvedValue(false),
     acquireGraph: vi.fn().mockResolvedValue(null),
     releaseGraph: vi.fn(),
   }));

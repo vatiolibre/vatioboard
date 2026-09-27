@@ -179,8 +179,14 @@ function rectsOverlap(a: RectLike | null | undefined, b: RectLike | null | undef
   );
 }
 
+function visualizationElement() {
+  return Reflect.has(runtime, "getVisualizationAudioElement")
+    ? runtime.getVisualizationAudioElement() : runtime.getAudioElement();
+}
 function isSafeSource() {
-  const el = runtime.getAudioElement();
+  const el = visualizationElement();
+  const state = runtime.getState();
+  if (state.analysisEligible === false) return false;
   if (!el?.src) return true;
   return isVisualizerSafeSource(el.currentSrc || el.src);
 }
@@ -418,6 +424,8 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
   let graphEntry = null;
   let audioElement = null;
   let wired = false;
+  let wiring: Promise<boolean> | null = null;
+  let wiringGeneration = 0;
   let failed = false;
   let destroyed = false;
   let rafId = null;
@@ -496,9 +504,12 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
 
   // ── Render loop ─────────────────────────────────────────────
   function startRenderLoop() {
-    if (rafId || destroyed || !visualizer) return;
+    if (rafId || destroyed || !visualizer || document.hidden) return;
     function render() {
-      if (destroyed) return;
+      if (destroyed || document.hidden) {
+        rafId = null;
+        return;
+      }
       try { visualizer.render(); } catch { /* ignore frame errors */ }
       rafId = requestAnimationFrame(render);
     }
@@ -513,6 +524,8 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
   }
 
   function teardownAudioWiring() {
+    wiringGeneration++;
+    wiring = null;
     stopRenderLoop();
 
     if (resizeObserver) {
@@ -521,6 +534,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     }
 
     if (graphEntry && audioElement) {
+      try { visualizer?.disconnectAudio?.(graphEntry.sourceNode); } catch { /* optional renderer */ }
       releaseGraph(audioElement);
     }
 
@@ -536,17 +550,34 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     }
   }
 
+  function markUnavailable() {
+    failed = true;
+    setPresetOverlayText(t("mediaPlayerVisualizerUnavailable"));
+    if ("releaseRadioVisualization" in runtime) runtime.releaseRadioVisualization(radioVisualizationOwner);
+  }
   // ── Core wiring ─────────────────────────────────────────────
-  async function wireButterchurn() {
+  function wireButterchurn(): Promise<boolean> {
+    if (wiring) return wiring;
+    const token = wiringGeneration;
+    const attempt = wireButterchurnAttempt(token);
+    wiring = attempt;
+    void attempt.finally(() => { if (wiring === attempt) wiring = null; }).catch(() => {});
+    return attempt;
+  }
+  async function wireButterchurnAttempt(token: number) {
     if (destroyed || failed || wired) return wired;
 
     const Butterchurn = await loadButterchurn();
-    if (!Butterchurn || !_presetsModule || destroyed) { failed = true; return false; }
+    if (token !== wiringGeneration || destroyed) return false;
+    if (!Butterchurn || !_presetsModule) { markUnavailable(); return false; }
 
     const state = runtime.getState();
-    const el = runtime.getAudioElement();
+    const el = visualizationElement();
     if (!state.currentTrack || !state.sourceType || !el?.src) return false;
-    if (!isSafeSource()) { failed = true; return false; }
+    if (!isSafeSource()) {
+      markUnavailable();
+      return false;
+    }
 
     // Create WebGL canvas
     canvas = document.createElement("canvas");
@@ -557,12 +588,17 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     canvas.height = h;
 
     gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
-    if (!gl) { failed = true; return false; }
+    if (!gl) { markUnavailable(); return false; }
 
     // Acquire shared audio graph
-    graphEntry = await acquireGraph(el);
-    if (!graphEntry || destroyed) {
-      failed = true;
+    const acquired = await acquireGraph(el);
+    if (token !== wiringGeneration || destroyed || el !== visualizationElement()) {
+      if (acquired) releaseGraph(el);
+      return false;
+    }
+    graphEntry = acquired;
+    if (!graphEntry) {
+      markUnavailable();
       teardownAudioWiring();
       return false;
     }
@@ -577,7 +613,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
       visualizer.connectAudio(graphEntry.sourceNode);
       wired = true;
     } catch {
-      failed = true;
+      markUnavailable();
       teardownAudioWiring();
       return false;
     }
@@ -599,7 +635,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     } catch { /* ResizeObserver optional */ }
 
     restorePreset();
-    startRenderLoop();
+    if (!document.hidden) startRenderLoop();
     return true;
   }
 
@@ -607,7 +643,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
   function syncWithPlayback() {
     if (destroyed || root.hidden) return;
     const s = runtime.getState();
-    const el = runtime.getAudioElement();
+    const el = visualizationElement();
     const hasPlayableSource = Boolean(s.currentTrack && s.sourceType && el?.src);
 
     if (!hasPlayableSource) {
@@ -633,15 +669,29 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
   }
 
   // ── Open / Close ────────────────────────────────────────────
+  const radioVisualizationOwner = Symbol("milkdrop");
   async function showPanel({ persist = true }: ShellLifecycleOptions = {}) {
     if (destroyed) return;
     const wasOpen = !root.hidden;
     root.hidden = false;
+    const preparation = "requestRadioVisualization" in runtime
+      ? runtime.requestRadioVisualization(radioVisualizationOwner) : Promise.resolve(true);
     if (persist) saveVisibility(true);
+
+    // A failed AudioContext resume/acquire on iOS is often transient. An
+    // explicit reopen is a fresh user-driven attempt, not a permanent latch.
+    if (!wasOpen && failed) {
+      teardownAudioWiring();
+      failed = false;
+    }
 
     // Always clamp to viewport on open to prevent overflow
     clampPanelToWindow();
 
+    if (runtime.getState().isLive && !await preparation) {
+      if (!destroyed && !root.hidden) markUnavailable();
+    }
+    if (destroyed || root.hidden) return;
     if (!wired && !failed) {
       await wireButterchurn();
     }
@@ -658,6 +708,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
   }
 
   function hidePanel({ persist = true }: ShellLifecycleOptions = {}) {
+    if ("releaseRadioVisualization" in runtime) runtime.releaseRadioVisualization(radioVisualizationOwner);
     const wasOpen = !root.hidden;
     endHandleResize();
 
@@ -689,6 +740,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
   }
 
   function minimizePanel() {
+    if ("releaseRadioVisualization" in runtime) runtime.releaseRadioVisualization(radioVisualizationOwner);
     endHandleResize();
     root.hidden = true;
     stopRenderLoop();
@@ -1066,6 +1118,11 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
   fullscreenExitBtn.addEventListener("click", (e) => { e.stopPropagation(); exitFullscreenMode(); });
   minimizeBtn.addEventListener("click", (e) => { e.stopPropagation(); minimize(); });
   closeBtn.addEventListener("click", (e) => { e.stopPropagation(); close(); });
+  const handleVisibilityChange = () => {
+    if (document.hidden) stopRenderLoop();
+    else syncWithPlayback();
+  };
+  document.addEventListener("visibilitychange", handleVisibilityChange);
 
   if (restoreVisibility && loadMilkdropPanelVisibility()) {
     void open();
@@ -1073,6 +1130,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
 
   // ── Destroy ─────────────────────────────────────────────────
   function destroy() {
+    if ("releaseRadioVisualization" in runtime) runtime.releaseRadioVisualization(radioVisualizationOwner);
     if (destroyed) return;
     destroyed = true;
 
@@ -1091,6 +1149,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     if (panelResizeObserver) { panelResizeObserver.disconnect(); panelResizeObserver = null; }
     clearPresetOverlayTimer();
     document.removeEventListener("fullscreenchange", onFullscreenChange);
+    document.removeEventListener("visibilitychange", handleVisibilityChange);
     cleanupLayer();
 
     teardownAudioWiring();

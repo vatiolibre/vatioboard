@@ -22,21 +22,73 @@ import {
   isPublicStaticTrack,
   shouldUseBackendMediaAccess,
 } from "./track-source-policy.js";
+import {
+  getRadioStreamRelayUrl,
+  hasRadioExternalNetworkAccess,
+  isRadioStationUuid,
+} from "./radio-browser.js";
 
 export interface AudioSourceAsset extends MediaManifestAsset {
   src?: string;
   playback_url?: string;
   download_url?: string;
   _demo?: boolean;
+  station_uuid?: string;
+  hls?: number;
+  url_resolved?: string;
 }
 
 export interface ResolvedAudioSource {
   src: string;
-  type: "blob" | "remote";
+  sourceType: "blob" | "remote" | "live";
+  sourceTransport: AudioSourceTransport;
+  isLive: boolean;
+  /** Compatibility aliases for existing consumers during the descriptor migration. */
+  type: "blob" | "remote" | "live";
+  transport: AudioSourceTransport;
+  live: boolean;
+  cacheable: boolean;
+  seekable: boolean;
+  analysisEligible: boolean;
+  stationUuid?: string;
   blob?: Blob;
   source?: string;
   contentHash?: string | null;
   revokeUrl: () => void;
+}
+
+export type AudioSourceTransport = "local" | "backend" | "radio-relay" | "radio-direct";
+
+export function resolveRadioSource(asset: AudioSourceAsset): ResolvedAudioSource | null {
+  if (!hasRadioExternalNetworkAccess()) return null;
+  const stationUuid = String(asset.station_uuid || "");
+  if (!isRadioStationUuid(stationUuid) || Number(asset.hls) === 1) return null;
+
+  // Plain media playback does not require station CORS headers. Prefer the
+  // directory's HTTPS stream, matching the working Tesla radio POC.
+  let directSrc = "";
+  try {
+    const url = new URL(asset.url_resolved || "");
+    if (url.protocol === "https:" && !url.username && !url.password) directSrc = url.href;
+  } catch { /* Restored entries without URLs use the relay. */ }
+  const src = directSrc || getRadioStreamRelayUrl(stationUuid);
+  if (!src) return null;
+  const transport = directSrc ? "radio-direct" : "radio-relay";
+
+  return {
+    src,
+    sourceType: "live",
+    sourceTransport: transport,
+    isLive: true,
+    type: "live",
+    transport,
+    live: true,
+    cacheable: false,
+    seekable: false,
+    analysisEligible: false,
+    stationUuid,
+    revokeUrl() {},
+  };
 }
 
 export type BackgroundCacheFailureReason =
@@ -94,6 +146,10 @@ export async function resolveAudioSource(
 ): Promise<ResolvedAudioSource | null> {
   if (!assetName) return null;
 
+  if (asset?.media_kind === "radio") {
+    return resolveRadioSource(asset);
+  }
+
   // 0. Direct static src (e.g. demo tracks served from /audio/demo/)
   if (asset?.src) {
     if (isDemoTrack(assetName, asset)) {
@@ -103,7 +159,15 @@ export async function resolveAudioSource(
           const url = URL.createObjectURL(local.blob);
           return {
             src: url,
+            sourceType: "blob",
+            sourceTransport: "local",
+            isLive: false,
             type: "blob",
+            transport: "local",
+            live: false,
+            cacheable: false,
+            seekable: true,
+            analysisEligible: true,
             blob: local.blob,
             source: "demo-cache",
             revokeUrl() { URL.revokeObjectURL(url); },
@@ -114,7 +178,19 @@ export async function resolveAudioSource(
       }
     }
 
-    return { src: asset.src, type: "remote", revokeUrl() {} };
+    return {
+      src: asset.src,
+      sourceType: "remote",
+      sourceTransport: "backend",
+      isLive: false,
+      type: "remote",
+      transport: "backend",
+      live: false,
+      cacheable: true,
+      seekable: true,
+      analysisEligible: true,
+      revokeUrl() {},
+    };
   }
 
   // 1. Try local blob (pinned > cached, handled by getLocalMediaBlob)
@@ -131,7 +207,15 @@ export async function resolveAudioSource(
         const url = URL.createObjectURL(local.blob);
         return {
           src: url,
+          sourceType: "blob",
+          sourceTransport: "local",
+          isLive: false,
           type: "blob",
+          transport: "local",
+          live: false,
+          cacheable: false,
+          seekable: true,
+          analysisEligible: true,
           blob: local.blob,
           source: local.source,
           contentHash: local.contentHash,
@@ -146,7 +230,19 @@ export async function resolveAudioSource(
   // 2. Remote playback URL via signed access endpoint
   const remoteSrc = await resolveRemotePlaybackUrl(assetName, asset);
   if (remoteSrc) {
-    return { src: remoteSrc, type: "remote", revokeUrl() {} };
+    return {
+      src: remoteSrc,
+      sourceType: "remote",
+      sourceTransport: "backend",
+      isLive: false,
+      type: "remote",
+      transport: "backend",
+      live: false,
+      cacheable: true,
+      seekable: true,
+      analysisEligible: true,
+      revokeUrl() {},
+    };
   }
 
   return null;

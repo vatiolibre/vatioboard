@@ -237,7 +237,26 @@ export interface AudioRuntimeState {
   repeat: "off" | "all" | "one";
   shuffle: boolean;
   backgroundMode: boolean;
-  sourceType: "blob" | "remote" | null;
+  sourceType: "blob" | "remote" | "live" | null;
+  sourceTransport: "local" | "backend" | "radio-relay" | "radio-direct" | null;
+  isLive: boolean;
+  seekable: boolean;
+  cacheable: boolean;
+  analysisEligible: boolean;
+  analysisActive: boolean;
+  backgroundPlaybackState: "idle" | "arming" | "armed" | "delegated" | "interrupted" | "blocked";
+  recoveryRequired: boolean;
+  connectionState: "idle" | "connecting" | "slow" | "playing" | "reconnecting" | "unavailable";
+  radioFailureClass: null
+    | "relay-unreachable"
+    | "origin-rejected"
+    | "directory"
+    | "unrelayable-target"
+    | "upstream"
+    | "mime"
+    | "codec"
+    | "cors-or-decode"
+    | "platform-interruption";
   currentTrack: unknown;
   loading: boolean;
   error: unknown;
@@ -248,13 +267,18 @@ export interface AudioRuntimeState {
 }
 
 export interface AudioRuntime {
+  setMediaSessionEnabled?(enabled: boolean): void;
   getState(): AudioRuntimeState;
   subscribe(listener: (state: AudioRuntimeState) => void): Unsubscribe;
-  setMediaSessionEnabled(enabled: boolean): void;
   primeAudio(): Promise<boolean>;
   play(options?: unknown): Promise<boolean> | boolean;
   pause(options?: unknown): void;
   stopPlayback(options?: unknown): void;
+  playTrackNow?(track: unknown, options?: {
+    fromUserGesture?: boolean;
+    beforePlay?: ((element: HTMLAudioElement) => void) | null;
+  }): Promise<boolean> | boolean;
+  rearmBackgroundPlayback?(): Promise<boolean> | boolean;
 }
 
 export type TtsPriority = "critical" | "driving" | "system" | "info";

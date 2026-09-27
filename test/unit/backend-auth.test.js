@@ -74,6 +74,25 @@ describe('environment configuration', () => {
       hostname: 'dev.vatioboard.com',
       origin: 'https://dev.vatioboard.com',
     }).backendEnabled).toBe(true);
+    expect(getEnvironmentConfig({
+      hostname: 'dev.vatioboard.com',
+      origin: 'https://dev.vatioboard.com',
+    }).radioMediaBase).toBe('https://radio-media.dev.vatioboard.com');
+    expect(getEnvironmentConfig({
+      hostname: 'dev.vatioboard.com',
+      origin: 'https://dev.vatioboard.com',
+    }).radioMediaEnvironment).toBe('development');
+  });
+
+  it('refuses the undeployed production relay in the development frontend', () => {
+    const config = getEnvironmentConfig({
+      hostname: 'dev.vatioboard.com',
+      origin: 'https://dev.vatioboard.com',
+    }, {
+      VITE_VATIOBOARD_RADIO_MEDIA_BASE: 'https://radio-media.vatioboard.com/',
+    });
+    expect(config.radioMediaBase).toBe('https://radio-media.dev.vatioboard.com');
+    expect(config.radioMediaEnvironment).toBe('development');
   });
 
   it('keeps localhost on the development API host but disables backend calls by default', () => {

@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig, loadEnv } from "vite";
 import { resolve } from "path";
 
 const SPA_ROUTE_PATHS = new Set([
@@ -32,6 +32,20 @@ function cleanAppRoutePlugin() {
     },
     configurePreviewServer(server) {
       server.middlewares.use(rewriteCleanAppRoute);
+    },
+  };
+}
+
+function validateRadioDevelopmentEnvironmentPlugin() {
+  return {
+    name: "vatioboard-radio-development-environment",
+    config(_config, { mode }) {
+      if (mode === "production") return;
+      const env = loadEnv(mode, process.cwd(), "");
+      if (String(env.VITE_VATIOBOARD_RADIO_MEDIA_BASE || "").replace(/\/+$/, "")
+        === "https://radio-media.vatioboard.com") {
+        throw new Error("Development builds must use https://radio-media.dev.vatioboard.com.");
+      }
     },
   };
 }
@@ -88,7 +102,8 @@ function getManualChunk(id) {
 
 export default defineConfig({
   base: "/",
-  plugins: [cleanAppRoutePlugin()],
+  define: { "import.meta.env.VITE_BUILD_ID": JSON.stringify(process.env.VITE_BUILD_ID || new Date().toISOString()) },
+  plugins: [validateRadioDevelopmentEnvironmentPlugin(), cleanAppRoutePlugin()],
   resolve: {
     alias: [
       {
@@ -112,6 +127,8 @@ export default defineConfig({
     rollupOptions: {
       input: {
         index: resolve(__dirname, "index.html"),
+        teslaAudio: resolve(__dirname, "tesla-background-audio.html"),
+        teslaRadioPoc: resolve(__dirname, "tesla-radio-poc.html"),
       },
       output: {
         manualChunks: getManualChunk,

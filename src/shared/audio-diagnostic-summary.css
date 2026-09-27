@@ -1,0 +1,8 @@
+.audio-diagnostic-summary { box-sizing: border-box; width: 100%; min-height: 44px; flex: none; padding: 8px; border: 1px solid #64748b; border-radius: 8px; font: 14px/1.4 system-ui; }
+.audio-diagnostic-summary[open] { max-height: 70dvh; overflow: auto; }
+.audio-diagnostic-summary summary { min-height: 28px; cursor: pointer; }
+.audio-diagnostic-summary pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; margin: 8px 0; }
+.audio-diagnostic-summary fieldset { margin: 8px 0; border: 1px solid #64748b; }
+.audio-diagnostic-summary label { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0; }
+.audio-diagnostic-summary input, .audio-diagnostic-summary select { box-sizing: border-box; min-height: 44px; max-width: 100%; padding: 6px; color: inherit; background: transparent; border: 1px solid #64748b; border-radius: 4px; font: inherit; }
+.audio-diagnostic-summary p { font-size: 12px; }

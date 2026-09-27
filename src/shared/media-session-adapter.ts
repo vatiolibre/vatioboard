@@ -28,6 +28,7 @@ export type MediaSessionHandlers = Partial<Record<MediaSessionAction, MediaSessi
 
 interface MediaSessionClient {
   owner: string;
+  native?: boolean;
   active: boolean;
   priority: number;
   metadata: MediaSessionMetadataPayload | null;
@@ -179,8 +180,23 @@ function applyPlatformMediaSessionActionHandlers(handlers: MediaSessionHandlers 
   }
 }
 
+let platformManaged = false;
+
 function applyMediaSessionClients(): void {
   const topClient = getTopClient();
+  // A native-radio client participates in main's existing priorities, but
+  // leaves transport/metadata to the browser when it wins arbitration.
+  if (topClient?.native) {
+    if (platformManaged) {
+      applyPlatformMediaSessionPlaybackState("none");
+      applyPlatformMediaSessionMetadata(null);
+      applyPlatformMediaSessionActionHandlers(null);
+      platformManaged = false;
+    }
+    return;
+  }
+  if (!topClient && !platformManaged) return;
+  platformManaged = Boolean(topClient);
 
   if (!topClient) {
     applyPlatformMediaSessionPlaybackState("none");

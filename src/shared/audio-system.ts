@@ -137,3 +137,23 @@ export function disposeAudioSystemForTests() {
   backgroundAudioArmPromise = null;
   backgroundAudioRetainer.stopKeepAlive();
 }
+
+// Read-only diagnostics and explicit diagnostic rearm. Feature lease behavior
+// above is restored from main; no primary delegation or gesture broadcasting.
+export function getBackgroundAudioState() {
+  const activeLeaseIds = Array.from(backgroundAudioLeases.keys());
+  return { activeLeaseIds,
+    status: (backgroundAudioArmPending ? "arming" : !activeLeaseIds.length ? "idle" : backgroundKeepAliveAudio.paused ? "blocked" : "armed") as "idle" | "arming" | "blocked" | "armed",
+    lastInterruption: null, revision: backgroundAudioGeneration };
+}
+export function subscribeBackgroundAudioState(listener: (state: ReturnType<typeof getBackgroundAudioState>) => void) {
+  const update = () => listener(getBackgroundAudioState());
+  backgroundKeepAliveAudio.addEventListener("play", update);
+  backgroundKeepAliveAudio.addEventListener("pause", update);
+  update();
+  return () => { backgroundKeepAliveAudio.removeEventListener("play", update); backgroundKeepAliveAudio.removeEventListener("pause", update); };
+}
+export async function rearmBackgroundAudio() {
+  const attempts = Array.from(backgroundAudioLeases, ([id, lease]) => acquireBackgroundAudioLease(id, lease));
+  return (await Promise.all(attempts)).some(Boolean);
+}

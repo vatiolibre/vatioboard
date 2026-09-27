@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Tesla background audio test</title>
+  <style>
+    * { box-sizing: border-box; }
+    html { color-scheme: dark; background: #14181d; }
+    body { font: 14px/1.35 system-ui; color: #edf2f6; margin: 0; padding: 12px;
+      min-height: 100vh; min-height: 100dvh; height: 100vh; height: 100dvh; display: flex; flex-direction: column; gap: 8px; }
+    header { flex: none; display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; }
+    h1 { font-size: 20px; line-height: 1.2; margin: 0; }
+    header p { grid-column: 1 / -1; margin: 0; color: #c0ccd7; font-size: 13px; }
+    a { color: #8ecbff; }
+    header a { min-height: 44px; display: flex; align-items: center; }
+    #tesla-audio-test { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 8px; overflow: auto; }
+    #tesla-audio-test > details { flex: none; }
+    #tesla-audio-test > details > summary { min-height: 44px; padding: 10px; cursor: pointer; }
+    .radio-inputs { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 8px; flex: none; }
+    label { min-width: 0; display: flex; flex-direction: column; gap: 3px; color: #c0ccd7; font-size: 12px; }
+    input, select, button { font: inherit; color: inherit; border: 1px solid #506477; border-radius: 8px; min-height: 44px; }
+    input { width: 100%; min-width: 0; background: #0e141b; padding: 8px; font-size: 14px; }
+    .station-hint { margin: 0; color: #c0ccd7; font-size: 12px; }
+    .test-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; flex: none; }
+    button { background: #243344; padding: 8px; cursor: pointer; line-height: 1.2; overflow-wrap: anywhere; }
+    button:active { background: #38516c; }
+    :focus-visible { outline: 3px solid #8ecbff; outline-offset: 2px; }
+    .baseline-player { flex: none; }
+    .baseline-player:empty { display: none; }
+    audio { display: block; width: 100%; height: 44px; }
+    .diagnostic-panels { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+      flex: 1; min-height: 64px; }
+    .diagnostic-panels > div { display: flex; flex-direction: column; min-width: 0; min-height: 0;
+      border: 1px solid #384b5d; border-radius: 8px; background: #0e141b; overflow: hidden; }
+    h2 { margin: 0; padding: 6px 10px; font-size: 13px; background: #1c2936; flex: none; }
+    pre { margin: 0; padding: 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere;
+      font-size: 12px; line-height: 1.4; flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; }
+    @media (max-height: 650px) { header p { display: none; } }
+    @media (max-width: 600px), (max-height: 520px) {
+      body { height: auto; min-height: 100vh; min-height: 100dvh; }
+      #tesla-audio-test { flex: none; }
+      .diagnostic-panels { flex: none; height: 260px; }
+    }
+    @media (max-width: 600px) {
+      header { grid-template-columns: 1fr; }
+      .radio-inputs { grid-template-columns: 1fr; }
+      .test-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Tesla audio diagnostics</h1>
+    <a href="/tesla-radio-poc.html">Open isolated radio ↗</a>
+    <p>Choose a radio mode or START for test tones. Minimize for 30 seconds, then five minutes; return and photograph the summary.
+      Isolated radio opens a separate page outside recording services.</p>
+  </header>
+  <div id="tesla-audio-test"></div>
+  <script type="module" src="/src/player/tesla-background-audio.ts"></script>
+</body>
+</html>

@@ -13,10 +13,14 @@ const PROD_HOSTS = new Set(["vatioboard.com", "www.vatioboard.com"]);
 
 const PROD_API_BASE = "https://api.vatioboard.com";
 const DEV_API_BASE = "https://api.dev.vatioboard.com";
+const PROD_RADIO_MEDIA_BASE = "https://radio-media.vatioboard.com";
+const DEV_RADIO_MEDIA_BASE = "https://radio-media.dev.vatioboard.com";
 
 export interface EnvironmentConfig {
   frontendOrigin: string;
   apiBase: string;
+  radioMediaBase: string;
+  radioMediaEnvironment: "development" | "production" | "local" | "unconfigured";
   isProduction: boolean;
   isLocalhost: boolean;
   backendEnabled: boolean;
@@ -58,10 +62,30 @@ export function getEnvironmentConfig(
   const isProduction = PROD_HOSTS.has(host);
   const isLocal = isLocalhost(host);
   const backendEnabledOverride = getBackendEnabledOverride(env);
+  const requestedRadioMediaBase = String(env?.VITE_VATIOBOARD_RADIO_MEDIA_BASE || "").trim();
+  const configuredRadioMediaBase = !isProduction && !isLocal
+    && requestedRadioMediaBase.replace(/\/+$/, "") === PROD_RADIO_MEDIA_BASE
+    ? ""
+    : requestedRadioMediaBase;
+  const radioMediaBase = configuredRadioMediaBase
+    || (isProduction
+      ? PROD_RADIO_MEDIA_BASE
+      : isLocal
+        ? "http://localhost:8787"
+        : DEV_RADIO_MEDIA_BASE);
+  const radioMediaEnvironment = !radioMediaBase
+    ? "unconfigured"
+    : radioMediaBase === PROD_RADIO_MEDIA_BASE
+      ? "production"
+      : radioMediaBase === DEV_RADIO_MEDIA_BASE
+        ? "development"
+        : isLocal ? "local" : isProduction ? "production" : "development";
 
   return {
     frontendOrigin: String(location?.origin || ""),
     apiBase: isProduction ? PROD_API_BASE : DEV_API_BASE,
+    radioMediaBase,
+    radioMediaEnvironment,
     isProduction,
     isLocalhost: isLocal,
     backendEnabled: backendEnabledOverride ?? !isLocal,

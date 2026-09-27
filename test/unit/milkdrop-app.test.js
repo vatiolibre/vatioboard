@@ -23,7 +23,6 @@ const audioRuntimeMock = {
   getAudioElement: vi.fn(() => audioElement),
   getState: vi.fn(() => ({ ...defaultAudioState })),
   subscribe: vi.fn(() => vi.fn()),
-  setMediaSessionEnabled: vi.fn(),
   play: vi.fn().mockResolvedValue(true),
   pause: vi.fn(),
   nextTrack: vi.fn().mockResolvedValue(undefined),
@@ -41,7 +40,6 @@ const audioRuntimeMock = {
   restoreSession: vi.fn().mockResolvedValue(undefined),
   primeAudio: vi.fn().mockResolvedValue(true),
   stopPlayback: vi.fn(),
-  updatePlayerMediaSessionMetadata: vi.fn(),
 };
 
 const visualizerMock = {
@@ -117,6 +115,7 @@ function installMilkdropMocks() {
     acquireGraph: acquireGraphMock,
     releaseGraph: releaseGraphMock,
     primeAudioContext: vi.fn(),
+    prepareGraphFromUserGesture: vi.fn().mockResolvedValue(true),
   }));
   vi.doMock("../../src/shared/audio-visualizer.js", () => ({
     isVisualizerSafeSource: vi.fn(() => true),
@@ -248,7 +247,6 @@ describe("Milkdrop OS app module", () => {
     audioRuntimeMock.getState.mockReturnValue({ ...defaultAudioState });
     audioRuntimeMock.subscribe.mockClear();
     audioRuntimeMock.subscribe.mockReturnValue(vi.fn());
-    audioRuntimeMock.setMediaSessionEnabled.mockClear();
     createVisualizerMock.mockClear();
     visualizerMock.connectAudio.mockClear();
     visualizerMock.loadPreset.mockClear();

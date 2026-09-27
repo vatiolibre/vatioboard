@@ -2,6 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   acquireGraph,
+  prepareGraphForElement,
+  prepareGraphFromUserGesture,
   releaseGraph,
   getGraph,
   destroyGraphForElement,
@@ -47,6 +49,55 @@ describe("audio-graph-registry", () => {
   });
 
   describe("acquireGraph", () => {
+    it("routes analysis-only media through zero gain while native radio stays unbound", async () => {
+      const output = { gain: { value: 1 }, connect: vi.fn() };
+      fakeAudioContext.createGain = vi.fn(() => output);
+      mediaElement.dataset.vatioAnalysisOnly = "true";
+      const entry = await acquireGraph(mediaElement);
+      expect(entry.sourceNode).toBe(fakeSourceNode);
+      expect(output.gain.value).toBe(0);
+      expect(fakeSourceNode.connect).toHaveBeenCalledWith(output);
+      expect(fakeSourceNode.connect).not.toHaveBeenCalledWith(fakeAudioContext.destination);
+      expect(output.connect).toHaveBeenCalledWith(fakeAudioContext.destination);
+      const native = document.createElement("audio"); native.dataset.vatioNativeRadio = "true";
+      expect(await acquireGraph(native)).toBeNull();
+    });
+    it("prepares the source graph from a gesture before media playback starts", async () => {
+      const preparation = prepareGraphFromUserGesture(mediaElement);
+
+      expect(window.AudioContext).toHaveBeenCalledTimes(1);
+      expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledWith(mediaElement);
+      expect(fakeSourceNode.connect).toHaveBeenCalledWith(fakeAudioContext.destination);
+      await expect(preparation).resolves.toBe(true);
+    });
+
+    it("does not create another context while gesture preparation is pending", async () => {
+      let resumeContext;
+      fakeAudioContext.state = "suspended";
+      fakeAudioContext.resume = vi.fn(() => new Promise((resolve) => {
+        resumeContext = () => {
+          fakeAudioContext.state = "running";
+          resolve();
+        };
+      }));
+
+      const first = prepareGraphFromUserGesture(mediaElement);
+      const second = prepareGraphFromUserGesture(mediaElement);
+
+      expect(window.AudioContext).toHaveBeenCalledTimes(1);
+      resumeContext();
+      await expect(Promise.all([first, second])).resolves.toEqual([true, true]);
+      expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
+    });
+
+    it("prepares and caches a graph without retaining a consumer reference", async () => {
+      const preparation = prepareGraphForElement(mediaElement);
+      expect(window.AudioContext).toHaveBeenCalledTimes(1);
+      await expect(preparation).resolves.toBe(true);
+      expect(getGraph(mediaElement)).toMatchObject({ refCount: 0 });
+      expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
+    });
+
     it("creates a new graph for a media element", async () => {
       const entry = await acquireGraph(mediaElement);
       expect(entry).not.toBeNull();
@@ -99,6 +150,22 @@ describe("audio-graph-registry", () => {
       const [entry1, entry2] = await Promise.all([firstAcquire, secondAcquire]);
       expect(entry1).toBe(entry2);
       expect(entry1.refCount).toBe(2);
+      expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
+    });
+
+    it("shares one radio media source between mini and Milkdrop consumers across relay fallback", async () => {
+      mediaElement.crossOrigin = "anonymous";
+      mediaElement.src = "https://station.example/live.mp3";
+      const [miniGraph, milkdropGraph] = await Promise.all([
+        acquireGraph(mediaElement),
+        acquireGraph(mediaElement),
+      ]);
+      expect(miniGraph).toBe(milkdropGraph);
+      expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
+
+      mediaElement.src = "https://radio-media.vatioboard.com/v1/stations/11111111-1111-4111-8111-111111111111/stream";
+      const fallbackGraph = await acquireGraph(mediaElement);
+      expect(fallbackGraph).toBe(miniGraph);
       expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
     });
 
@@ -159,6 +226,18 @@ describe("audio-graph-registry", () => {
 
       expect(fakeAudioContext.resume).toHaveBeenCalled();
       expect(entry.refCount).toBe(0);
+    });
+
+    it("attempts to resume WebKit's interrupted context state", async () => {
+      await acquireGraph(mediaElement);
+      releaseGraph(mediaElement);
+      fakeAudioContext.state = "interrupted";
+      fakeAudioContext.resume = vi.fn(async () => {
+        fakeAudioContext.state = "running";
+      });
+
+      await expect(resumeGraphForElement(mediaElement)).resolves.toBe(true);
+      expect(fakeAudioContext.resume).toHaveBeenCalledTimes(1);
     });
   });
 
