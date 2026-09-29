@@ -47,6 +47,15 @@ async function prepare(page: Page) {
 async function openRoute(page: Page, route: string) {
   const path = route === "speed" ? "/" : `/${route}`;
   await page.goto(path, { waitUntil: "domcontentloaded" });
+  // WebKit may still be completing the initial acceleration navigation while
+  // the route marker is already available.  Wait for the document's completed
+  // state before interacting with its sheet controls; other routes do not
+  // perform those immediate panel interactions and keep the faster barrier.
+  if (route === "accel") {
+    await page.waitForFunction(() => document.readyState === "complete", undefined, {
+      timeout: 15_000,
+    });
+  }
   await expect.poll(() => page.locator("#app-view").getAttribute("data-vb-route"), {
     timeout: 30_000,
   }).toBe(route);
