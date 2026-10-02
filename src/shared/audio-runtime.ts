@@ -38,7 +38,13 @@ import {
 import { loadPlayerSession, savePlayerSession } from "./player-session.js";
 import { recordBackgroundDiagnostic } from "./background-diagnostics.js";
 import { startAudioLifecycleDiagnostics } from "./audio-lifecycle-diagnostics.js";
-import { acquireGraph, getGraph, releaseGraph } from "./audio-graph-registry.js";
+import {
+  acquireGraph,
+  getGraph,
+  primeAudioContext,
+  releaseGraph,
+  resumeGraphForElement,
+} from "./audio-graph-registry.js";
 import { isDemoTrackName } from "./track-source-policy.js";
 import type { AudioRuntimeState } from "../types/services";
 
@@ -168,6 +174,7 @@ const radioVisualizationOwners = new Set<symbol>();
 let radioVisualizationLifecycleBound = false;
 let radioVisualizationStatus: "idle" | "ready" | "unavailable" = "idle";
 let radioVisualizationGraphElement: ManagedAudioElement | null = null;
+let radioGraphPreparationPrimed = false;
 
 /** Register a visualizer consumer on the already-playing radio graph. */
 export async function requestRadioVisualization(owner: symbol) {
@@ -188,14 +195,16 @@ export async function requestRadioVisualization(owner: symbol) {
     return false;
   }
   if (radioVisualizationStatus === "ready" && radioVisualizationGraphElement === radioAudio) return true;
-  const graph = await acquireGraph(radioAudio);
+  // A manual visualizer action is a user gesture on Safari. If playback has
+  // not already prepared a graph, prime the shared context before the first
+  // asynchronous acquire so WebKit can resume it without creating a second
+  // context or media source.
+  if (!getGraph(radioAudio)) primeAudioContext();
+  const graph = await ensureRadioGraph(radioAudio);
   if (!graph) {
     radioVisualizationStatus = "unavailable";
     return false;
   }
-  // The consumer visualizer acquires its own retain; leave the shared graph
-  // cached and connected without making visualization own playback.
-  releaseGraph(radioAudio);
   radioVisualizationGraphElement = radioAudio;
   radioVisualizationStatus = "ready";
   notify();
@@ -209,6 +218,30 @@ export function getVisualizationAudioElement() {
   return state.isLive ? radioAudio : audio;
 }
 export function getRadioVisualizationStatus() { return radioVisualizationStatus; }
+
+async function ensureRadioGraph(mediaElement: ManagedAudioElement | null): Promise<boolean> {
+  if (!mediaElement) return false;
+  const existing = getGraph(mediaElement);
+  if (existing) {
+    return String(existing.audioContext?.state || "closed") === "running"
+      || await resumeGraphForElement(mediaElement);
+  }
+
+  const acquired = await acquireGraph(mediaElement);
+  if (!acquired) return false;
+  // The graph registry retains the entry itself. This temporary retain is
+  // released so visualization and playback remain independent consumers.
+  releaseGraph(mediaElement);
+  return true;
+}
+
+function primeRadioGraphForGesture(): void {
+  radioGraphPreparationPrimed = true;
+  // This call intentionally happens synchronously at the beginning of a
+  // selecting Play gesture. The existing demo-song takeover still performs
+  // the first real playback action before radio starts.
+  primeAudioContext();
+}
 
 function clearRadioTimer() {
   if (radioTimer) clearTimeout(radioTimer);
@@ -299,36 +332,48 @@ function startRadioPlayback(token = loadRequestToken) {
   state.connectionState = radioRetries ? "reconnecting" : "connecting";
   radioTimer = setTimeout(() => failRadio(token), 12000);
   // Restored radio follows the MP3 retention ordering: initiate the shared
-  // Player carrier before native playback. Both play() calls are still issued
-  // synchronously from the selecting gesture; do not await the carrier here.
+  // Player carrier before native playback.
   syncBackgroundModeKeepAlive();
 
-  // Native media play must not be delayed by awaited work in the gesture.
-  let attempt: Promise<void>;
-  try {
-    attempt = el.play();
-  } catch (error) {
-    attempt = Promise.reject(error);
+  const playNativeRadio = () => {
+    let attempt: Promise<void>;
+    try {
+      attempt = el.play();
+    } catch (error) {
+      attempt = Promise.reject(error);
+    }
+    notify();
+    return Promise.resolve(attempt).then(
+      () => token === loadRequestToken,
+      (error) => {
+        if (token !== loadRequestToken || attemptId !== radioAttempt || state.paused) return false;
+        if (error?.name === "NotAllowedError") {
+          clearRadioTimer();
+          state.paused = true;
+          state.loading = false;
+          state.error = "playback-blocked";
+          state.connectionState = "unavailable";
+          syncBackgroundModeKeepAlive();
+          flushSessionPersistence();
+          syncMediaSessionPlaybackState();
+          notify();
+        } else if (error?.name !== "AbortError") failRadio(token);
+        return false;
+      },
+    );
+  };
+
+  // During the demo-to-radio handoff, finish graph preparation before the
+  // radio element starts. This gives WebKit a live destination and analyser
+  // path without changing the Tesla demo-song ordering. Direct fallback radio
+  // playback keeps its synchronous native play() path if no takeover exists.
+  const prepareGraphBeforePlay = Boolean(getGraph(el)
+    || (radioGraphPreparationPrimed && restoredRadioTakeoverActive));
+  radioGraphPreparationPrimed = false;
+  if (prepareGraphBeforePlay) {
+    return ensureRadioGraph(el).then(() => playNativeRadio(), () => playNativeRadio());
   }
-  notify();
-  return Promise.resolve(attempt).then(
-    () => token === loadRequestToken,
-    (error) => {
-      if (token !== loadRequestToken || attemptId !== radioAttempt || state.paused) return false;
-      if (error?.name === "NotAllowedError") {
-        clearRadioTimer();
-        state.paused = true;
-        state.loading = false;
-        state.error = "playback-blocked";
-        state.connectionState = "unavailable";
-        syncBackgroundModeKeepAlive();
-        flushSessionPersistence();
-        syncMediaSessionPlaybackState();
-        notify();
-      } else if (error?.name !== "AbortError") failRadio(token);
-      return false;
-    },
-  );
+  return playNativeRadio();
 }
 function failRadio(token = loadRequestToken) {
   if (token !== loadRequestToken || !state.isLive || state.paused || radioRetryScheduled) return;
@@ -1246,6 +1291,7 @@ async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutopl
   radioAttempt++;
   clearRadioTimer(); radioRetries = 0; radioHasPlayed = false;
   state.isLive = track.media_kind === "radio";
+  if (!state.isLive) radioGraphPreparationPrimed = false;
   radioVisualizationStatus = "idle";
   radioVisualizationGraphElement = null;
   if (state.isLive && !autoplay) state.paused = true;
@@ -1595,8 +1641,9 @@ export function removeFromQueue(trackRef) {
  * Primes the audio element on first call (speed/audio.js pattern),
  * then resolves any deferred track load before starting playback.
  */
-export async function play() {
+export async function play({ fromUserGesture = false } = {}) {
   if (state.isLive && radioAudio?.src) {
+    if (fromUserGesture) primeRadioGraphForGesture();
     state.paused = false;
     enableBackgroundModeForPlaybackStart();
     if (restoredRadioSession && preparedRadioTakeover) {
@@ -1667,6 +1714,7 @@ export function stopPlayback() {
   state.currentTrack = null;
   restoredRadioSession = false;
   restoredRadioReason = null;
+  radioGraphPreparationPrimed = false;
   state.sourceType = null;
   state.loading = false;
   state.error = null;
@@ -2167,7 +2215,7 @@ function updateMediaSessionMetadata() {
       artworkUrl: track.artwork_ref && isArtworkUrl(track.artwork_ref) ? track.artwork_ref : "",
     },
     handlers: {
-      play,
+      play: () => play(),
       pause,
       stop: stopPlayback,
       previoustrack: previousTrack,
@@ -2239,9 +2287,10 @@ function notify() {
 }
 
 // Radio selection uses the normal queue while preserving its native element.
-export async function playTrackNow(track, _options = {}) {
+export async function playTrackNow(track, { fromUserGesture = false } = {}) {
   const selected = ensureQueueEntry(track);
   if (!selected) return false;
+  if (fromUserGesture && selected.media_kind === "radio") primeRadioGraphForGesture();
   clearPreparedNext(); clearLibraryContinuation();
   if (state.currentTrack) pushPlayedHistory(state.currentTrack);
   state.queue = prepareQueueEntries([selected, ...state.queue.slice(state.currentIndex + 1)], [selected._queueId]);

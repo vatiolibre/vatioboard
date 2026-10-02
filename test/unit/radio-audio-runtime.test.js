@@ -46,6 +46,16 @@ afterEach(async () => {
 });
 
 describe("native radio extension of main audio", () => {
+  it("primes the shared Web Audio context for a gesture-started radio selection", async () => {
+    const registry = await import("../../src/shared/audio-graph-registry.js");
+    const prime = vi.spyOn(registry, "primeAudioContext").mockReturnValue(true);
+
+    await runtime.playTrackNow(station(), { fromUserGesture: true });
+
+    expect(prime).toHaveBeenCalledTimes(1);
+    expect(runtime.getVisualizationAudioElement()).toBe(runtime.getAudioElement());
+  });
+
   it("starts the canonical relay radio synchronously on the shared playback element", async () => {
     const play = vi.spyOn(HTMLMediaElement.prototype, "play");
     const silence = vi.spyOn(system.getBackgroundKeepAliveAudio(), "play");

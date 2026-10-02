@@ -113,7 +113,6 @@ function getVisualizerModeLabel(mode) {
 }
 
 function isSafeVisualizerElement(audioElement, stateSnapshot = null) {
-  if (stateSnapshot?.isLive && audioElement?.dataset?.vatioAnalysisOnly !== "true") return false;
   // A source change temporarily clears analysisEligible while the next URL is
   // being resolved. The media element and its graph are still the same at
   // that point, so treating the transient loading state as unsafe destroys a
@@ -2055,7 +2054,7 @@ export function createPlayerShell({
     const s = runtime.getState();
     if (s.paused || !s.playing) {
       if (s.muted) runtime.setMuted(false);
-      void runtime.play();
+      void runtime.play({ fromUserGesture: true });
     } else {
       runtime.pause();
     }

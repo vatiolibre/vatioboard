@@ -186,15 +186,10 @@ export async function acquireGraph(mediaElement: HTMLMediaElement): Promise<Grap
     let sourceNode: MediaElementAudioSourceNode;
     try {
       sourceNode = audioContext.createMediaElementSource(mediaElement);
-      if (mediaElement.dataset?.vatioAnalysisOnly === "true") {
-        // Analysis consumers tap the source before this permanently silent output.
-        const output = audioContext.createGain();
-        output.gain.value = 0;
-        sourceNode.connect(output);
-        output.connect(audioContext.destination);
-      } else {
-        sourceNode.connect(audioContext.destination);
-      }
+      // Every registered media element is audible. Visualizers attach
+      // analyser consumers to this same source without replacing the real
+      // destination route.
+      sourceNode.connect(audioContext.destination);
     } catch (err) {
       if (typeof console !== "undefined" && console.warn) {
         console.warn("[audio-graph-registry] createMediaElementSource failed:", err);

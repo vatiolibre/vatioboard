@@ -44,7 +44,7 @@ test("native radio remains connected and leaves main recording leases independen
   await expect(page.locator("#vatio-native-radio-host audio")).toBeHidden();
   expect(
     await page.locator("#vatio-native-radio-host audio").getAttribute("crossorigin"),
-  ).toBeNull();
+  ).toBe("anonymous");
   await page.evaluate(async () => {
     const system = await import(/* @vite-ignore */ String("/src/shared/audio-system.ts"));
     await system.acquireBackgroundAudioLease("test-recording");
@@ -87,11 +87,15 @@ test("original MP3 path plays test tones and releases its lease on Pause", async
   await expect.poll(async () => (await snapshot()).leaseCount).toBe(0);
 });
 
-test("best-effort relay analysis feeds visualizers without binding or stopping native radio", async ({ page }) => {
+test("the shared radio graph feeds visualizers without binding or stopping native radio", async ({ page }) => {
   const errors: string[] = [];
+  let relayRequests = 0;
   page.on("pageerror", error => errors.push(error.message));
   await page.route("https://station.example/**", route => route.fulfill({ contentType: "audio/wav", body: radioFixture() }));
-  await page.route("**/v1/stations/*/stream", route => route.fulfill({ contentType: "audio/wav", body: radioFixture(), headers: { "Access-Control-Allow-Origin": "*" } }));
+  await page.route("**/v1/stations/*/stream", route => {
+    relayRequests += 1;
+    return route.fulfill({ contentType: "audio/wav", body: radioFixture(), headers: { "Access-Control-Allow-Origin": "*" } });
+  });
   await page.goto("/tesla-background-audio.html");
   await page.getByLabel("Station stream URL").fill("https://station.example/one");
   const click = (name: string) => page.getByRole("button", { name, exact: true }).click();
@@ -116,10 +120,10 @@ test("best-effort relay analysis feeds visualizers without binding or stopping n
     }
     return { status: runtime.getRadioVisualizationStatus(), energy,
       nativeHasGraph: Boolean(registry.getGraph(primary)), primaryPaused: primary.paused,
-      primaryTime: primary.currentTime, distinct: primary !== analysis };
+      primaryTime: primary.currentTime, sameElement: primary === analysis };
   });
   await expect.poll(async () => (await inspect()).energy).toBeGreaterThan(0.1);
-  expect(await inspect()).toMatchObject({ status: "ready", nativeHasGraph: false, primaryPaused: false, distinct: true });
+  expect(await inspect()).toMatchObject({ status: "ready", nativeHasGraph: true, primaryPaused: false, sameElement: true });
   await click("Radio scope");
   await expect(page.locator("canvas.media-player-audio-canvas")).toBeVisible();
   await click("Radio Milkdrop");
@@ -135,7 +139,8 @@ test("best-effort relay analysis feeds visualizers without binding or stopping n
   await page.route("**/v1/stations/*/stream", route => route.abort());
   await click("Radio spectrum");
   await expect.poll(async () => (await inspect()).status).toBe("unavailable");
-  expect(await inspect()).toMatchObject({ primaryPaused: false, nativeHasGraph: false });
+  expect(await inspect()).toMatchObject({ primaryPaused: false, nativeHasGraph: true, sameElement: true });
+  expect(relayRequests).toBe(1);
   await expect(page.locator("#vatio-native-radio-host audio")).toHaveAttribute("data-original", "yes");
   expect(errors).toEqual([]);
 });

@@ -233,7 +233,7 @@ export function mountTeslaAudioTest(root: HTMLElement) {
     return milkdrop.open();
   });
   button("Disable visualizations", stopVisualizations);
-  button("Play", () => runtimeOwned && runtime.play());
+  button("Play", () => runtimeOwned && runtime.play({ fromUserGesture: true }));
   button("Pause real track", () => runtimeOwned && runtime.pause());
   button("Next", () => runtimeOwned && runtime.nextTrack());
   button("Previous", () => runtimeOwned && runtime.previousTrack());
