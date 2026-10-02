@@ -22,16 +22,15 @@ import { prepareGraphFromUserGesture } from "../shared/audio-graph-registry.js";
 import { loadMilkdropPanelVisibility } from "./milkdrop-panel-prefs.js";
 import * as runtime from "../shared/audio-runtime.js";
 import { loadText, saveText } from "../shared/storage.js";
-import { loadPlaylists, loadPlaylistDetail } from "../shared/playlist-loader.js";
+import { loadPlaylistDetail } from "../shared/playlist-loader.js";
 import { isAudioAsset } from "../shared/audio-catalog.js";
 import { normalizeTrack } from "../shared/track-model.js";
 import {
   hasRadioExternalNetworkAccess,
-  getRadioRelayHealth,
   getValidRadioMediaBase,
   radioBrowser,
   radioStationToTrack,
-  getRadioLogoUrl,
+  getRadioArtworkUrl,
   type RadioBrowserStation,
 } from "../shared/radio-browser.js";
 import {
@@ -55,7 +54,6 @@ import {
   copyBackgroundDiagnostics,
   downloadBackgroundDiagnostics,
   isBackgroundDiagnosticsEnabled,
-  recordBackgroundDiagnostic,
 } from "../shared/background-diagnostics.js";
 import type { ShellAppRuntimeManager } from "../app-platform/types";
 import type { ShellRuntime } from "../types/shell";
@@ -202,10 +200,10 @@ async function resolveArtworkUrl(track) {
   }
 
   // Older saved radio sessions predate durable artwork persistence. Rebuild
-  // their relay logo URL from the stable station UUID instead of attempting
+  // their Rust artwork URL from the stable station UUID instead of attempting
   // to resolve an expired object URL or protected media asset.
   if (track.media_kind === "radio" && track.station_uuid) {
-    const logoUrl = getRadioLogoUrl(String(track.station_uuid));
+    const logoUrl = getRadioArtworkUrl(String(track.station_uuid));
     if (logoUrl) {
       artworkUrlCache.set(track.name, logoUrl);
       return logoUrl;
@@ -670,9 +668,6 @@ export function createPlayerShell({
   let radioLoading = false;
   let radioStations: RadioBrowserStation[] = [];
   let radioError = "";
-  let radioRelayError = "";
-  let radioRelayHealthPending = false;
-  let radioRelayHealthCheckedAt = 0;
   let radioRequestToken = 0;
   let queueFilter = "";
   let lastRenderedQueueSignature = "";
@@ -751,9 +746,6 @@ export function createPlayerShell({
         renderPlaylistList();
       } else if (radioOpen) {
         renderRadioList();
-        if (!radioRelayHealthPending && Date.now() - radioRelayHealthCheckedAt >= 60_000) {
-          void prewarmRadioRelayHealth();
-        }
         if (!radioLoaded && !radioLoading) void loadPopularRadioStations();
       }
     }
@@ -856,32 +848,7 @@ export function createPlayerShell({
   function getRadioDisabledMessage() {
     if (!hasRadioExternalNetworkAccess()) return t("playerRadioPermissionDenied");
     if (!getValidRadioMediaBase()) return t("playerRadioConfigurationMissing");
-    if (radioRelayError) return radioRelayError;
     return "";
-  }
-
-  async function prewarmRadioRelayHealth() {
-    if (radioRelayHealthPending) return;
-    radioRelayHealthPending = true;
-    try {
-      const health = await getRadioRelayHealth();
-      radioRelayHealthCheckedAt = Date.now();
-      recordBackgroundDiagnostic("radio-relay-health", {
-        relayEnvironment: health.environment,
-        relayHealth: health.status,
-        relayVersion: health.version,
-      });
-      radioRelayError = health.ok
-        ? ""
-        : health.status === "origin-rejected"
-          ? t("playerRadioOriginRejected")
-          : health.status === "unconfigured"
-            ? t("playerRadioConfigurationMissing")
-            : t("playerRadioDevelopmentRelayUnavailable");
-      if (radioOpen) renderRadioList();
-    } finally {
-      radioRelayHealthPending = false;
-    }
   }
 
   async function requestRadioStations(request: () => Promise<RadioBrowserStation[]>) {

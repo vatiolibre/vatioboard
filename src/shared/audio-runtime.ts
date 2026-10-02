@@ -38,9 +38,7 @@ import {
 import { loadPlayerSession, savePlayerSession } from "./player-session.js";
 import { recordBackgroundDiagnostic } from "./background-diagnostics.js";
 import { startAudioLifecycleDiagnostics } from "./audio-lifecycle-diagnostics.js";
-import { createRadioAnalysis } from "./radio-analysis.js";
-import { getRadioStreamRelayUrl, hasRadioExternalNetworkAccess } from "./radio-browser.js";
-import { getGraph } from "./audio-graph-registry.js";
+import { acquireGraph, getGraph, releaseGraph } from "./audio-graph-registry.js";
 import { isDemoTrackName } from "./track-source-policy.js";
 import type { AudioRuntimeState } from "../types/services";
 
@@ -166,39 +164,51 @@ let lastRadioFocusTrack: RuntimeTrack | null = null;
 let restoredRadioSession = false;
 let restoredRadioReason: "saved-session" | "pageshow" | null = null;
 let explicitPauseRevision = 0;
-const radioAnalysisOwners = new Set<symbol>();
-const radioAnalysis = createRadioAnalysis(() => {
-  recordBackgroundDiagnostic("radio-analysis-state", { phase: radioAnalysis.getStatus() });
-  notify();
-});
-let radioAnalysisVisibilityBound = false;
+const radioVisualizationOwners = new Set<symbol>();
+let radioVisualizationLifecycleBound = false;
+let radioVisualizationStatus: "idle" | "ready" | "unavailable" = "idle";
+let radioVisualizationGraphElement: ManagedAudioElement | null = null;
 
-/** Explicit visualizer gestures opt into a separate, inaudible relay stream. */
-export function requestRadioVisualization(owner: symbol) {
-  radioAnalysisOwners.add(owner);
-  if (!radioAnalysisVisibilityBound) {
-    radioAnalysisVisibilityBound = true;
-    window.addEventListener("pagehide", () => radioAnalysis.stop());
+/** Register a visualizer consumer on the already-playing radio graph. */
+export async function requestRadioVisualization(owner: symbol) {
+  radioVisualizationOwners.add(owner);
+  if (!radioVisualizationLifecycleBound) {
+    radioVisualizationLifecycleBound = true;
+    window.addEventListener("pagehide", () => {
+      // The graph remains attached to radioAudio. Renderers stop themselves
+      // while the page is hidden; no network or media lifecycle is changed.
+      radioVisualizationStatus = "idle";
+    });
     document.addEventListener("visibilitychange", () => {
-      // Do not restart on return: a visualizer/Play tap can rearm analysis.
-      if (document.hidden) radioAnalysis.stop();
+      if (document.hidden) radioVisualizationStatus = "idle";
     });
   }
-  return startRadioAnalysis();
+  if (!state.isLive || state.paused || document.hidden || !radioAudio?.src) {
+    radioVisualizationStatus = "unavailable";
+    return false;
+  }
+  if (radioVisualizationStatus === "ready" && radioVisualizationGraphElement === radioAudio) return true;
+  const graph = await acquireGraph(radioAudio);
+  if (!graph) {
+    radioVisualizationStatus = "unavailable";
+    return false;
+  }
+  // The consumer visualizer acquires its own retain; leave the shared graph
+  // cached and connected without making visualization own playback.
+  releaseGraph(radioAudio);
+  radioVisualizationGraphElement = radioAudio;
+  radioVisualizationStatus = "ready";
+  notify();
+  return true;
 }
 export function releaseRadioVisualization(owner: symbol) {
-  radioAnalysisOwners.delete(owner);
-  if (!radioAnalysisOwners.size) radioAnalysis.stop();
-}
-function startRadioAnalysis() {
-  if (!state.isLive || state.paused || document.hidden || !radioAnalysisOwners.size
-      || !hasRadioExternalNetworkAccess()) return Promise.resolve(false);
-  return radioAnalysis.start(getRadioStreamRelayUrl(String(state.currentTrack?.station_uuid || "")));
+  radioVisualizationOwners.delete(owner);
+  // Releasing a consumer must never pause, reload, or disconnect radioAudio.
 }
 export function getVisualizationAudioElement() {
-  return state.isLive ? radioAnalysis.getElement() : audio;
+  return state.isLive ? radioAudio : audio;
 }
-export function getRadioVisualizationStatus() { return radioAnalysis.getStatus(); }
+export function getRadioVisualizationStatus() { return radioVisualizationStatus; }
 
 function clearRadioTimer() {
   if (radioTimer) clearTimeout(radioTimer);
@@ -254,6 +264,9 @@ function selectAudioForTrack(live: boolean) {
       radioAudio = document.createElement("audio");
       radioAudio.controls = false;
       radioAudio.preload = "none";
+      // Configure CORS before the first relay URL is assigned so the same
+      // media element can be safely connected to Web Audio on WebKit.
+      radioAudio.crossOrigin = "anonymous";
       radioAudio.setAttribute("aria-label", "VatioBoard native radio");
       radioAudio.dataset.vatioNativeRadio = "true";
       const host = document.createElement("div");
@@ -303,7 +316,6 @@ function startRadioPlayback(token = loadRequestToken) {
     (error) => {
       if (token !== loadRequestToken || attemptId !== radioAttempt || state.paused) return false;
       if (error?.name === "NotAllowedError") {
-        radioAnalysis.stop();
         clearRadioTimer();
         state.paused = true;
         state.loading = false;
@@ -332,7 +344,6 @@ function failRadio(token = loadRequestToken) {
       void startRadioPlayback(token);
     }, 5000);
   } else {
-    radioAnalysis.stop();
     state.error = "station-unavailable";
     state.connectionState = "unavailable";
     state.loading = false;
@@ -1019,7 +1030,6 @@ function bindLifecyclePersistence() {
       || !state.isLive || !state.currentTrack) return;
     restoredRadioSession = true;
     restoredRadioReason = "pageshow";
-    radioAnalysis.stop();
     if (lastRadioFocusTrack) {
       state.paused = true;
       radioAudio?.pause();
@@ -1226,23 +1236,20 @@ function autoSkipUnavailable(autoplay = !state.paused) {
 async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutoplayError = false, restored = false } = {}) {
   const track = state.queue[index];
   if (!track) return;
-  if (track.media_kind === "radio" && !restored) lastRadioFocusTrack = null;
-  if (preparedRadioTakeover && track.media_kind === "radio" && !restored) {
-    clearRadioFocusPreparation();
-  }
   if (preparedRadioTakeover && track.media_kind !== "radio"
       && preparedRadioTakeover.track?._queueId !== track._queueId) {
     clearRadioFocusPreparation();
   }
   const requestToken = ++loadRequestToken;
-  radioAnalysis.stop();
   restoredRadioSession = restored && track.media_kind === "radio";
   restoredRadioReason = restoredRadioSession ? "saved-session" : null;
   radioAttempt++;
   clearRadioTimer(); radioRetries = 0; radioHasPlayed = false;
   state.isLive = track.media_kind === "radio";
+  radioVisualizationStatus = "idle";
+  radioVisualizationGraphElement = null;
   if (state.isLive && !autoplay) state.paused = true;
-  state.seekable = !state.isLive; state.analysisEligible = !state.isLive;
+  state.seekable = !state.isLive; state.analysisEligible = true;
   state.connectionState = state.isLive ? "connecting" : "idle";
   selectAudioForTrack(state.isLive);
   const requestedStartTime = state.isLive ? 0 : normalizePlaybackTime(startTime);
@@ -1312,12 +1319,16 @@ async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutopl
   state.cacheable = resolved.cacheable;
   currentSourceRevoke = resolved.revokeUrl;
 
-  // MP3 analysis and relay use anonymous CORS. Direct native stations must
-  // also work without CORS response headers and never enter the audio graph.
-  if (state.isLive && resolved.transport === "radio-direct") el.removeAttribute("crossorigin");
-  else el.crossOrigin = "anonymous";
+  // The relay is the canonical radio source and is CORS-enabled for Web Audio.
+  el.crossOrigin = "anonymous";
 
   resetAudioElementPlaybackRate(el);
+  if (state.isLive && el.src) {
+    // Reuse the one radio element while explicitly aborting the previous
+    // station before replacing its relay URL.
+    try { el.pause(); } catch { /* ignore */ }
+    try { el.removeAttribute("src"); el.load(); } catch { /* ignore */ }
+  }
   el.src = resolved.src;
   resetAudioElementPlaybackRate(el);
   el.volume = state.muted ? 0 : state.volume;
@@ -1346,7 +1357,6 @@ async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutopl
     recordBackgroundDiagnostic("native-radio-source", { sourceTransport: state.sourceTransport, primaryConnected: el.isConnected });
     if (autoplay) {
       void startRadioPlayback(requestToken);
-      if (!restoredRadioSession) void startRadioAnalysis();
     }
     return;
   }
@@ -1452,7 +1462,7 @@ function waitForRadioPlayback(token: number, queueId: string) {
   });
 }
 
-async function startRestoredRadioViaDemo() {
+async function startRestoredRadioViaDemo({ restored = restoredRadioSession } = {}) {
   if (radioTakeoverPending) return radioTakeoverPending;
   if (!state.isLive || state.paused || !preparedRadioTakeover || !state.currentTrack) {
     return startRadioPlayback();
@@ -1486,7 +1496,7 @@ async function startRestoredRadioViaDemo() {
 
     // Keep the active runtime/lease while loadTrack swaps the managed local
     // element back to the native radio element and starts the restored station.
-    await loadTrack(radioIndex, { autoplay: true, restored: true });
+    await loadTrack(radioIndex, { autoplay: true, restored });
     if (state.currentTrack?._queueId !== radioQueueId) return false;
     if (!(await waitForRadioPlayback(loadRequestToken, radioQueueId))) return false;
     removeQueueEntryAt(0);
@@ -1590,10 +1600,9 @@ export async function play() {
     state.paused = false;
     enableBackgroundModeForPlaybackStart();
     if (restoredRadioSession && preparedRadioTakeover) {
-      return startRestoredRadioViaDemo();
+      return startRestoredRadioViaDemo({ restored: true });
     }
     const playback = startRadioPlayback();
-    void startRadioAnalysis();
     return playback;
   }
   state.paused = false;
@@ -1633,7 +1642,8 @@ export async function play() {
 export function pause() {
   explicitPauseRevision++;
   radioTakeoverPending = null;
-  radioAnalysis.stop();
+  radioVisualizationStatus = "idle";
+  radioVisualizationGraphElement = null;
   radioAttempt++;
   clearRadioTimer();
   state.paused = true;
@@ -1648,7 +1658,8 @@ export function stopPlayback() {
   clearRadioFocusPreparation();
   restoredRadioTakeoverActive = false;
   lastRadioFocusTrack = null;
-  radioAnalysis.stop();
+  radioVisualizationStatus = "idle";
+  radioVisualizationGraphElement = null;
   loadRequestToken++; radioAttempt++; clearRadioTimer();
   clearLibraryContinuation();
   state.paused = true;
@@ -1906,8 +1917,8 @@ export function getState() {
     backgroundMode: state.backgroundMode,
     sourceType: state.sourceType,
     sourceTransport: state.sourceTransport, isLive: state.isLive, seekable: !state.isLive,
-    cacheable: state.cacheable, analysisEligible: state.isLive ? radioAnalysis.getStatus() === "ready" : true,
-    analysisActive: state.isLive ? radioAnalysis.getStatus() === "ready" : Boolean(audio && getGraph(audio)),
+    cacheable: state.cacheable, analysisEligible: true,
+    analysisActive: state.isLive ? radioVisualizationStatus === "ready" : Boolean(audio && getGraph(audio)),
     connectionState: state.connectionState, radioFailureClass: null,
     radioVisualizationAutoStart: !restoredRadioSession,
     restoredRadioSession,
@@ -1961,6 +1972,14 @@ export async function restoreSession(availableTracks, { autoplay = false } = {})
   state.shuffle = session.shuffle;
   state.backgroundMode = session.backgroundMode;
 
+  // Resolve the cached demo during boot, before a later radio Play gesture.
+  // This keeps the focus handoff free of network work in the activation turn.
+  const focusTrack = Array.isArray(availableTracks)
+    ? availableTracks.find((track) => isRadioFocusTrack(track))
+    : null;
+  lastRadioFocusTrack = focusTrack || null;
+  if (focusTrack) await prepareRadioFocus(focusTrack);
+
   // Rebuild queue from persisted snapshots, overlaying live catalog metadata
   // when available but preserving snapshot-only entries and duplicates.
   const trackMap = new Map(availableTracks.map((t) => [t.name, t]));
@@ -1994,13 +2013,6 @@ export async function restoreSession(availableTracks, { autoplay = false } = {})
 
   if (startIndex >= 0) {
     const restoredTrack = restoredQueue[startIndex];
-    if (restoredTrack?.media_kind === "radio") {
-      const focusTrack = Array.isArray(availableTracks)
-        ? availableTracks.find((track) => isRadioFocusTrack(track))
-        : null;
-      lastRadioFocusTrack = focusTrack || null;
-      await prepareRadioFocus(focusTrack);
-    }
     // Restored radio must wait for the selecting Play gesture. Its prepared
     // local demo is the source that establishes Tesla ownership; starting the
     // native station here would bypass that production playback lifecycle.
@@ -2048,7 +2060,11 @@ function onPlay() {
 }
 
 function onPause() {
-  if (state.isLive && !state.loading) { state.paused = true; clearRadioTimer(); radioAnalysis.stop(); }
+  if (state.isLive && !state.loading) {
+    state.paused = true;
+    clearRadioTimer();
+    radioVisualizationStatus = "idle";
+  }
   // Only mark paused if not a temporary interruption (e.g. seeking)
   syncBackgroundModeKeepAlive();
   syncMediaSessionPlaybackState();
@@ -2229,6 +2245,15 @@ export async function playTrackNow(track, _options = {}) {
   clearPreparedNext(); clearLibraryContinuation();
   if (state.currentTrack) pushPlayedHistory(state.currentTrack);
   state.queue = prepareQueueEntries([selected, ...state.queue.slice(state.currentIndex + 1)], [selected._queueId]);
+  if (selected.media_kind === "radio" && preparedRadioTakeover) {
+    // Load the relay URL without starting it, then run the already-prepared
+    // local demo through the real primary audio path before radio handoff.
+    state.paused = true;
+    await loadTrack(0, { autoplay: false });
+    state.paused = false;
+    await startRestoredRadioViaDemo({ restored: false });
+    return true;
+  }
   state.paused = false;
   await loadTrack(0, { autoplay: true });
   return true;

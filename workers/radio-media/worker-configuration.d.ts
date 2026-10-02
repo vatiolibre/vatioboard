@@ -3,8 +3,6 @@
 // Runtime types generated with workerd@1.20260907.1 2026-09-01 
 interface __BaseEnv_Env {
 	STREAM_STARTS: RateLimit;
-	PROBE_REQUESTS: RateLimit;
-	LOGO_REQUESTS: RateLimit;
 	ALLOWED_ORIGINS: "https://vatioboard.com,https://www.vatioboard.com";
 	SELF_HOSTNAME: "radio-media.vatioboard.com";
 }

@@ -140,7 +140,6 @@ export function primeAudioContext(): boolean {
  * @returns {Promise<GraphEntry|null>} null on failure (CORS, no AudioContext, etc.)
  */
 export async function acquireGraph(mediaElement: HTMLMediaElement): Promise<GraphEntry | null> {
-  if (mediaElement?.dataset?.vatioNativeRadio === "true") return null;
   const existing = MEDIA_GRAPH_BY_ELEMENT.get(mediaElement);
   if (existing) {
     return retainGraph(existing);

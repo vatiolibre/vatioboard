@@ -4,40 +4,35 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const METADATA_TTL_MS = 10 * 60 * 1000;
 const NEGATIVE_TTL_MS = 60 * 1000;
 const UPSTREAM_TIMEOUT_MS = 12_000;
-const MAX_LOGO_BYTES = 2 * 1024 * 1024;
 const USER_AGENT = "VatioBoard-Radio-Relay/1.0 (+https://vatioboard.com)";
 const WORKER_VERSION = "radio-media-v2";
-const PROBE_BYTES = 8 * 1024;
+const STREAM_SAMPLE_BYTES = 8 * 1024;
 const DEFAULT_ORIGINS = ["https://vatioboard.com", "https://www.vatioboard.com"];
-
-const FALLBACK_LOGO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Radio"><rect width="256" height="256" rx="42" fill="#131722"/><path d="M54 102h148v104H54zM82 102l91-57M83 143h72M83 169h58" fill="none" stroke="#73d4ff" stroke-width="14" stroke-linecap="round" stroke-linejoin="round"/><circle cx="178" cy="151" r="15" fill="#73d4ff"/></svg>`;
 
 interface RateLimitBinding {
   limit(options: { key: string }): Promise<{ success: boolean }>;
 }
 
 export interface Env {
+  [key: string]: unknown;
   ALLOWED_ORIGINS?: string;
   SELF_HOSTNAME?: string;
   STREAM_STARTS?: RateLimitBinding;
-  PROBE_REQUESTS?: RateLimitBinding;
-  LOGO_REQUESTS?: RateLimitBinding;
   BUILD_VERSION?: string;
 }
 
 interface StationMetadata {
   stationuuid: string;
   url: string;
-  favicon: string;
 }
 
 interface CachedMetadata {
   value: StationMetadata | null;
   expiresAt: number;
-  failure?: RadioProbeOutcome;
+  failure?: RadioResolutionOutcome;
 }
 
-type RadioProbeOutcome =
+type RadioResolutionOutcome =
   | "ready"
   | "station-unavailable"
   | "directory-timeout"
@@ -49,16 +44,14 @@ type RadioProbeOutcome =
   | "empty-response"
   | "early-close";
 
-type ProbeStage = "relay" | "directory" | "target" | "upstream" | "content";
-
 interface StationResolution {
   station: StationMetadata | null;
-  outcome: RadioProbeOutcome;
+  outcome: RadioResolutionOutcome;
 }
 
 interface UpstreamFetchResult {
   response: Response | null;
-  outcome: RadioProbeOutcome;
+  outcome: RadioResolutionOutcome;
   redirects: number;
 }
 
@@ -95,14 +88,6 @@ function response(status: number, message: string, origin: string | null = null,
   headers.set("Cache-Control", "no-store");
   new Headers(extra).forEach((value, key) => headers.set(key, value));
   return new Response(message, { status, headers });
-}
-
-function jsonResponse(status: number, payload: Record<string, unknown>, origin: string, env: Env): Response {
-  const headers = corsHeaders(origin);
-  headers.set("Content-Type", "application/json; charset=utf-8");
-  headers.set("Cache-Control", "no-store");
-  headers.set("X-VatioBoard-Radio-Version", String(env.BUILD_VERSION || WORKER_VERSION).slice(0, 80));
-  return Response.json(payload, { status, headers });
 }
 
 function getClientKey(request: Request): string {
@@ -207,7 +192,6 @@ async function fetchStationFromMirror(mirror: string, uuid: string): Promise<Sta
   const value = {
     stationuuid: uuid,
     url: stationUrl(matches[0].url_resolved),
-    favicon: stationUrl(matches[0].favicon),
   };
   if (!validateTarget(value.url, "")) throw new Error("unrelayable-target");
   return value;
@@ -235,7 +219,7 @@ async function resolveStationDetailed(uuid: string, selfHostname = "radio-media.
     const reasons = error instanceof AggregateError
       ? error.errors.map((item) => item instanceof Error ? item.message : "unknown")
       : [error instanceof Error ? error.message : "unknown"];
-    const outcome: RadioProbeOutcome = reasons.includes("unrelayable-target")
+    const outcome: RadioResolutionOutcome = reasons.includes("unrelayable-target")
       ? "unrelayable-target"
       : reasons.some((reason) => /abort|timeout/i.test(reason))
         ? "directory-timeout"
@@ -246,10 +230,6 @@ async function resolveStationDetailed(uuid: string, selfHostname = "radio-media.
     await writeSharedMetadataCache(uuid, selfHostname, entry);
     return { station: null, outcome };
   }
-}
-
-async function resolveStation(uuid: string, selfHostname: string): Promise<StationMetadata | null> {
-  return (await resolveStationDetailed(uuid, selfHostname)).station;
 }
 
 function isIpLiteral(hostname: string): boolean {
@@ -313,14 +293,6 @@ async function fetchValidatedUpstreamResult(
   return { response: null, outcome: "redirect-limit", redirects: 3 };
 }
 
-async function fetchValidatedUpstream(
-  initialUrl: string,
-  selfHostname: string,
-  init: RequestInit,
-): Promise<Response | null> {
-  return (await fetchValidatedUpstreamResult(initialUrl, selfHostname, init)).response;
-}
-
 function isSupportedAudio(contentType: string): boolean {
   const mime = contentType.split(";", 1)[0].trim().toLowerCase();
   return [
@@ -352,20 +324,20 @@ function sniffAudioMime(bytes: Uint8Array): string {
   return "";
 }
 
-async function readProbeBytes(body: ReadableStream<Uint8Array> | null): Promise<Uint8Array> {
+async function readStreamSample(body: ReadableStream<Uint8Array> | null): Promise<Uint8Array> {
   if (!body) return new Uint8Array();
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
   let timeout: ReturnType<typeof setTimeout> | null = null;
   const timedOut = new Promise<never>((_resolve, reject) => {
-    timeout = setTimeout(() => reject(new Error("probe-body-timeout")), 5_000);
+    timeout = setTimeout(() => reject(new Error("stream-body-timeout")), 5_000);
   });
   try {
-    while (size < PROBE_BYTES) {
+    while (size < STREAM_SAMPLE_BYTES) {
       const { done, value } = await Promise.race([reader.read(), timedOut]);
       if (done) break;
-      const remaining = PROBE_BYTES - size;
+      const remaining = STREAM_SAMPLE_BYTES - size;
       const chunk = value.byteLength > remaining ? value.slice(0, remaining) : value;
       chunks.push(chunk);
       size += chunk.byteLength;
@@ -383,14 +355,6 @@ async function readProbeBytes(body: ReadableStream<Uint8Array> | null): Promise<
   return bytes;
 }
 
-function isSupportedArtwork(contentType: string): boolean {
-  const mime = contentType.split(";", 1)[0].trim().toLowerCase();
-  return [
-    "image/png", "image/jpeg", "image/webp", "image/gif", "image/avif",
-    "image/x-icon", "image/vnd.microsoft.icon",
-  ].includes(mime);
-}
-
 function copyHeaders(source: Headers, names: string[]): Headers {
   const result = new Headers();
   for (const name of names) {
@@ -401,7 +365,6 @@ function copyHeaders(source: Headers, names: string[]): Headers {
 }
 
 async function handleStream(request: Request, env: Env, uuid: string, origin: string): Promise<Response> {
-  const startedAt = Date.now();
   const limited = await applyRateLimit(env.STREAM_STARTS, request, "stream");
   if (limited) return limited;
   const selfHostname = env.SELF_HOSTNAME || "radio-media.vatioboard.com";
@@ -448,7 +411,7 @@ async function handleStream(request: Request, env: Env, uuid: string, origin: st
     const [sampleBody, passthroughBody] = body.tee();
     let sample: Uint8Array;
     try {
-      sample = await readProbeBytes(sampleBody);
+      sample = await readStreamSample(sampleBody);
     } catch {
       try { await passthroughBody.cancel(); } catch { /* best effort */ }
       return response(504, "Upstream body timeout", origin);
@@ -470,13 +433,6 @@ async function handleStream(request: Request, env: Env, uuid: string, origin: st
   if (contentType) headers.set("Content-Type", contentType);
   headers.set("Cache-Control", "no-store");
   headers.set("X-VatioBoard-Radio-Version", String(env.BUILD_VERSION || WORKER_VERSION).slice(0, 80));
-  logEvent("relay_start", {
-    stage: "stream",
-    outcome: "ready",
-    status: upstream.status,
-    redirects: upstreamResult.redirects,
-    latencyBucket: Math.min(30, Math.floor((Date.now() - startedAt) / 1000)) * 1000,
-  });
   const responseInit = {
     status: upstream.status,
     headers,
@@ -487,203 +443,14 @@ async function handleStream(request: Request, env: Env, uuid: string, origin: st
   return new Response(body, responseInit);
 }
 
-function probeStatus(outcome: RadioProbeOutcome): number {
-  if (outcome === "ready") return 200;
-  if (outcome === "station-unavailable") return 404;
-  if (outcome === "directory-timeout" || outcome === "upstream-timeout") return 504;
-  if (outcome === "unrelayable-target") return 422;
-  return 502;
-}
-
-function probeStage(outcome: RadioProbeOutcome): ProbeStage {
-  if (outcome === "directory-timeout" || outcome === "station-unavailable") return "directory";
-  if (outcome === "unrelayable-target" || outcome === "redirect-limit") return "target";
-  if (outcome === "unsupported-content" || outcome === "empty-response" || outcome === "early-close") return "content";
-  return outcome === "ready" ? "content" : "upstream";
-}
-
-async function handleProbe(request: Request, env: Env, uuid: string, origin: string): Promise<Response> {
-  const startedAt = Date.now();
-  const limited = await applyRateLimit(env.PROBE_REQUESTS, request, "probe");
-  if (limited) return limited;
-  const selfHostname = env.SELF_HOSTNAME || "radio-media.vatioboard.com";
-  const resolution = await resolveStationDetailed(uuid, selfHostname);
-  if (!resolution.station) {
-    return jsonResponse(probeStatus(resolution.outcome), {
-      ok: false,
-      outcome: resolution.outcome,
-      stage: probeStage(resolution.outcome),
-      version: env.BUILD_VERSION || WORKER_VERSION,
-    }, origin, env);
-  }
-
-  let upstreamResult: UpstreamFetchResult;
-  try {
-    upstreamResult = await fetchValidatedUpstreamResult(
-      resolution.station.url,
-      selfHostname,
-      {
-        method: "GET",
-        headers: { Accept: "audio/*", Range: `bytes=0-${PROBE_BYTES - 1}`, "User-Agent": USER_AGENT },
-      },
-    );
-  } catch (error) {
-    const outcome: RadioProbeOutcome = error instanceof Error && /abort|timeout/i.test(`${error.name} ${error.message}`)
-      ? "upstream-timeout"
-      : "upstream-status";
-    return jsonResponse(probeStatus(outcome), {
-      ok: false,
-      outcome,
-      stage: "upstream",
-      version: env.BUILD_VERSION || WORKER_VERSION,
-    }, origin, env);
-  }
-
-  const upstream = upstreamResult.response;
-  let outcome = upstreamResult.outcome;
-  if (upstream && ![200, 206].includes(upstream.status)) outcome = "upstream-status";
-  if (upstream && [200, 206].includes(upstream.status)) {
-    let bytes: Uint8Array;
-    try {
-      bytes = await readProbeBytes(upstream.body);
-    } catch {
-      outcome = "upstream-timeout";
-      bytes = new Uint8Array();
-    }
-    const declaredType = upstream.headers.get("Content-Type") || "";
-    if (outcome === "upstream-timeout") {
-      // Preserve the timeout classification assigned above.
-    } else if (bytes.byteLength === 0) outcome = "empty-response";
-    else if (bytes.byteLength < 4) outcome = "early-close";
-    else if (!isSupportedAudio(declaredType) && (!isGenericAudio(declaredType) || !sniffAudioMime(bytes))) {
-      outcome = "unsupported-content";
-    } else {
-      outcome = "ready";
-    }
-  }
-  const status = probeStatus(outcome);
-  logEvent("probe_result", {
-    stage: probeStage(outcome),
-    outcome,
-    status,
-    redirects: upstreamResult.redirects,
-    latencyBucket: Math.min(30, Math.floor((Date.now() - startedAt) / 1000)) * 1000,
-  });
-  return jsonResponse(status, {
-    ok: outcome === "ready",
-    outcome,
-    stage: probeStage(outcome),
-    version: env.BUILD_VERSION || WORKER_VERSION,
-  }, origin, env);
-}
-
-function fallbackLogo(origin: string | null): Response {
-  const headers = corsHeaders(origin);
-  headers.set("Content-Type", "image/svg+xml; charset=utf-8");
-  headers.set("Cache-Control", "public, max-age=3600");
-  headers.set("CDN-Cache-Control", "public, max-age=3600");
-  logEvent("logo_fallback");
-  return new Response(FALLBACK_LOGO, { status: 200, headers });
-}
-
-async function cachedFallbackLogo(
-  cache: Cache | null,
-  cacheKey: Request,
-  method: string,
-  origin: string | null,
-): Promise<Response> {
-  const fallback = fallbackLogo(origin);
-  if (cache) await cache.put(cacheKey, fallback.clone());
-  return method === "HEAD" ? new Response(null, fallback) : fallback;
-}
-
-async function collectLimitedBody(body: ReadableStream<Uint8Array> | null): Promise<Uint8Array | null> {
-  if (!body) return new Uint8Array();
-  const reader = body.getReader();
-  const chunks: Uint8Array[] = [];
-  let size = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > MAX_LOGO_BYTES) {
-        await reader.cancel();
-        return null;
-      }
-      chunks.push(value);
-    }
-  } catch {
-    return null;
-  }
-  const result = new Uint8Array(size);
-  let offset = 0;
-  for (const chunk of chunks) {
-    result.set(chunk, offset);
-    offset += chunk.byteLength;
-  }
-  return result;
-}
-
 function getDefaultCache(): Cache | null {
   return (globalThis as typeof globalThis & { caches?: CacheStorage & { default?: Cache } }).caches?.default || null;
 }
 
-async function handleLogo(request: Request, env: Env, uuid: string, origin: string | null): Promise<Response> {
-  const cache = getDefaultCache();
-  const cacheUrl = new URL(request.url);
-  cacheUrl.searchParams.set("__origin", origin || "none");
-  const cacheKey = new Request(cacheUrl.toString(), { method: "GET" });
-  if (cache) {
-    const hit = await cache.match(cacheKey);
-    if (hit) {
-      logEvent("logo_hit");
-      // Reapply the current route policy so older cached artwork cannot omit
-      // CORS/CORP headers after a Worker policy update.
-      const headers = new Headers(hit.headers);
-      corsHeaders(origin).forEach((value, key) => headers.set(key, value));
-      return new Response(request.method === "HEAD" ? null : hit.body, {
-        status: hit.status,
-        statusText: hit.statusText,
-        headers,
-      });
-    }
-  }
-  logEvent("logo_miss");
-  const limited = await applyRateLimit(env.LOGO_REQUESTS, request, "logo");
-  if (limited) return limited;
-  const station = await resolveStation(uuid, env.SELF_HOSTNAME || "radio-media.vatioboard.com");
-  if (!station?.favicon) return cachedFallbackLogo(cache, cacheKey, request.method, origin);
-  let upstream: Response | null;
-  try {
-    upstream = await fetchValidatedUpstream(station.favicon, env.SELF_HOSTNAME || "radio-media.vatioboard.com", {
-      headers: { Accept: "image/avif,image/webp,image/png,image/jpeg,image/gif,image/x-icon", "User-Agent": USER_AGENT },
-    });
-  } catch {
-    return cachedFallbackLogo(cache, cacheKey, request.method, origin);
-  }
-  if (!upstream?.ok || !isSupportedArtwork(upstream.headers.get("Content-Type") || "")) {
-    return cachedFallbackLogo(cache, cacheKey, request.method, origin);
-  }
-  const declaredLength = Number(upstream.headers.get("Content-Length") || 0);
-  if (declaredLength > MAX_LOGO_BYTES) return cachedFallbackLogo(cache, cacheKey, request.method, origin);
-  const bytes = await collectLimitedBody(upstream.body);
-  if (!bytes) return cachedFallbackLogo(cache, cacheKey, request.method, origin);
-  const headers = corsHeaders(origin);
-  headers.set("Content-Type", upstream.headers.get("Content-Type")!.split(";", 1)[0]);
-  headers.set("Content-Length", String(bytes.byteLength));
-  headers.set("Cache-Control", "public, max-age=86400");
-  headers.set("CDN-Cache-Control", "public, max-age=604800");
-  const body = bytes.buffer as ArrayBuffer;
-  const result = new Response(request.method === "HEAD" ? null : body, { status: 200, headers });
-  if (cache) await cache.put(cacheKey, new Response(body, { status: 200, headers }));
-  return result;
-}
-
-function preflight(origin: string, route: "stream" | "logo" | "probe" | "health"): Response {
+function preflight(origin: string): Response {
   const headers = corsHeaders(origin);
   headers.set("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
-  headers.set("Access-Control-Allow-Headers", route === "stream" || route === "probe" ? "Accept, Range" : "Accept");
+  headers.set("Access-Control-Allow-Headers", "Accept, Range");
   headers.set("Access-Control-Max-Age", "86400");
   return new Response(null, { status: 204, headers });
 }
@@ -692,43 +459,14 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
     if (url.search) return response(400, "Query parameters are not allowed");
-    const isHealth = url.pathname === "/v1/health";
-    const match = /^\/v1\/stations\/([^/]+)\/(stream|logo|probe)$/.exec(url.pathname);
-    if (!isHealth && !match) return response(404, "Not found");
-    const route = match?.[2] as "stream" | "logo" | "probe" | undefined;
+    const match = /^\/v1\/stations\/([^/]+)\/stream$/.exec(url.pathname);
+    if (!match) return response(404, "Not found");
     const origin = request.headers.get("Origin");
     const origins = allowedOrigins(env);
-    // CSS background images and Media Session artwork are fetched in no-cors
-    // mode by some Chromium builds, so their GET/HEAD requests may omit Origin.
-    // The logo route is safe to expose this way because it accepts only a
-    // validated station UUID and never an arbitrary upstream URL. An explicit
-    // untrusted Origin, and every stream/probe/health request, remains denied.
-    const permitsMissingOrigin = route === "logo"
-      && origin === null
-      && (request.method === "GET" || request.method === "HEAD");
-    if ((!origin || !origins.has(origin)) && !permitsMissingOrigin) {
-      // Health may echo the rejected origin on its error response so a
-      // configured frontend can distinguish an allowlist mismatch from an
-      // unreachable relay. No media or station data is exposed.
-      return response(403, "Origin not allowed", isHealth && origin ? origin : null);
+    if (!origin || !origins.has(origin)) {
+      return response(403, "Origin not allowed");
     }
-    if (isHealth) {
-      if (!["GET", "HEAD", "OPTIONS"].includes(request.method)) {
-        return response(405, "Method not allowed", origin, { Allow: "GET, HEAD, OPTIONS" });
-      }
-      if (request.method === "OPTIONS") return preflight(origin, "health");
-      const payload = {
-        ok: true,
-        status: "ready",
-        version: env.BUILD_VERSION || WORKER_VERSION,
-      };
-      return request.method === "HEAD"
-        ? new Response(null, jsonResponse(200, payload, origin, env))
-        : jsonResponse(200, payload, origin, env);
-    }
-    if (!match) return response(404, "Not found", origin);
     const uuid = match[1];
-    if (!route) return response(404, "Not found", origin);
     if (!UUID_PATTERN.test(uuid)) {
       logEvent("invalid_uuid");
       return response(400, "Invalid station UUID");
@@ -741,16 +479,12 @@ export default {
         .split(",")
         .map((header) => header.trim().toLowerCase())
         .filter(Boolean);
-      const allowedHeaders = route === "stream" || route === "probe"
-        ? new Set(["accept", "range"])
-        : new Set(["accept"]);
+      const allowedHeaders = new Set(["accept", "range"]);
       if (requestedHeaders.some((header) => !allowedHeaders.has(header))) {
         return response(403, "Requested header not allowed", origin);
       }
-      return preflight(origin, route);
+      return preflight(origin);
     }
-    if (route === "stream") return handleStream(request, env, uuid, origin);
-    if (route === "probe") return handleProbe(request, env, uuid, origin);
-    return handleLogo(request, env, uuid, origin);
+    return handleStream(request, env, uuid, origin);
   },
 };

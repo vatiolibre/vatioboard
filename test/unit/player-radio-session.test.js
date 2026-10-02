@@ -12,7 +12,7 @@ function radioEntry() {
     album: "Internet Radio",
     genre: "jazz",
     duration: null,
-    artwork_ref: `https://radio-media.vatioboard.com/v1/stations/${UUID}/logo`,
+    artwork_ref: `https://radio-media.vatioboard.com/v1/stations/${UUID}/artwork`,
     media_kind: "radio",
     original_filename: "",
     content_hash: "",
@@ -54,7 +54,7 @@ describe("player session v3 radio persistence", () => {
       codec: "MP3",
       bitrate: 128,
       src: "",
-      artwork_ref: `https://radio-media.vatioboard.com/v1/stations/${UUID}/logo`,
+      artwork_ref: `https://radio-media.vatioboard.com/v1/stations/${UUID}/artwork`,
     });
   });
 

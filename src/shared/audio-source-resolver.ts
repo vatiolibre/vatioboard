@@ -64,16 +64,11 @@ export function resolveRadioSource(asset: AudioSourceAsset): ResolvedAudioSource
   const stationUuid = String(asset.station_uuid || "");
   if (!isRadioStationUuid(stationUuid) || Number(asset.hls) === 1) return null;
 
-  // Plain media playback does not require station CORS headers. Prefer the
-  // directory's HTTPS stream, matching the working Tesla radio POC.
-  let directSrc = "";
-  try {
-    const url = new URL(asset.url_resolved || "");
-    if (url.protocol === "https:" && !url.username && !url.password) directSrc = url.href;
-  } catch { /* Restored entries without URLs use the relay. */ }
-  const src = directSrc || getRadioStreamRelayUrl(stationUuid);
+  // The relay is the canonical source for both audible playback and Web
+  // Audio analysis. One station therefore creates exactly one network stream.
+  const src = getRadioStreamRelayUrl(stationUuid);
   if (!src) return null;
-  const transport = directSrc ? "radio-direct" : "radio-relay";
+  const transport = "radio-relay";
 
   return {
     src,
@@ -85,7 +80,7 @@ export function resolveRadioSource(asset: AudioSourceAsset): ResolvedAudioSource
     live: true,
     cacheable: false,
     seekable: false,
-    analysisEligible: false,
+    analysisEligible: true,
     stationUuid,
     revokeUrl() {},
   };

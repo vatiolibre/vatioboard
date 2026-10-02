@@ -21,17 +21,13 @@ const radioMocks = vi.hoisted(() => ({
   searchStations: vi.fn(),
   hasExternalAccess: vi.fn(() => true),
   getValidBase: vi.fn(() => "https://radio-media.vatioboard.com"),
-  getRadioLogoUrl: vi.fn((uuid) => `https://radio-media.vatioboard.com/v1/stations/${uuid}/logo`),
-  getRelayHealth: vi.fn().mockResolvedValue({
-    ok: true, status: "ready", environment: "development", version: "test",
-  }),
+  getRadioArtworkUrl: vi.fn((uuid) => `https://radio-media.vatioboard.com/v1/stations/${uuid}/artwork`),
 }));
 
 vi.mock("../../src/shared/radio-browser.js", () => ({
   hasRadioExternalNetworkAccess: radioMocks.hasExternalAccess,
   getValidRadioMediaBase: radioMocks.getValidBase,
-  getRadioLogoUrl: radioMocks.getRadioLogoUrl,
-  getRadioRelayHealth: radioMocks.getRelayHealth,
+  getRadioArtworkUrl: radioMocks.getRadioArtworkUrl,
   radioBrowser: {
     getPopularStations: radioMocks.getPopularStations,
     searchStations: radioMocks.searchStations,
@@ -40,7 +36,7 @@ vi.mock("../../src/shared/radio-browser.js", () => ({
     name: `radio:${station.stationuuid}`,
     title: station.name,
     artist: station.countrycode,
-    artwork_ref: `https://radio-media.vatioboard.com/v1/stations/${station.stationuuid}/logo`,
+    artwork_ref: `https://radio-media.vatioboard.com/v1/stations/${station.stationuuid}/artwork`,
     media_kind: "radio",
     station_uuid: station.stationuuid,
     countrycode: station.countrycode,
@@ -325,10 +321,6 @@ describe("createPlayerWidget", () => {
     radioMocks.hasExternalAccess.mockReturnValue(true);
     radioMocks.getValidBase.mockReset();
     radioMocks.getValidBase.mockReturnValue("https://radio-media.vatioboard.com");
-    radioMocks.getRelayHealth.mockReset();
-    radioMocks.getRelayHealth.mockResolvedValue({
-      ok: true, status: "ready", environment: "development", version: "test",
-    });
     catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [], total: 0 });
     catalogMock.syncAudioCatalog.mockResolvedValue(false);
     playlistMock.loadPlaylists.mockResolvedValue({ playlists: [], total: 0 });
@@ -970,7 +962,7 @@ describe("createPlayerWidget", () => {
     const row = panel.querySelector(".player-radio-item");
     expect(row.dataset.stationUuid).toBe(station.stationuuid);
     expect(row.querySelector(".player-radio-item-tags").textContent).toBe("jazz · instrumental · night");
-    expect(row.querySelector("img").src).toContain(`/v1/stations/${station.stationuuid}/logo`);
+    expect(row.querySelector("img").src).toContain(`/v1/stations/${station.stationuuid}/artwork`);
     expect(row.querySelector("img").crossOrigin).toBe("anonymous");
     row.querySelector(".player-radio-play-btn").click();
     expect(runtimeMock.playTrackNow).toHaveBeenCalledWith(

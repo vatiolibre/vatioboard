@@ -7,7 +7,7 @@ vi.mock("../../src/shared/audio-source-resolver.js", () => ({
       : {
           src: track.url_resolved || "https://relay.example/stream",
           type: "live",
-          transport: track.url_resolved ? "radio-direct" : "radio-relay",
+      transport: "radio-relay",
           cacheable: false,
         },
   ),
@@ -46,7 +46,7 @@ afterEach(async () => {
 });
 
 describe("native radio extension of main audio", () => {
-  it("starts connected radio synchronously, without CORS, priming, or a Web Audio graph", async () => {
+  it("starts the canonical relay radio synchronously on the shared playback element", async () => {
     const play = vi.spyOn(HTMLMediaElement.prototype, "play");
     const silence = vi.spyOn(system.getBackgroundKeepAliveAudio(), "play");
     const pending = runtime.playTrackNow(station());
@@ -55,17 +55,15 @@ describe("native radio extension of main audio", () => {
     expect(element.isConnected).toBe(true);
     expect(element.controls).toBe(false);
     expect(element.parentElement.hidden).toBe(true);
-    expect(element.crossOrigin).toBeNull();
+    expect(element.crossOrigin).toBe("anonymous");
+    expect(runtime.getVisualizationAudioElement()).toBe(element);
     expect(silence).not.toHaveBeenCalled();
-    expect(
-      await (await import("../../src/shared/audio-graph-registry.js")).acquireGraph(element),
-    ).toBeNull();
     await pending;
     expect(runtime.getState()).toMatchObject({
       isLive: true,
       seekable: false,
-      analysisEligible: false,
-      sourceTransport: "radio-direct",
+      analysisEligible: true,
+      sourceTransport: "radio-relay",
     });
     expect(navigator.mediaSession.setActionHandler).not.toHaveBeenCalled();
   });
@@ -263,20 +261,21 @@ it("shares optional analysis across viewers and cleans up on last release, Pause
   const analysis = runtime.getVisualizationAudioElement();
   await runtime.requestRadioVisualization(milkdrop);
   expect(acquire).toHaveBeenCalledTimes(1);
-  expect(analysis).not.toBe(native);
+  expect(analysis).toBe(native);
   runtime.releaseRadioVisualization(scope);
   expect(analysis.paused).toBe(false);
   runtime.releaseRadioVisualization(milkdrop);
-  expect(analysis.paused).toBe(true); expect(native.paused).toBe(false);
+  expect(analysis.paused).toBe(false); expect(native.paused).toBe(false);
   await runtime.requestRadioVisualization(scope);
-  runtime.pause(); expect(runtime.getVisualizationAudioElement()).toBeNull();
+  runtime.pause(); expect(runtime.getVisualizationAudioElement()).toBe(native);
   await runtime.play(); await flush();
+  await runtime.requestRadioVisualization(scope);
   expect(runtime.getRadioVisualizationStatus()).toBe("ready");
   const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
   document.dispatchEvent(new Event("visibilitychange"));
-  expect(runtime.getVisualizationAudioElement()).toBeNull(); expect(native.paused).toBe(false);
+  expect(runtime.getVisualizationAudioElement()).toBe(native); expect(native.paused).toBe(false);
   hidden.mockReturnValue(false); document.dispatchEvent(new Event("visibilitychange"));
-  expect(runtime.getVisualizationAudioElement()).toBeNull();
+  expect(runtime.getVisualizationAudioElement()).toBe(native);
   runtime.releaseRadioVisualization(scope);
 });
 
