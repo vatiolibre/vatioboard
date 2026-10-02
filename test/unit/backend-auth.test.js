@@ -82,6 +82,14 @@ describe('environment configuration', () => {
       hostname: 'dev.vatioboard.com',
       origin: 'https://dev.vatioboard.com',
     }).radioMediaEnvironment).toBe('development');
+    expect(getEnvironmentConfig({
+      hostname: 'dev.vatioboard.com',
+      origin: 'https://dev.vatioboard.com',
+    }).artworkBase).toBe('https://artwork.dev.vatioboard.com');
+    expect(getEnvironmentConfig({
+      hostname: 'dev.vatioboard.com',
+      origin: 'https://dev.vatioboard.com',
+    }).artworkEnvironment).toBe('development');
   });
 
   it('refuses the undeployed production relay in the development frontend', () => {
@@ -104,7 +112,28 @@ describe('environment configuration', () => {
     expect(config.apiBase).toBe('https://api.dev.vatioboard.com');
     expect(config.isLocalhost).toBe(true);
     expect(config.backendEnabled).toBe(false);
+    expect(config.artworkBase).toBe('http://127.0.0.1:8080');
+    expect(config.artworkEnvironment).toBe('local');
     expect(config.backendAuthDebugControlsEnabled).toBe(false);
+  });
+
+  it('uses production artwork and refuses a production override from development', () => {
+    expect(getEnvironmentConfig({
+      hostname: 'vatioboard.com',
+      origin: 'https://vatioboard.com',
+    }).artworkBase).toBe('https://artwork.vatioboard.com');
+    expect(getEnvironmentConfig({
+      hostname: 'dev.vatioboard.com',
+      origin: 'https://dev.vatioboard.com',
+    }, {
+      VITE_VATIOBOARD_ARTWORK_BASE: 'https://artwork.vatioboard.com/',
+    }).artworkBase).toBe('https://artwork.dev.vatioboard.com');
+    expect(getEnvironmentConfig({
+      hostname: 'dev.vatioboard.com',
+      origin: 'https://dev.vatioboard.com',
+    }, {
+      VITE_VATIOBOARD_ARTWORK_BASE: 'http://attacker.example:8080/?token=secret',
+    }).artworkBase).toBe('https://artwork.dev.vatioboard.com');
   });
 
   it('allows local backend calls when explicitly enabled by environment', () => {

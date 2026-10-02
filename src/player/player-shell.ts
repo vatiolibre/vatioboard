@@ -943,9 +943,31 @@ export function createPlayerShell({
       artwork.className = "player-radio-artwork";
       artwork.alt = "";
       artwork.loading = "lazy";
-      artwork.crossOrigin = "anonymous";
       const radioTrack = radioStationToTrack(station);
-      artwork.src = String(radioTrack.artwork_ref || "");
+      const serviceUrl = String(radioTrack.artwork_ref || "");
+      const directFavicon = typeof station.favicon === "string" && /^https:\/\//i.test(station.favicon)
+        ? station.favicon
+        : "";
+      let fallbackAttempted = false;
+      const artworkErrorHandler = () => {
+        if (!fallbackAttempted && serviceUrl && artwork.src !== serviceUrl) {
+          fallbackAttempted = true;
+          artwork.crossOrigin = "anonymous";
+          artwork.src = serviceUrl;
+          return;
+        }
+        artwork.removeEventListener("error", artworkErrorHandler);
+        artwork.src = "/favicon-96x96.png";
+      };
+      artwork.addEventListener("error", artworkErrorHandler);
+      if (directFavicon) artwork.src = directFavicon;
+      else if (typeof station.favicon === "string" && station.favicon && serviceUrl) {
+        artwork.crossOrigin = "anonymous";
+        artwork.src = serviceUrl;
+      } else if (typeof station.favicon !== "string" && serviceUrl) {
+        artwork.crossOrigin = "anonymous";
+        artwork.src = serviceUrl;
+      } else artwork.src = "/favicon-96x96.png";
 
       const details = document.createElement("div");
       details.className = "player-radio-item-info";
@@ -2174,7 +2196,7 @@ export function createPlayerShell({
               : artUrl.replace(/["\\\n\r]/g, "\\$&");
             artworkCompact.style.backgroundImage = `url(${escapedArtworkUrl})`;
             artworkCompact.classList.add("has-image");
-            if (track.media_kind !== "radio") runtime.updatePlayerMediaSessionMetadata?.({
+            runtime.updatePlayerMediaSessionMetadata?.({
               title: track.title || track.original_filename || track.name || "",
               artist: track.artist || track.folder_path || "",
               album: "VatioLibre",

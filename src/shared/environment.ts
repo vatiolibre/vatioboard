@@ -15,12 +15,16 @@ const PROD_API_BASE = "https://api.vatioboard.com";
 const DEV_API_BASE = "https://api.dev.vatioboard.com";
 const PROD_RADIO_MEDIA_BASE = "https://radio-media.vatioboard.com";
 const DEV_RADIO_MEDIA_BASE = "https://radio-media.dev.vatioboard.com";
+const PROD_ARTWORK_BASE = "https://artwork.vatioboard.com";
+const DEV_ARTWORK_BASE = "https://artwork.dev.vatioboard.com";
 
 export interface EnvironmentConfig {
   frontendOrigin: string;
   apiBase: string;
   radioMediaBase: string;
   radioMediaEnvironment: "development" | "production" | "local" | "unconfigured";
+  artworkBase: string;
+  artworkEnvironment: "development" | "production" | "local" | "unconfigured";
   isProduction: boolean;
   isLocalhost: boolean;
   backendEnabled: boolean;
@@ -49,6 +53,20 @@ function getBackendEnabledOverride(env: EnvironmentRuntimeEnv) {
   return getBooleanEnvOverride(env, "VITE_VATIOBOARD_BACKEND");
 }
 
+function normalizeArtworkOverride(value: string, isLocal: boolean): string {
+  if (!value) return "";
+  try {
+    const url = new URL(value);
+    const loopback = ["localhost", "127.0.0.1", "::1", "[::1]"].includes(url.hostname);
+    if (url.username || url.password || url.search || url.hash) return "";
+    if (url.protocol !== "https:" && !(isLocal && loopback && url.protocol === "http:")) return "";
+    if (url.port && !((url.protocol === "https:" && url.port === "443") || (url.protocol === "http:" && url.port === "80"))) return "";
+    return url.toString().replace(/\/+$/, "");
+  } catch {
+    return "";
+  }
+}
+
 /**
  * Resolve the BFF API base URL from the current hostname.
  *
@@ -63,6 +81,7 @@ export function getEnvironmentConfig(
   const isLocal = isLocalhost(host);
   const backendEnabledOverride = getBackendEnabledOverride(env);
   const requestedRadioMediaBase = String(env?.VITE_VATIOBOARD_RADIO_MEDIA_BASE || "").trim();
+  const requestedArtworkBase = String(env?.VITE_VATIOBOARD_ARTWORK_BASE || "").trim();
   const configuredRadioMediaBase = !isProduction && !isLocal
     && requestedRadioMediaBase.replace(/\/+$/, "") === PROD_RADIO_MEDIA_BASE
     ? ""
@@ -78,14 +97,32 @@ export function getEnvironmentConfig(
     : radioMediaBase === PROD_RADIO_MEDIA_BASE
       ? "production"
       : radioMediaBase === DEV_RADIO_MEDIA_BASE
-        ? "development"
-        : isLocal ? "local" : isProduction ? "production" : "development";
+      ? "development"
+      : isLocal ? "local" : isProduction ? "production" : "development";
+  const normalizedArtworkOverride = normalizeArtworkOverride(requestedArtworkBase, isLocal);
+  const configuredArtworkBase = !isProduction && !isLocal
+    && normalizedArtworkOverride === PROD_ARTWORK_BASE
+    ? ""
+    : normalizedArtworkOverride;
+  const artworkBase = configuredArtworkBase.replace(/\/+$/, "")
+    || (isProduction
+      ? PROD_ARTWORK_BASE
+      : isLocal
+        ? "http://127.0.0.1:8080"
+        : DEV_ARTWORK_BASE);
+  const artworkEnvironment = artworkBase === PROD_ARTWORK_BASE
+    ? "production"
+    : artworkBase === DEV_ARTWORK_BASE
+      ? "development"
+      : isLocal ? "local" : isProduction ? "production" : "development";
 
   return {
     frontendOrigin: String(location?.origin || ""),
     apiBase: isProduction ? PROD_API_BASE : DEV_API_BASE,
     radioMediaBase,
     radioMediaEnvironment,
+    artworkBase,
+    artworkEnvironment,
     isProduction,
     isLocalhost: isLocal,
     backendEnabled: backendEnabledOverride ?? !isLocal,

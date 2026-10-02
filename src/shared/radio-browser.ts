@@ -42,6 +42,7 @@ export interface RadioBrowserStation {
   name: string;
   url_resolved: string;
   has_favicon: boolean;
+  favicon: string;
   countrycode: string;
   language: string;
   tags: string[];
@@ -101,12 +102,24 @@ function normalizeStation(raw: unknown): RadioBrowserStation | null {
   } catch {
     return null;
   }
+  let favicon = "";
+  try {
+    const parsedFavicon = new URL(text(record.favicon));
+    if ((parsedFavicon.protocol === "http:" || parsedFavicon.protocol === "https:")
+      && !parsedFavicon.username && !parsedFavicon.password
+      && (!parsedFavicon.port
+        || (parsedFavicon.protocol === "http:" && parsedFavicon.port === "80")
+        || (parsedFavicon.protocol === "https:" && parsedFavicon.port === "443"))) {
+      favicon = parsedFavicon.toString();
+    }
+  } catch { /* no usable favicon */ }
 
   return {
     stationuuid,
     name: text(record.name) || "Unnamed station",
     url_resolved: urlResolved,
-    has_favicon: Boolean(text(record.favicon)),
+    has_favicon: Boolean(favicon),
+    favicon,
     countrycode: text(record.countrycode).toUpperCase().slice(0, 2),
     language: text(record.language),
     tags: text(record.tags).split(",").map((tag) => tag.trim()).filter(Boolean).slice(0, 12),
@@ -425,6 +438,26 @@ export function getRadioStreamRelayUrl(stationUuid: string): string {
 }
 
 export function getRadioLogoUrl(stationUuid: string): string {
+  return getRadioArtworkUrl(stationUuid);
+}
+
+export function getRadioArtworkUrl(stationUuid: string): string {
+  const environment = getEnvironmentConfig();
+  const value = String(environment.artworkBase || environment.radioMediaBase || "").trim();
+  let base: string;
+  try {
+    const url = new URL(value);
+    const localHttp = url.protocol === "http:"
+      && ["localhost", "127.0.0.1", "[::1]", "::1"].includes(url.hostname);
+    if ((url.protocol !== "https:" && !localHttp) || url.username || url.password || url.search || url.hash) return "";
+    base = url.toString().replace(/\/+$/, "");
+  } catch { return ""; }
+  return base && isRadioStationUuid(stationUuid)
+    ? `${base}/v1/stations/${encodeURIComponent(stationUuid)}/artwork`
+    : "";
+}
+
+export function getRadioLegacyLogoUrl(stationUuid: string): string {
   const base = getValidRadioMediaBase();
   return base && isRadioStationUuid(stationUuid)
     ? `${base}/v1/stations/${encodeURIComponent(stationUuid)}/logo`
@@ -439,7 +472,7 @@ export function radioStationToTrack(station: RadioBrowserStation): Record<string
     album: "Internet Radio",
     genre: station.tags.slice(0, 3).join(", "),
     duration: null,
-    artwork_ref: getRadioLogoUrl(station.stationuuid),
+    artwork_ref: getRadioArtworkUrl(station.stationuuid),
     media_kind: "radio",
     original_filename: "",
     content_hash: "",

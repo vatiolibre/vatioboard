@@ -2137,7 +2137,6 @@ function onPlaying() {
 // ── Media Session ────────────────────────────────────────────────────
 
 function updateMediaSessionMetadata() {
-  if (state.isLive) { syncMediaSessionPlaybackState(); return; }
   if (!mediaSessionEnabled) return;
   const track = state.currentTrack;
   if (!track) return;
@@ -2165,7 +2164,6 @@ function updateMediaSessionMetadata() {
 }
 
 export function updatePlayerMediaSessionMetadata(metadata = {}) {
-  if (state.isLive) return;
   if (!mediaSessionEnabled) return;
 
   updateMediaSessionClient(PLAYER_MEDIA_SESSION_OWNER, {
