@@ -5,6 +5,7 @@ import {
   resumeGraphForElement,
   type GraphEntry,
 } from "./audio-graph-registry.js";
+import type { AnalysisGraph } from "./radio-pcm-analysis.js";
 
 export type MiniAudioVisualizerMode = "spectrum" | "scope" | "off";
 
@@ -12,6 +13,8 @@ interface MiniAudioVisualizerOptions {
   mediaElement: HTMLMediaElement;
   mount: HTMLElement;
   mode?: MiniAudioVisualizerMode | string;
+  /** Optional shared analysis graph (used by Safari radio PCM analysis). */
+  analysisGraph?: AnalysisGraph | null;
 }
 
 export interface MiniAudioVisualizerController {
@@ -258,6 +261,7 @@ export function createMiniAudioVisualizer({
   mediaElement,
   mount,
   mode = "spectrum",
+  analysisGraph = null,
 }: MiniAudioVisualizerOptions): MiniAudioVisualizerController {
   if (!(mediaElement instanceof HTMLMediaElement) || !(mount instanceof HTMLElement)) {
     return createUnavailableController();
@@ -284,7 +288,7 @@ export function createMiniAudioVisualizer({
   let running = false;
   let animationFrameId = 0;
   let modeValue = normalizeMode(mode);
-  let graphEntry: GraphEntry | null = null;
+  let graphEntry: (GraphEntry | AnalysisGraph) | null = null;
   let analyserPromise: Promise<boolean> | null = null;
   let analyser: AnalyserNode | null = null;
   let frequencyData: Uint8Array<ArrayBuffer> | null = null;
@@ -335,19 +339,16 @@ export function createMiniAudioVisualizer({
     if (analyserPromise) return analyserPromise;
 
     analyserPromise = (async () => {
-      const currentGraph = await acquireGraph(mediaElement);
+      const currentGraph = analysisGraph || await acquireGraph(mediaElement);
       if (!currentGraph) {
         markUnavailable();
         return false;
       }
 
       if (destroyed || !available) {
-        releaseGraph(mediaElement);
+        if (!analysisGraph) releaseGraph(mediaElement);
         return false;
       }
-
-      // Wrap in legacy shape expected by local code.
-      if (!currentGraph.analysers) currentGraph.analysers = currentGraph.consumers;
 
       try {
         analyser = currentGraph.audioContext.createAnalyser();
@@ -356,13 +357,13 @@ export function createMiniAudioVisualizer({
         analyser.minDecibels = -88;
         analyser.maxDecibels = -20;
         currentGraph.sourceNode.connect(analyser);
-        currentGraph.analysers?.add(analyser);
+        if ("consumers" in currentGraph) currentGraph.consumers?.add(analyser);
         frequencyData = new Uint8Array(analyser.frequencyBinCount);
         timeDomainData = new Uint8Array(analyser.fftSize);
         graphEntry = currentGraph;
         return true;
       } catch {
-        releaseGraph(mediaElement);
+        if (!analysisGraph) releaseGraph(mediaElement);
         markUnavailable();
         return false;
       }
@@ -444,12 +445,12 @@ export function createMiniAudioVisualizer({
 
     if (analyser) {
       try { analyser.disconnect(); } catch { /* ignore */ }
-      if (graphEntry?.consumers) graphEntry.consumers.delete(analyser);
+      if (graphEntry && "consumers" in graphEntry && graphEntry.consumers) graphEntry.consumers.delete(analyser);
     }
 
     // Release our ref on the shared graph; the registry keeps the source
     // reusable for this media element until the element itself is replaced.
-    releaseGraph(mediaElement);
+    if (!analysisGraph) releaseGraph(mediaElement);
 
     graphEntry = null;
     analyserPromise = null;

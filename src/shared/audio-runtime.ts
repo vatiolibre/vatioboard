@@ -46,6 +46,14 @@ import {
   resumeGraphForElement,
 } from "./audio-graph-registry.js";
 import { isDemoTrackName } from "./track-source-policy.js";
+import {
+  acquireRadioPcmAnalysis,
+  disposeAllRadioPcmAnalysis,
+  disposeRadioPcmAnalysis,
+  primeRadioPcmAnalysisContext,
+  requiresRadioPcmAnalysis,
+  type AnalysisGraph,
+} from "./radio-pcm-analysis.js";
 import type { AudioRuntimeState } from "../types/services";
 
 // TODO(ts-migration): player/library track payloads are still owned by JS feature modules.
@@ -174,7 +182,17 @@ const radioVisualizationOwners = new Set<symbol>();
 let radioVisualizationLifecycleBound = false;
 let radioVisualizationStatus: "idle" | "ready" | "unavailable" = "idle";
 let radioVisualizationGraphElement: ManagedAudioElement | null = null;
+let radioVisualizationAnalysisGraph: AnalysisGraph | null = null;
 let radioGraphPreparationPrimed = false;
+
+function stopRadioAnalysis(): void {
+  if (radioVisualizationAnalysisGraph) {
+    const stationUuid = String(radioVisualizationAnalysisGraph.stationUuid || state.currentTrack?.station_uuid || "");
+    if (stationUuid) disposeRadioPcmAnalysis(stationUuid);
+  }
+  radioVisualizationAnalysisGraph = null;
+  disposeAllRadioPcmAnalysis();
+}
 
 /** Register a visualizer consumer on the already-playing radio graph. */
 export async function requestRadioVisualization(owner: symbol) {
@@ -182,12 +200,13 @@ export async function requestRadioVisualization(owner: symbol) {
   if (!radioVisualizationLifecycleBound) {
     radioVisualizationLifecycleBound = true;
     window.addEventListener("pagehide", () => {
-      // The graph remains attached to radioAudio. Renderers stop themselves
-      // while the page is hidden; no network or media lifecycle is changed.
+      // Analysis is disposable; native radio playback remains authoritative.
       radioVisualizationStatus = "idle";
+      stopRadioAnalysis();
     });
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) radioVisualizationStatus = "idle";
+      if (document.hidden) stopRadioAnalysis();
     });
   }
   if (!state.isLive || state.paused || document.hidden || !radioAudio?.src) {
@@ -199,6 +218,34 @@ export async function requestRadioVisualization(owner: symbol) {
   // not already prepared a graph, prime the shared context before the first
   // asynchronous acquire so WebKit can resume it without creating a second
   // context or media source.
+  if (requiresRadioPcmAnalysis()) {
+    // Keep the independent Safari context inside the same trusted gesture
+    // window used by the visualizer control when possible.
+    primeRadioPcmAnalysisContext();
+    const stationUuid = String(state.currentTrack?.station_uuid || "");
+    const stationQueueId = state.currentTrack?._queueId;
+    const pcmGraph = await acquireRadioPcmAnalysis(stationUuid);
+    if (!pcmGraph) {
+      radioVisualizationStatus = "unavailable";
+      notify();
+      return false;
+    }
+    // A pause, station handoff, or page hide may have happened while the
+    // relay/decoder was being prepared. Never publish a stale graph to a
+    // renderer after that lifecycle transition.
+    if (!state.isLive || state.paused || document.hidden
+      || radioAudio?.src === ""
+      || state.currentTrack?._queueId !== stationQueueId) {
+      pcmGraph.dispose?.();
+      radioVisualizationStatus = "idle";
+      return false;
+    }
+    radioVisualizationAnalysisGraph = pcmGraph;
+    radioVisualizationGraphElement = radioAudio;
+    radioVisualizationStatus = "ready";
+    notify();
+    return true;
+  }
   if (!getGraph(radioAudio)) primeAudioContext();
   const graph = await ensureRadioGraph(radioAudio);
   if (!graph) {
@@ -212,12 +259,28 @@ export async function requestRadioVisualization(owner: symbol) {
 }
 export function releaseRadioVisualization(owner: symbol) {
   radioVisualizationOwners.delete(owner);
+  if (radioVisualizationOwners.size === 0 && radioVisualizationAnalysisGraph) {
+    const stationUuid = String(radioVisualizationAnalysisGraph.stationUuid || state.currentTrack?.station_uuid || "");
+    if (stationUuid) disposeRadioPcmAnalysis(stationUuid);
+    radioVisualizationAnalysisGraph = null;
+    radioVisualizationStatus = "idle";
+  }
   // Releasing a consumer must never pause, reload, or disconnect radioAudio.
 }
 export function getVisualizationAudioElement() {
   return state.isLive ? radioAudio : audio;
 }
 export function getRadioVisualizationStatus() { return radioVisualizationStatus; }
+export function getRadioAnalysisGraph(): AnalysisGraph | null { return radioVisualizationAnalysisGraph; }
+export function getRadioVisualizationDiagnostics() {
+  return {
+    status: radioVisualizationStatus,
+    transport: radioVisualizationAnalysisGraph?.transport || (state.isLive ? "media-element" : "none"),
+    signal: radioVisualizationAnalysisGraph?.signalState || (state.isLive ? "graph-ready" : "none"),
+    stationUuid: radioVisualizationAnalysisGraph?.stationUuid || state.currentTrack?.station_uuid || null,
+    owners: radioVisualizationOwners.size,
+  };
+}
 
 async function ensureRadioGraph(mediaElement: ManagedAudioElement | null): Promise<boolean> {
   if (!mediaElement) return false;
@@ -240,7 +303,11 @@ function primeRadioGraphForGesture(): void {
   // This call intentionally happens synchronously at the beginning of a
   // selecting Play gesture. The existing demo-song takeover still performs
   // the first real playback action before radio starts.
-  primeAudioContext();
+  // Do not create an analysis context merely because native radio is being
+  // played: Tesla's takeover remains independent. Prime it only when a
+  // visualizer already has an active owner.
+  if (requiresRadioPcmAnalysis() && radioVisualizationOwners.size > 0) primeRadioPcmAnalysisContext();
+  else primeAudioContext();
 }
 
 function clearRadioTimer() {
@@ -1294,6 +1361,7 @@ async function loadTrack(index, { startTime = 0, autoplay = true, suppressAutopl
   if (!state.isLive) radioGraphPreparationPrimed = false;
   radioVisualizationStatus = "idle";
   radioVisualizationGraphElement = null;
+  stopRadioAnalysis();
   if (state.isLive && !autoplay) state.paused = true;
   state.seekable = !state.isLive; state.analysisEligible = true;
   state.connectionState = state.isLive ? "connecting" : "idle";
@@ -1691,6 +1759,7 @@ export function pause() {
   radioTakeoverPending = null;
   radioVisualizationStatus = "idle";
   radioVisualizationGraphElement = null;
+  stopRadioAnalysis();
   radioAttempt++;
   clearRadioTimer();
   state.paused = true;
@@ -1707,6 +1776,7 @@ export function stopPlayback() {
   lastRadioFocusTrack = null;
   radioVisualizationStatus = "idle";
   radioVisualizationGraphElement = null;
+  stopRadioAnalysis();
   loadRequestToken++; radioAttempt++; clearRadioTimer();
   clearLibraryContinuation();
   state.paused = true;
@@ -1967,6 +2037,9 @@ export function getState() {
     sourceTransport: state.sourceTransport, isLive: state.isLive, seekable: !state.isLive,
     cacheable: state.cacheable, analysisEligible: true,
     analysisActive: state.isLive ? radioVisualizationStatus === "ready" : Boolean(audio && getGraph(audio)),
+    radioVisualizationStatus,
+    radioVisualizationTransport: (radioVisualizationAnalysisGraph?.transport || (state.isLive ? "media-element" : "none")) as "media-element" | "decoded-pcm" | "none",
+    radioVisualizationSignal: radioVisualizationAnalysisGraph?.signalState || (state.isLive ? "graph-ready" : "none"),
     connectionState: state.connectionState, radioFailureClass: null,
     radioVisualizationAutoStart: !restoredRadioSession,
     restoredRadioSession,
@@ -2112,6 +2185,7 @@ function onPause() {
     state.paused = true;
     clearRadioTimer();
     radioVisualizationStatus = "idle";
+    stopRadioAnalysis();
   }
   // Only mark paused if not a temporary interruption (e.g. seeking)
   syncBackgroundModeKeepAlive();

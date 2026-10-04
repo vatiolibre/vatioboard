@@ -244,6 +244,9 @@ export interface AudioRuntimeState {
   cacheable: boolean;
   analysisEligible: boolean;
   analysisActive: boolean;
+  radioVisualizationStatus?: "idle" | "ready" | "unavailable";
+  radioVisualizationTransport?: "media-element" | "decoded-pcm" | "none";
+  radioVisualizationSignal?: string;
   backgroundPlaybackState: "idle" | "arming" | "armed" | "delegated" | "interrupted" | "blocked";
   recoveryRequired: boolean;
   connectionState: "idle" | "connecting" | "slow" | "playing" | "reconnecting" | "unavailable";
