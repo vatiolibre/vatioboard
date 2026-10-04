@@ -315,6 +315,19 @@ function isGenericAudio(contentType: string): boolean {
   return !mime || mime === "application/octet-stream";
 }
 
+/**
+ * Safari/WebKit does not accept an AAC ADTS stream when it is labelled
+ * `audio/aacp`, even though it can decode the same bytes when the response is
+ * labelled `audio/aac`.  The stream itself is unchanged; this only normalizes
+ * the MIME advertised to the media element.
+ */
+function normalizeAudioContentType(contentType: string): string {
+  const [mime, ...parameters] = contentType.split(";");
+  const normalizedMime = mime.trim().toLowerCase();
+  if (normalizedMime !== "audio/aacp" && normalizedMime !== "audio/x-aac") return contentType;
+  return ["audio/aac", ...parameters].join(";");
+}
+
 function sniffAudioMime(bytes: Uint8Array): string {
   if (bytes.length >= 4 && bytes[0] === 0x4f && bytes[1] === 0x67 && bytes[2] === 0x67 && bytes[3] === 0x53) return "audio/ogg";
   if (bytes.length >= 4 && bytes[0] === 0x66 && bytes[1] === 0x4c && bytes[2] === 0x61 && bytes[3] === 0x43) return "audio/flac";
@@ -401,7 +414,7 @@ async function handleStream(request: Request, env: Env, uuid: string, origin: st
     return response(502, "Unsupported upstream response", origin);
   }
   const declaredType = upstream.headers.get("Content-Type") || "";
-  let contentType = declaredType.split(";", 1)[0].trim().toLowerCase();
+  let contentType = normalizeAudioContentType(declaredType).split(";", 1)[0].trim().toLowerCase();
   let body = request.method === "HEAD" ? null : upstream.body;
   if (!isSupportedAudio(declaredType)) {
     if (!isGenericAudio(declaredType) || request.method === "HEAD" || !body) {
