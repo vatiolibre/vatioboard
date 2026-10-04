@@ -42,6 +42,13 @@ type ParsedRadioFrames = {
 const sessions = new Map<string, RadioAnalysisSession>();
 let primedContext: AudioContext | null = null;
 
+// Safari's cross-origin stream reader delivers radio data in bursty chunks
+// (often ~250 ms, with occasional ~500 ms gaps). Keep enough decoded PCM to
+// absorb that scheduling jitter without letting the analyser fall to zero.
+// This graph is muted and analysis-only, so the buffer does not add audible
+// playback latency; the worklet drops the oldest samples when it is full.
+const PCM_JITTER_BUFFER_SECONDS = 1.5;
+
 const WORKLET_SOURCE = `
 class VatioRadioPcmProcessor extends AudioWorkletProcessor {
   constructor() {
@@ -50,7 +57,7 @@ class VatioRadioPcmProcessor extends AudioWorkletProcessor {
     this.read = 0;
     this.write = 0;
     this.length = 0;
-    this.capacity = Math.max(1, Math.ceil(sampleRate * 0.25));
+    this.capacity = Math.max(1, Math.ceil(sampleRate * ${PCM_JITTER_BUFFER_SECONDS}));
     this.port.onmessage = ({ data }) => {
       if (!data || data.type !== 'pcm') return;
       const channels = Array.isArray(data.channels) ? data.channels : [];
@@ -139,6 +146,7 @@ function findMp3Frames(bytes: Uint8Array): ParsedRadioFrames {
   }
   let sampleRate = 44100;
   let channels = 2;
+  let samplesPerFrame = 1152;
   while (offset + 4 <= bytes.length) {
     if (bytes[offset] !== 0xff || (bytes[offset + 1] & 0xe0) !== 0xe0) { offset++; continue; }
     const version = (bytes[offset + 1] >> 3) & 3;
@@ -148,6 +156,10 @@ function findMp3Frames(bytes: Uint8Array): ParsedRadioFrames {
     if (layer !== 1 || bitrateIndex === 0 || bitrateIndex === 15 || rateIndex === 3) { offset++; continue; }
     const rates = version === 3 ? [44100, 48000, 32000] : version === 2 ? [22050, 24000, 16000] : [11025, 12000, 8000];
     sampleRate = rates[rateIndex];
+    // MPEG-1 Layer III carries 1152 samples per frame; MPEG-2/2.5 Layer III
+    // carries 576. Deriving this keeps WebCodecs timestamps accurate across
+    // low-bitrate and low-sample-rate stations.
+    samplesPerFrame = version === 3 ? 1152 : 576;
     const bitrates = version === 3 ? [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320] : [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160];
     const length = Math.floor((version === 3 ? 144 : 72) * bitrates[bitrateIndex] * 1000 / sampleRate) + (((bytes[offset + 2] >> 1) & 1) ? 1 : 0);
     if (length < 4 || offset + length > bytes.length) break;
@@ -155,7 +167,14 @@ function findMp3Frames(bytes: Uint8Array): ParsedRadioFrames {
     frames.push(bytes.slice(offset, offset + length));
     offset += length;
   }
-  return { frames, remainder: bytes.slice(offset), sampleRate, channels, codec: "mp3", frameDurationUs: 26_000 };
+  return {
+    frames,
+    remainder: bytes.slice(offset),
+    sampleRate,
+    channels,
+    codec: "mp3",
+    frameDurationUs: Math.round((samplesPerFrame * 1_000_000) / sampleRate),
+  };
 }
 
 const AAC_SAMPLE_RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];

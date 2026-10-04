@@ -8,6 +8,13 @@ function mp3Frame(fill = 0x55) {
   return frame;
 }
 
+function mp3Mpeg2Frame(fill = 0x55) {
+  // MPEG-2 Layer III, 16kbps, 16kHz, stereo: 72 bytes.
+  const frame = new Uint8Array(72).fill(fill);
+  frame.set([0xff, 0xf3, 0x28, 0x64], 0);
+  return frame;
+}
+
 function aacFrame(fill = 0x55) {
   // MPEG-4 AAC-LC, 22050Hz, stereo, 382-byte ADTS frame.
   const frame = new Uint8Array(382).fill(fill);
@@ -51,6 +58,13 @@ describe("radio PCM analysis parser", () => {
     id3.set([0x49, 0x44, 0x33, 0x04, 0, 0, 0, 0, 0, 0]);
     const result = parseMp3FramesForTesting(new Uint8Array([...id3, ...mp3Frame()]));
     expect(result.frames).toHaveLength(1);
+  });
+
+  it("derives MPEG-2 MP3 frame duration from the sample rate", () => {
+    const result = parseMp3FramesForTesting(mp3Mpeg2Frame());
+    expect(result.frames).toHaveLength(1);
+    expect(result.sampleRate).toBe(16000);
+    expect(result.frameDurationUs).toBe(36000);
   });
 
   it("parses AAC ADTS frames and preserves incomplete frames", () => {
