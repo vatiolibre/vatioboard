@@ -3,8 +3,9 @@
  *
  * Safari can play the relay through an HTMLAudioElement while returning an
  * empty MediaElementAudioSourceNode.  This module deliberately never touches
- * that element.  It fetches the first-party relay, decodes MP3 frames with
- * WebCodecs when available, and feeds a bounded AudioWorklet ring buffer.
+ * that element. It fetches the first-party relay, decodes MP3 or AAC ADTS
+ * frames with WebCodecs when available, and feeds a bounded AudioWorklet ring
+ * buffer.
  */
 
 import { getRadioStreamRelayUrl } from "./radio-browser.js";
@@ -27,6 +28,15 @@ type RadioAnalysisSession = {
   workletUrl: string;
   decoder?: any;
   disposed: boolean;
+};
+
+type ParsedRadioFrames = {
+  frames: Uint8Array[];
+  remainder: Uint8Array;
+  sampleRate: number;
+  channels: number;
+  codec: string;
+  frameDurationUs: number;
 };
 
 const sessions = new Map<string, RadioAnalysisSession>();
@@ -116,13 +126,15 @@ function makeContext(): AudioContext | null {
   } catch { return null; }
 }
 
-function findMp3Frames(bytes: Uint8Array): { frames: Uint8Array[]; remainder: Uint8Array; sampleRate: number; channels: number } {
+function findMp3Frames(bytes: Uint8Array): ParsedRadioFrames {
   const frames: Uint8Array[] = [];
   let offset = 0;
   // ID3v2 is metadata, not an MPEG frame. Skip complete tags.
   if (bytes.length >= 10 && bytes[0] === 0x49 && bytes[1] === 0x44 && bytes[2] === 0x33) {
     const size = ((bytes[6] & 0x7f) << 21) | ((bytes[7] & 0x7f) << 14) | ((bytes[8] & 0x7f) << 7) | (bytes[9] & 0x7f);
-    if (bytes.length < size + 10) return { frames, remainder: bytes, sampleRate: 44100, channels: 2 };
+    if (bytes.length < size + 10) {
+      return { frames, remainder: bytes, sampleRate: 44100, channels: 2, codec: "mp3", frameDurationUs: 26_000 };
+    }
     offset = size + 10;
   }
   let sampleRate = 44100;
@@ -143,7 +155,69 @@ function findMp3Frames(bytes: Uint8Array): { frames: Uint8Array[]; remainder: Ui
     frames.push(bytes.slice(offset, offset + length));
     offset += length;
   }
-  return { frames, remainder: bytes.slice(offset), sampleRate, channels };
+  return { frames, remainder: bytes.slice(offset), sampleRate, channels, codec: "mp3", frameDurationUs: 26_000 };
+}
+
+const AAC_SAMPLE_RATES = [96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350];
+const AAC_CHANNELS = [0, 1, 2, 3, 4, 5, 6, 8];
+
+function findAacFrames(bytes: Uint8Array): ParsedRadioFrames {
+  const frames: Uint8Array[] = [];
+  let offset = 0;
+  let sampleRate = 44100;
+  let channels = 2;
+  let codec = "mp4a.40.2";
+  while (offset + 7 <= bytes.length) {
+    const first = bytes[offset];
+    const second = bytes[offset + 1];
+    if (first !== 0xff || (second & 0xf6) !== 0xf0) {
+      offset++;
+      continue;
+    }
+    const profile = ((bytes[offset + 2] >> 6) & 3) + 1;
+    const sampleRateIndex = (bytes[offset + 2] >> 2) & 0xf;
+    const rate = AAC_SAMPLE_RATES[sampleRateIndex];
+    const channelConfig = ((bytes[offset + 2] & 1) << 2) | ((bytes[offset + 3] >> 6) & 3);
+    const channelCount = AAC_CHANNELS[channelConfig];
+    const frameLength = ((bytes[offset + 3] & 3) << 11)
+      | (bytes[offset + 4] << 3)
+      | ((bytes[offset + 5] >> 5) & 7);
+    // Multiple raw data blocks require parsing inside one ADTS frame. Keep
+    // those streams on the native playback path rather than feeding an
+    // incorrectly timestamped analysis chunk.
+    const rawDataBlocks = bytes[offset + 6] & 3;
+    const headerLength = (second & 1) ? 7 : 9;
+    if (!rate || !channelCount || profile > 4 || rawDataBlocks !== 0 || frameLength < headerLength) {
+      offset++;
+      continue;
+    }
+    if (offset + frameLength > bytes.length) break;
+    sampleRate = rate;
+    channels = channelCount;
+    codec = `mp4a.40.${profile}`;
+    frames.push(bytes.slice(offset, offset + frameLength));
+    offset += frameLength;
+  }
+  return {
+    frames,
+    remainder: bytes.slice(offset),
+    sampleRate,
+    channels,
+    codec,
+    frameDurationUs: Math.round(1_024_000_000 / sampleRate),
+  };
+}
+
+function findRadioFrames(bytes: Uint8Array): ParsedRadioFrames {
+  // ADTS uses layer bits 00; MPEG audio uses layer bits 01/10/11. Detecting
+  // the first sync header avoids treating an incomplete AAC frame as MP3.
+  for (let offset = 0; offset + 2 <= bytes.length; offset++) {
+    if (bytes[offset] !== 0xff || (bytes[offset + 1] & 0xe0) !== 0xe0) continue;
+    return ((bytes[offset + 1] >> 1) & 3) === 0
+      ? findAacFrames(bytes)
+      : findMp3Frames(bytes);
+  }
+  return { frames: [], remainder: bytes, sampleRate: 44100, channels: 2, codec: "mp3", frameDurationUs: 26_000 };
 }
 
 /** Test/diagnostic hook for verifying frame parsing across network boundaries. */
@@ -151,13 +225,18 @@ export function parseMp3FramesForTesting(bytes: Uint8Array) {
   return findMp3Frames(bytes);
 }
 
-async function configureDecoder(session: RadioAnalysisSession, sampleRate: number, channels: number): Promise<boolean> {
+/** Test/diagnostic hook for verifying AAC ADTS parsing across network boundaries. */
+export function parseAacFramesForTesting(bytes: Uint8Array) {
+  return findAacFrames(bytes);
+}
+
+async function configureDecoder(session: RadioAnalysisSession, sampleRate: number, channels: number, codec: string): Promise<boolean> {
   const Decoder = (globalThis as any).AudioDecoder;
   if (typeof Decoder === "undefined") {
     session.graph.signalState = "decoder-unsupported";
     return false;
   }
-  const config = { codec: "mp3", sampleRate, numberOfChannels: channels };
+  const config = { codec, sampleRate, numberOfChannels: channels };
   try {
     const support = await Decoder.isConfigSupported(config);
     if (!support?.supported) {
@@ -245,10 +324,12 @@ async function fetchAndDecode(session: RadioAnalysisSession, relay: string): Pro
       if (next.done) break;
       const merged = new Uint8Array(pending.length + next.value.length);
       merged.set(pending); merged.set(next.value, pending.length);
-      const parsed = findMp3Frames(merged);
+      const parsed = findRadioFrames(merged);
       pending = new Uint8Array(parsed.remainder);
       if (!configured && parsed.frames.length === 0) continue;
-      if (!configured && parsed.frames.length) configured = await configureDecoder(session, parsed.sampleRate, parsed.channels);
+      if (!configured && parsed.frames.length) {
+        configured = await configureDecoder(session, parsed.sampleRate, parsed.channels, parsed.codec);
+      }
       if (!configured || !session.decoder) {
         session.abort.abort();
         try { await reader.cancel(); } catch { /* ignore */ }
@@ -260,7 +341,7 @@ async function fetchAndDecode(session: RadioAnalysisSession, relay: string): Pro
         const Chunk = (globalThis as any).EncodedAudioChunk;
         if (!Chunk) break;
         session.decoder.decode(new Chunk({ type: "key", timestamp, data: frame }));
-        timestamp += 26_000;
+        timestamp += parsed.frameDurationUs;
       }
     }
     if (session.decoder && session.decoder.state === "configured") await session.decoder.flush();
