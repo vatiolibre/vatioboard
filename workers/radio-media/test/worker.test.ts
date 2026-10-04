@@ -78,6 +78,23 @@ describe("radio media Worker", () => {
     expect([...new Uint8Array(await result.arrayBuffer())]).toEqual([...bytes]);
   });
 
+  it("does not forward Safari Range requests to a live upstream", async () => {
+    let streamInit: RequestInit | undefined;
+    vi.mocked(fetch).mockImplementation(async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/json/servers")) return Response.json([{ name: "de1.api.radio-browser.info" }]);
+      const match = /\/json\/stations\/byuuid\/([^/?]+)/.exec(url);
+      if (match) return stationResponse(decodeURIComponent(match[1]));
+      streamInit = init;
+      return new Response(new Uint8Array([1, 2, 3]), { headers: { "Content-Type": "audio/mpeg" } });
+    });
+    const result = await worker.fetch(request(`/v1/stations/${UUID}/stream`, {
+      headers: { Range: "bytes=0-1" },
+    }), ENV);
+    expect(result.status).toBe(200);
+    expect(new Headers(streamInit?.headers).has("Range")).toBe(false);
+  });
+
   it("allows Range preflight and rejects other request headers", async () => {
     const accepted = await worker.fetch(request(`/v1/stations/${UUID}/stream`, {
       method: "OPTIONS",

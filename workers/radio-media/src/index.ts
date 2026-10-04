@@ -387,7 +387,12 @@ async function handleStream(request: Request, env: Env, uuid: string, origin: st
     logEvent("relay_failure", { stage: "directory", outcome: resolution.outcome });
     return response(resolution.outcome === "directory-timeout" ? 504 : 404, "Station unavailable", origin);
   }
-  const requestHeaders = copyHeaders(request.headers, ["Range", "Accept"]);
+  // Live radio is not seekable.  In particular, Safari sends Range requests
+  // for media elements; forwarding those ranges makes the upstream return
+  // tiny 206 AAC fragments that WebKit rejects as an audio stream.  Always
+  // start the upstream at the live edge and let the relay return a continuous
+  // response instead.
+  const requestHeaders = copyHeaders(request.headers, ["Accept"]);
   requestHeaders.set("User-Agent", USER_AGENT);
   let upstreamResult: UpstreamFetchResult;
   try {
