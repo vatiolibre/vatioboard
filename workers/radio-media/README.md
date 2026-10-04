@@ -1,6 +1,6 @@
 # VatioBoard Radio Media Worker
 
-Restricted Cloudflare Worker for Radio Browser station streams and artwork. It accepts only UUID-based station routes and resolves every upstream URL independently.
+Restricted Cloudflare Worker for CORS-safe Radio Browser station streams. Artwork is served by the Rust artwork service; the Worker accepts only UUID-based stream routes and resolves every upstream URL independently.
 
 For in-vehicle background playback and GPS validation, see [Tesla radio and GPS background validation](../../docs/tesla-radio-background-runbook.md).
 
@@ -111,16 +111,6 @@ Access-Control-Allow-Origin: https://dev.vatioboard.com
 Access-Control-Allow-Headers: Accept, Range
 ```
 
-Verify the running development build and origin policy:
-
-```sh
-curl -i "https://radio-media.dev.vatioboard.com/v1/health" \
-  -H "Origin: https://dev.vatioboard.com" \
-  -H "Accept: application/json"
-```
-
-The response must be `200`, report `status: "ready"`, identify the development Worker version, and include the exact development origin. Missing, `null`, and unknown origins must return `403`.
-
 Verify a real continuous HTTP station through the HTTPS relay:
 
 ```sh
@@ -133,27 +123,7 @@ curl -D - --max-time 5 \
 
 Expected headers include `200`, `Content-Type: audio/mpeg`, `Cache-Control: no-store`, and the exact allowed origin. Curl exit code `28` is expected after `--max-time` because a healthy radio stream does not end.
 
-Probe the complete directory/redirect/upstream path without opening a continuous player connection:
-
-```sh
-curl -i \
-  "https://radio-media.dev.vatioboard.com/v1/stations/$UUID/probe" \
-  -H "Origin: https://dev.vatioboard.com" \
-  -H "Accept: application/json"
-```
-
-A healthy station reports `outcome: "ready"`. Failures are categorical and never include the station URL.
-
-Verify browser artwork both with exact-origin CORS and as a no-CORS CSS image:
-
-```sh
-curl -I "https://radio-media.dev.vatioboard.com/v1/stations/$UUID/logo" \
-  -H "Origin: https://dev.vatioboard.com"
-
-curl -I "https://radio-media.dev.vatioboard.com/v1/stations/$UUID/logo"
-```
-
-Both responses must be `200` with a supported image content type. The exact-origin response includes CORS headers; the no-Origin response supports Chromium CSS backgrounds and Media Session artwork. Requests that include an unknown or `null` Origin remain forbidden. Finally, open `https://dev.vatioboard.com`, select Player -> Radio, and confirm the HTTP station displays `LIVE · RELAY` while the spectrum or scope visualizer receives data.
+Finally, open `https://dev.vatioboard.com`, select Player -> Radio, and confirm the HTTP station displays `LIVE · RELAY` while the spectrum or scope visualizer receives data from the same stream.
 
 ### Verified state
 
@@ -164,7 +134,6 @@ This configuration was validated on 2026-09-13:
 - Nginx was active and the Certbot renewal timer was enabled.
 - Vite's transformed environment contained the HTTPS radio-media base.
 - Allowed preflight returned `204`; a disallowed origin returned `403`.
-- Exact-origin and no-Origin artwork returned cached PNGs, while explicit unknown origins were rejected.
 - A real HTTP station returned continuous 128 kbps MP3 data through Nginx and the Worker.
 
 The Vite and Wrangler processes are currently launched as interactive user processes. For unattended availability after logout or reboot, run them under the machine's process supervisor or dedicated systemd services.
@@ -187,4 +156,4 @@ pnpm run radio:test
 pnpm run verify
 ```
 
-Do not include production connectivity in the feature-branch gate. When radio is ready to merge, create the production DNS/custom-domain route, configure production origins, deploy the Worker, generate its binding types, and run the same health, CORS, probe, and continuous-stream checks before switching the production SPA.
+Do not include production connectivity in the feature-branch gate. When radio is ready to merge, create the production DNS/custom-domain route, configure production origins, deploy the Worker, generate its binding types, and run the same CORS and continuous-stream checks before switching the production SPA.
