@@ -64,8 +64,9 @@ export function resolveRadioSource(asset: AudioSourceAsset): ResolvedAudioSource
   const stationUuid = String(asset.station_uuid || "");
   if (!isRadioStationUuid(stationUuid) || Number(asset.hls) === 1) return null;
 
-  // The relay is the canonical source for both audible playback and Web
-  // Audio analysis. One station therefore creates exactly one network stream.
+  // The relay remains the canonical first-party source. Native playback owns
+  // this URL; Safari's optional PCM analyzer may independently fetch the same
+  // relay while visualizations are active, without ever replacing this audio.
   const src = getRadioStreamRelayUrl(stationUuid);
   if (!src) return null;
   const transport = "radio-relay";

@@ -1860,6 +1860,8 @@ export function createPlayerShell({
       mediaElement: audioElement,
       mount: visualizerHost,
       mode: visualizerMode,
+      analysisGraph: stateSnapshot.isLive && "getRadioAnalysisGraph" in runtime
+        ? runtime.getRadioAnalysisGraph() : null,
     });
     visualizerMediaElement = audioElement;
 

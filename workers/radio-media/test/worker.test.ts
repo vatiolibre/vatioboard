@@ -69,6 +69,15 @@ describe("radio media Worker", () => {
     expect([...new Uint8Array(await result.arrayBuffer())]).toEqual([1, 2, 3]);
   });
 
+  it("normalizes AAC+ MIME for WebKit without changing the stream bytes", async () => {
+    const bytes = new Uint8Array([0xff, 0xf1, 0x5e, 0x80, 1, 2, 3]);
+    mockRadioFetch(() => new Response(bytes, { headers: { "Content-Type": "audio/aacp" } }));
+    const result = await worker.fetch(request(`/v1/stations/${UUID}/stream`), ENV);
+    expect(result.status).toBe(200);
+    expect(result.headers.get("Content-Type")).toBe("audio/aac");
+    expect([...new Uint8Array(await result.arrayBuffer())]).toEqual([...bytes]);
+  });
+
   it("allows Range preflight and rejects other request headers", async () => {
     const accepted = await worker.fetch(request(`/v1/stations/${UUID}/stream`, {
       method: "OPTIONS",

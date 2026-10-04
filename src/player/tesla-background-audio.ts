@@ -87,7 +87,13 @@ export function mountTeslaAudioTest(root: HTMLElement) {
     if (miniElement === element && mini) { mini.setMode(miniMode); return; }
     mini?.destroy();
     miniElement = element;
-    const controller = createMiniAudioVisualizer({ mediaElement: element, mount: visualizerHost, mode: miniMode });
+    const controller = createMiniAudioVisualizer({
+      mediaElement: element,
+      mount: visualizerHost,
+      mode: miniMode,
+      analysisGraph: runtime.getState().isLive && "getRadioAnalysisGraph" in runtime
+        ? runtime.getRadioAnalysisGraph() : null,
+    });
     mini = controller;
     void controller.start().then(ready => {
       if (mini !== controller || ready) return;

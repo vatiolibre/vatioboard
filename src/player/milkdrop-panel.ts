@@ -422,6 +422,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
   let gl = null;
   let visualizer = null;
   let graphEntry = null;
+  let graphOwnedByRegistry = false;
   let audioElement = null;
   let wired = false;
   let wiring: Promise<boolean> | null = null;
@@ -535,10 +536,11 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
 
     if (graphEntry && audioElement) {
       try { visualizer?.disconnectAudio?.(graphEntry.sourceNode); } catch { /* optional renderer */ }
-      releaseGraph(audioElement);
+      if (graphOwnedByRegistry) releaseGraph(audioElement);
     }
 
     graphEntry = null;
+    graphOwnedByRegistry = false;
     audioElement = null;
     visualizer = null;
     wired = false;
@@ -590,13 +592,17 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     gl = canvas.getContext("webgl2") || canvas.getContext("webgl");
     if (!gl) { markUnavailable(); return false; }
 
-    // Acquire shared audio graph
-    const acquired = await acquireGraph(el);
+    // Safari radio uses the shared decoded-PCM analysis graph. It is never
+    // allowed to bind the audible radio element to MediaElementAudioSource.
+    const radioAnalysis = state.isLive && "getRadioAnalysisGraph" in runtime
+      ? runtime.getRadioAnalysisGraph() : null;
+    const acquired = radioAnalysis || await acquireGraph(el);
     if (token !== wiringGeneration || destroyed || el !== visualizationElement()) {
       if (acquired) releaseGraph(el);
       return false;
     }
     graphEntry = acquired;
+    graphOwnedByRegistry = !radioAnalysis;
     if (!graphEntry) {
       markUnavailable();
       teardownAudioWiring();
