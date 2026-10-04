@@ -183,6 +183,10 @@ function visualizationElement() {
   return Reflect.has(runtime, "getVisualizationAudioElement")
     ? runtime.getVisualizationAudioElement() : runtime.getAudioElement();
 }
+function visualizationTrackKey(state = runtime.getState()) {
+  const track = state.currentTrack;
+  return track ? String(track._queueId || track.station_uuid || track.name || "") : "";
+}
 function isSafeSource() {
   const el = visualizationElement();
   const state = runtime.getState();
@@ -424,6 +428,8 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
   let graphEntry = null;
   let graphOwnedByRegistry = false;
   let audioElement = null;
+  let wiredTrackKey = "";
+  let requestedRadioTrackKey = "";
   let wired = false;
   let wiring: Promise<boolean> | null = null;
   let wiringGeneration = 0;
@@ -542,6 +548,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     graphEntry = null;
     graphOwnedByRegistry = false;
     audioElement = null;
+    wiredTrackKey = "";
     visualizer = null;
     wired = false;
     gl = null;
@@ -574,6 +581,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     if (!Butterchurn || !_presetsModule) { markUnavailable(); return false; }
 
     const state = runtime.getState();
+    const trackKey = visualizationTrackKey(state);
     const el = visualizationElement();
     if (!state.currentTrack || !state.sourceType || !el?.src) return false;
     if (!isSafeSource()) {
@@ -597,7 +605,8 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     const radioAnalysis = state.isLive && "getRadioAnalysisGraph" in runtime
       ? runtime.getRadioAnalysisGraph() : null;
     const acquired = radioAnalysis || await acquireGraph(el);
-    if (token !== wiringGeneration || destroyed || el !== visualizationElement()) {
+    if (token !== wiringGeneration || destroyed || el !== visualizationElement()
+      || trackKey !== visualizationTrackKey()) {
       if (acquired) releaseGraph(el);
       return false;
     }
@@ -609,6 +618,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
       return false;
     }
     audioElement = el;
+    wiredTrackKey = trackKey;
 
     try {
       visualizer = Butterchurn.createVisualizer(graphEntry.audioContext, canvas, {
@@ -650,6 +660,7 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
     if (destroyed || root.hidden) return;
     const s = runtime.getState();
     const el = visualizationElement();
+    const trackKey = visualizationTrackKey(s);
     const hasPlayableSource = Boolean(s.currentTrack && s.sourceType && el?.src);
 
     if (!hasPlayableSource) {
@@ -657,9 +668,25 @@ export function createMilkdropPanel(options: MilkdropPanelOptions = {}): Milkdro
       return;
     }
 
-    if (audioElement && audioElement !== el) {
+    if (audioElement && (audioElement !== el || wiredTrackKey !== trackKey)) {
       teardownAudioWiring();
     }
+
+    // Radio reuses one HTMLAudioElement across station changes. Safari's
+    // decoded PCM graph is station-specific, so reacquire it before wiring
+    // Butterchurn instead of falling back to the stale/empty media graph.
+    const radioAnalysis = Reflect.has(runtime, "getRadioAnalysisGraph")
+      ? runtime.getRadioAnalysisGraph() : null;
+    if (s.isLive && !failed && !radioAnalysis
+      && requestedRadioTrackKey !== trackKey
+      && "requestRadioVisualization" in runtime) {
+      requestedRadioTrackKey = trackKey;
+      void runtime.requestRadioVisualization(radioVisualizationOwner).then(() => {
+        if (!destroyed && !root.hidden && visualizationTrackKey() === trackKey) syncWithPlayback();
+      });
+      return;
+    }
+    if (!s.isLive) requestedRadioTrackKey = "";
 
     if (s.playing && wired) {
       startRenderLoop();

@@ -64,6 +64,8 @@ export function mountTeslaAudioTest(root: HTMLElement) {
   let mini: ReturnType<typeof createMiniAudioVisualizer> | null = null;
   let miniMode: "scope" | "spectrum" | null = null;
   let miniElement: HTMLAudioElement | null = null;
+  let miniTrackKey = "";
+  let radioGraphRequestKey = "";
   let milkdrop: ReturnType<typeof createMilkdropPanel> | null = null;
   const visualizerHost = document.createElement("div");
   visualizerHost.style.minHeight = "100px";
@@ -71,28 +73,60 @@ export function mountTeslaAudioTest(root: HTMLElement) {
   function stopVisualizations() {
     visualizationGeneration++;
     miniMode = null; miniElement = null;
+    miniTrackKey = "";
+    radioGraphRequestKey = "";
     mini?.destroy(); mini = null;
     milkdrop?.destroy(); milkdrop = null;
     visualizerHost.hidden = true;
     runtime.releaseRadioVisualization(analysisOwner);
   }
   function syncMini() {
-    const element = runtime.getState().isLive ? runtime.getVisualizationAudioElement() : null;
+    const snapshot = runtime.getState();
+    const element = snapshot.isLive ? runtime.getVisualizationAudioElement() : null;
+    const track = snapshot.currentTrack;
+    const trackKey = track
+      ? String(track._queueId || track.station_uuid || track.name || "")
+      : "";
     if (!miniMode || !element || document.hidden) {
       mini?.destroy(); mini = null; miniElement = null;
+      miniTrackKey = "";
+      radioGraphRequestKey = "";
       visualizerHost.hidden = true;
       return;
     }
     visualizerHost.hidden = false;
-    if (miniElement === element && mini) { mini.setMode(miniMode); return; }
+
+    const analysisGraph = snapshot.isLive && Reflect.has(runtime, "getRadioAnalysisGraph")
+      ? runtime.getRadioAnalysisGraph() : null;
+    if (snapshot.isLive && Reflect.has(runtime, "requestRadioVisualization")
+      && !analysisGraph && radioGraphRequestKey !== trackKey) {
+      radioGraphRequestKey = trackKey;
+      mini?.destroy(); mini = null;
+      miniElement = element;
+      miniTrackKey = trackKey;
+      void runtime.requestRadioVisualization(analysisOwner).then(() => {
+        radioGraphRequestKey = "";
+        const current = runtime.getState().currentTrack;
+        const currentKey = current
+          ? String(current._queueId || current.station_uuid || current.name || "")
+          : "";
+        if (currentKey === trackKey) syncMini();
+      });
+      return;
+    }
+    if (!snapshot.isLive) radioGraphRequestKey = "";
+    if (miniElement === element && mini && miniTrackKey === trackKey) {
+      mini.setMode(miniMode);
+      return;
+    }
     mini?.destroy();
     miniElement = element;
+    miniTrackKey = trackKey;
     const controller = createMiniAudioVisualizer({
       mediaElement: element,
       mount: visualizerHost,
       mode: miniMode,
-      analysisGraph: runtime.getState().isLive && "getRadioAnalysisGraph" in runtime
-        ? runtime.getRadioAnalysisGraph() : null,
+      analysisGraph,
     });
     mini = controller;
     void controller.start().then(ready => {

@@ -1737,7 +1737,7 @@ export function createPlayerShell({
   // ── Visualizer controls ─────────────────────────────────────────
   const radioScopeOwner = Symbol("player-scope");
   const radioMilkdropOwner = Symbol("player-milkdrop-preparation");
-  let radioVisualizerTrack = null;
+  let radioVisualizerTrackKey = "";
   let radioVisualizerAttempted = false;
   let radioVisualizerPending = false;
   let radioVisualizerOperation = 0;
@@ -1774,10 +1774,17 @@ export function createPlayerShell({
 
   function syncRadioVisualizer(snapshot) {
     const track = snapshot.isLive ? snapshot.currentTrack : null;
-    if (track !== radioVisualizerTrack) {
-      radioVisualizerTrack = track;
+    const trackKey = track
+      ? String(track._queueId || track.station_uuid || track.name || "")
+      : "";
+    if (trackKey !== radioVisualizerTrackKey) {
+      radioVisualizerTrackKey = trackKey;
       radioVisualizerAttempted = true;
       disableRadioVisualizer();
+      // Radio reuses one HTMLAudioElement across station handoffs. The
+      // Safari PCM graph behind the old controller is disposed and replaced,
+      // so the controller must not keep its old analyser/graph reference.
+      destroyVisualizerController();
       radioVisualizerAttempted = false;
       resetVisualizerFailure();
       visualizerVisible = track ? false : preferredVisualizerVisible;
