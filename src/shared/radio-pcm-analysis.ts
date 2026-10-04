@@ -48,6 +48,8 @@ let primedContext: AudioContext | null = null;
 // This graph is muted and analysis-only, so the buffer does not add audible
 // playback latency; the worklet drops the oldest samples when it is full.
 const PCM_JITTER_BUFFER_SECONDS = 1.5;
+const RADIO_ANALYSER_FFT_SIZE = 1024;
+const RADIO_ANALYSER_SMOOTHING = 0.35;
 
 const WORKLET_SOURCE = `
 class VatioRadioPcmProcessor extends AudioWorkletProcessor {
@@ -308,8 +310,8 @@ export async function acquireRadioPcmAnalysis(stationUuid: string): Promise<Anal
     await context.audioWorklet.addModule(workletUrl);
     const pcmNode = new AudioWorkletNode(context, "vatio-radio-pcm", { numberOfOutputs: 1, outputChannelCount: [2] });
     const analyser = context.createAnalyser();
-    analyser.fftSize = 256;
-    analyser.smoothingTimeConstant = 0.62;
+    analyser.fftSize = RADIO_ANALYSER_FFT_SIZE;
+    analyser.smoothingTimeConstant = RADIO_ANALYSER_SMOOTHING;
     const mute = context.createGain();
     mute.gain.value = 0;
     pcmNode.connect(analyser);

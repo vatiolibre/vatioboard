@@ -352,10 +352,14 @@ export function createMiniAudioVisualizer({
 
       try {
         analyser = currentGraph.audioContext.createAnalyser();
-        analyser.fftSize = 256;
-        analyser.smoothingTimeConstant = 0.62;
-        analyser.minDecibels = -88;
-        analyser.maxDecibels = -20;
+        const decodedPcm = "transport" in currentGraph && currentGraph.transport === "decoded-pcm";
+        // Safari radio uses the decoded PCM graph. Its 22.05 kHz stations
+        // need more bins than the compact media-element analyser, while the
+        // lower smoothing keeps the visualization responsive to transients.
+        analyser.fftSize = decodedPcm ? 1024 : 256;
+        analyser.smoothingTimeConstant = decodedPcm ? 0.35 : 0.62;
+        analyser.minDecibels = decodedPcm ? -100 : -88;
+        analyser.maxDecibels = decodedPcm ? -12 : -20;
         currentGraph.sourceNode.connect(analyser);
         if ("consumers" in currentGraph) currentGraph.consumers?.add(analyser);
         frequencyData = new Uint8Array(analyser.frequencyBinCount);

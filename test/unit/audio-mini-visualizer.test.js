@@ -201,6 +201,34 @@ describe("createMiniAudioVisualizer", () => {
     destroyVisualizerGraphForElement(media);
   });
 
+  it("uses a higher-resolution, responsive analyser for decoded radio PCM", async () => {
+    const mount = document.createElement("div");
+    Object.defineProperty(mount, "getBoundingClientRect", {
+      value: () => ({ width: 240, height: 72 }),
+    });
+    document.body.append(mount);
+
+    const media = document.createElement("audio");
+    const analysisGraph = {
+      audioContext: fakeAudioContext,
+      sourceNode: fakeSourceNode,
+      transport: "decoded-pcm",
+    };
+    const controller = createMiniAudioVisualizer({
+      mediaElement: media,
+      mount,
+      analysisGraph,
+      mode: "spectrum",
+    });
+
+    await expect(controller.start()).resolves.toBe(true);
+    expect(fakeAnalyser.fftSize).toBe(1024);
+    expect(fakeAnalyser.smoothingTimeConstant).toBe(0.35);
+    expect(fakeAnalyser.minDecibels).toBe(-100);
+    expect(fakeAnalyser.maxDecibels).toBe(-12);
+    controller.destroy();
+  });
+
   it("keeps radio direct-to-relay playback on one graph with live spectrum and scope samples", async () => {
     const frameCallbacks = [];
     window.requestAnimationFrame = vi.fn((callback) => {
