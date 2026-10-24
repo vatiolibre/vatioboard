@@ -94,7 +94,8 @@ vi.mock("../../src/shared/media-access-cache.js", () => ({
 }));
 
 vi.mock("../../src/shared/player-session.js", () => ({
-  loadPlayerSession: vi.fn().mockReturnValue(null),
+  hasPlayerSession: vi.fn().mockReturnValue(false),
+  loadPlayerSession: vi.fn().mockReturnValue({ queueEntries: [], currentIndex: -1 }),
   savePlayerSession: vi.fn(),
 }));
 
@@ -178,7 +179,8 @@ describe("integratePlayerWidget", () => {
       clearMediaAccessCache: vi.fn(),
     }));
     vi.doMock("../../src/shared/player-session.js", () => ({
-      loadPlayerSession: vi.fn().mockReturnValue(null),
+      hasPlayerSession: vi.fn().mockReturnValue(false),
+      loadPlayerSession: vi.fn().mockReturnValue({ queueEntries: [], currentIndex: -1 }),
       savePlayerSession: vi.fn(),
     }));
     vi.doMock("../../src/shared/audio-source-resolver.js", () => ({

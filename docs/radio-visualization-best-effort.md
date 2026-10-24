@@ -1,115 +1,94 @@
 # Best-effort radio visualization
 
-## Status
+## Current behavior
 
-Optional enhancement to the [vehicle-accepted audio reference](tesla-browser-audio-implementation.md).
-Scope, spectrum and Milkdrop can analyse radio through a separate relay stream.
-The enhancement has not yet been vehicle-accepted. The recorded reference commit
-and its physical acceptance remain unchanged.
+Player saves radio Visuals on/off separately from the MP3 preference. The existing
+scope/spectrum mode remains shared and persisted. Missing radio preferences default
+to enabled; old radio toggle choices were not saved and cannot be migrated.
+Transient failures, interruptions, and the temporary demo handoff never change the
+saved radio preference. Milkdrop restoration is outside this improvement.
 
-## Playback and failure policy
+On reload, scope/spectrum waits for native radio playback and completion of the
+accepted demo-to-station audio handoff. It also waits until Player and the document
+are visible. A paused/stopped session stays paused/stopped. A minimized Player stays
+minimized and performs no scope rendering until opened.
 
-- Audible radio keeps its connected native element, original direct/relay source,
-  CORS policy and native Media Session ownership. It is never bound to Web Audio.
-- Radio restored after refresh/revisit stays manual-only to protect native audio
-  startup. See [radio restoration](radio-session-restoration.md).
-- Scope/spectrum starts disabled for each newly selected radio station. Once native radio reports
-  playing, the Player makes one automatic attempt to enable analysis. Only success
-  turns the toggle on; browser restrictions leave it off for a single-tap retry.
-  This does not change the saved MP3 visualizer preference. Milkdrop opens manually.
-- Requesting a radio visualizer opens a second, CORS-enabled stream from our relay.
-  All open visualizers share that analysis element and its single audio graph.
-- The analysis element starts muted. It is unmuted only after its graph connects
-  through a gain fixed at zero to the destination. Visualizers read samples before
-  that gain; the second stream must not produce audible output.
-- For manual requests, context resume and analysis `play()` start synchronously
-  from the requesting gesture. The automatic attempt may be blocked by the browser. Optional module loading never delays primary radio playback.
-- Missing AudioContext, blocked playback, relay/CORS/codec errors, startup taking
-  longer than eight seconds, media interruption or suspended context makes analysis
-  unavailable. Stale completions cannot unmute or change a newer analysis element.
-  There is no recovery polling, repeated automatic retry or primary source reset.
-- Scope/spectrum and Milkdrop retain independent analysis ownership. Closing the
-  last viewer releases the analysis stream and graph. Unsupported renderers release
-  their ownership without stopping another viewer or the audible stream.
-- Pause, Stop, a new track, a hidden document or pagehide disposes the current
-  analysis stream. A station change or explicit Play can start a new analysis
-  attempt for already-requested viewers. Returning from a minimized browser alone
-  does not restart analysis; tap a visualization control to retry it.
-- Recording/alert leases, silent PCM and their platform ownership are unchanged.
-  Analysis acquires no background lease and writes no platform metadata/actions.
+Each station/playback recovery or foreground-return cycle permits one automatic
+attempt. Duplicate pageshow, visibility and resume events coalesce; continuing
+visuals stay alone. Preparation has an eight-second deadline. Pause, Stop, track
+changes, hiding/minimization, freeze, ownership loss and destruction invalidate
+pending work. Late results cannot enable a renderer for a different session.
 
-## Tradeoffs
+Failure leaves the Visuals button off with the existing unavailable tooltip and
+preserves the saved preference. Tap Visuals once to retry with browser activation;
+tap again during preparation to cancel and save off. There is no polling or new
+recovery button. Optional visualization failures do not become playback errors.
 
-While active, analysis opens a second stream and increases bandwidth, relay load
-and decoding/rendering work. The native stream and relay stream buffer independently;
-visuals may lag or lead the sound and are not sample-synchronized. A silent station
-or a CORS response that yields zero samples can produce a flat visualizer; this is
-not evidence that audible playback failed. There is no waveform-based retry loop.
+## Audio and graph ownership
 
-The inaudible graph is intended to preserve native playback, but additional media
-and Web Audio activity can still affect Tesla's platform behavior. This must be
-measured in the vehicle before designating the enhancement a stable successor.
+Chromium uses the existing shared media-element audio graph. New media sources are
+bound only after their context runs and a current consumer still requests them.
+A manual retry can resume pending preparation on that same context. Cancelling
+scope must not destroy a graph still used by playback or Milkdrop.
 
-## Controls and vehicle checks
+Safari uses the existing independent decoded-PCM analysis transport. Consumers
+share that station's analysis graph. Releasing one viewer does not dispose a graph
+still owned by another viewer. Hiding or changing stations disposes transient PCM
+analysis; reopening Player creates a renderer against the current graph.
 
-Main app: https://dev.vatioboard.com/?debugAudio=1
+Visualization restoration never restarts radio, repeats the demo, changes the
+saved station/queue or acquires a background lease. Recording/alert retention and
+Media Session arbitration remain independent. Releasing the last Chromium viewer
+keeps the native audio graph connected because it remains the playback route.
 
-Start radio: the Visuals toggle stays off while connecting, then turns on only if
-the automatic attempt succeeds. If unavailable, playback should continue and the
-toggle stays off; tap it once to retry. Disabling visuals keeps them off for that
-station. A new station receives a fresh automatic attempt. Open Milkdrop manually
-and close/reopen it for an explicit retry.
+A running graph or flat waveform is not evidence of Tesla audio ownership. Silence,
+CORS restrictions, unsupported decoding and context suspension can still prevent
+useful visuals. No waveform-based retry loop is introduced.
 
-Harness: https://dev.vatioboard.com/tesla-background-audio.html
+## Panel geometry
 
-1. Tap **VatioBoard native radio** and reconfirm the accepted baseline.
-2. Tap **Radio spectrum**, **Radio scope**, then **Radio Milkdrop**. Check animation
-   and confirm there is no second audible stream or echo.
-3. Check takeover of other Tesla audio, 30 seconds minimized and five minutes
-   minimized. Analysis should stop while hidden; native audio must continue.
-4. Return and explicitly enable visualization again. Switch stations, test Pause,
-   Play and Stop, and use **Disable visualizations** while the radio is playing.
-5. In the main application repeat the accepted recording/alerts, radio, and combined
-   test groups. Verify recorded GPS samples separately from audio continuity.
-6. Test a relay failure or unsupported visualizer: audio should remain on the same
-   native element and recording/alerts should retain their leases.
+Compact Player height follows current content instead of a cached shell height.
+Intrinsic header/body-content changes trigger coalesced refits without persisting
+new derived window bounds. The panel stays within the current shell work area;
+its body can scroll if it cannot fit. Control touch sizes and the Browse sidecar
+remain available. Saved visibility and position are preserved where they fit.
 
-The harness reports `visualizationStatus` and `analysisCurrentTime` separately from
-primary playback and keep-alive state. An analysis failure is not a radio failure.
-Photograph results; exporting is optional.
+## Diagnostics and validation
 
-## Automated validation
+Existing diagnostics record `radio-visual-recovery` with trigger, station,
+outcome/readiness and media progress. Runtime `radio-visualization` events distinguish
+ready, unavailable, cancellation and timeout. The handoff-ready snapshot is
+published after its pending flag clears. These observations do not certify audible
+vehicle playback or competing-audio takeover.
 
-Tests cover radio visuals disabled during connection, one automatic attempt,
-single-tap retry after rejection, stale station changes, zero-gain routing,
-synchronous requests, unavailable APIs, media errors,
-deadlines, stale promises, shared viewer ownership, independent feature leases,
-Pause/hidden cleanup and renderer teardown. Chromium uses controlled radio fixtures
-to verify nonzero analyser samples and native-element isolation. Validation completed on 2026-09-18:
+Regression coverage includes saved preferences, mode selection, handoff gating,
+context failures, deadlines, stale completions, lifecycle coalescing, shared graph
+ownership, real Chromium analyser output and utility-button geometry/hit testing
+at Tesla compact and expanded sizes. Earlier validation and physical acceptance
+in [radio restoration](radio-session-restoration.md) describe the historical audio
+baseline, not acceptance of automatic visuals.
 
-| Command | Result |
-| --- | --- |
-| `pnpm test` | Pass: 2,030 unit/architecture + 100 smoke + 14 SPA/GPS tests (2,144 total) |
-| `pnpm run typecheck` | Pass |
-| `pnpm run lint` | Pass: 0 errors, 73 warnings |
-| `pnpm run build` | Pass, with Vite externalization/chunk warnings |
-| `pnpm exec playwright test test/e2e/tesla-background-audio.spec.ts test/e2e/tesla-radio-poc.spec.ts --project=model-y-2024` | Pass: 4 Chromium tests |
+Automated validation on 2026-10-24 passed 2,078 unit/architecture tests,
+115 smoke tests (including 14 GPS/background tests), four Chromium audio/visual
+recovery cases, four Tesla viewport containment cases, and two Player-only Browse
+snapshot cases. Typecheck, lint and production build passed. Lint retains 72
+existing warnings. The build retains its existing OpenCV externalization and
+chunk-size notices. Focused tests were repeated after final lifecycle adjustments.
 
-The new Chromium test verifies nonzero analysis samples, scope/spectrum controls,
-Milkdrop opening without disrupting primary playback, analysis shutdown, and relay
-failure while the original native element keeps playing without a Web Audio graph.
-Automation does not establish Tesla focus or vehicle acceptance of this enhancement.
+## Parked Tesla checks (pending)
 
-## Implementation locations
+Record vehicle software/browser version and deployed build ID. Use `?debugAudio=1`
+and capture the Audio test summary separately from physical audio observations.
 
-- `src/shared/radio-analysis.ts`: optional stream, timeout, cancellation and cleanup.
-- `src/shared/audio-graph-registry.ts`: zero-gain analysis output; native guard retained.
-- `src/shared/audio-runtime.ts`: viewer ownership and playback/visibility lifecycle.
-- `src/player/player-shell.ts`, `src/player/player-widget.ts`: scope/spectrum controls
-  and release when hidden/destroyed.
-- `src/player/milkdrop-panel.ts`: analysis source selection, independent ownership,
-  stale-wiring guards and renderer disconnection.
-- `src/player/tesla-background-audio.ts`: comparison controls and separate analysis state.
-- `test/unit/radio-analysis.test.js`, `test/unit/radio-audio-runtime.test.js`,
-  `test/unit/audio-graph-registry.test.js`, `test/e2e/tesla-background-audio.spec.ts`:
-  feature regression coverage.
+1. Restore a playing station with scope enabled, then spectrum. Confirm demo-to-radio
+   ordering, animated visuals, unchanged station/queue, and competing-audio takeover.
+2. Refresh and revisit at compact and expanded browser sizes. Confirm the utility
+   row is fully available after visuals and metadata appear. Exercise Browse.
+3. Turn Visuals off and refresh: it must stay off. Pause and refresh: neither audio
+   nor analysis should start. Exercise the existing Visuals retry after a failure.
+4. Minimize for 30 seconds and five minutes. Confirm audible radio continues and
+   scope resumes once on return. Exercise Back/Forward cache separately from reload.
+5. Repeat with recording/alerts enabled. Verify their retention survives visual
+   failure and Player Stop. Open/close Milkdrop manually to check shared ownership.
+6. Recheck MP3 demo restoration. Report audio ownership, audio continuity, visual
+   animation and panel geometry as separate results.

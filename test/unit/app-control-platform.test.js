@@ -872,3 +872,25 @@ describe("VatioBoard OS app control plane", () => {
     cleanup.run();
   });
 });
+
+describe("Player toolbar favorite migration", () => {
+  beforeEach(() => localStorage.clear());
+
+  it("adds Player on new installations and preserves removal across service recreation", () => {
+    const control = createAppControlService();
+    expect(control.isFavorite("vatio.player")).toBe(true);
+    control.setFavorite("vatio.player", false);
+    expect(createAppControlService().isFavorite("vatio.player")).toBe(false);
+  });
+
+  it("adds the favorite once for existing users without enabling a disabled Player", () => {
+    localStorage.setItem("vatioboard.os.appControl.v1", JSON.stringify({ version: 1, apps: {
+      "vatio.player": { enabled: false, favorite: false, deniedPermissions: ["network.external"] },
+    } }));
+    const control = createAppControlService();
+    expect(control.getState("vatio.player")).toMatchObject({ enabled: false, favorite: true, deniedPermissions: ["network.external"] });
+    control.setFavorite("vatio.player", false);
+    control.recordLaunch("vatio.player");
+    expect(createAppControlService().getState("vatio.player")).toMatchObject({ enabled: false, favorite: false });
+  });
+});

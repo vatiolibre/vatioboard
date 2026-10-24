@@ -28,6 +28,8 @@ test("native radio remains connected and leaves main recording leases independen
   await page.route("https://station.example/**", (route) =>
     route.fulfill({ contentType: "audio/wav", body: radioFixture() }),
   );
+  await page.route("**/v1/stations/*/stream", route =>
+    route.fulfill({ contentType: "audio/wav", body: radioFixture(), headers: { "Access-Control-Allow-Origin": "*" } }));
   await page.goto("/tesla-background-audio.html");
   await page.getByLabel("Station stream URL").fill("https://station.example/one");
   const click = (name: string) => page.getByRole("button", { name, exact: true }).click();
@@ -132,20 +134,23 @@ test("the shared radio graph feeds visualizers without binding or stopping nativ
   expect((await inspect()).primaryPaused).toBe(false);
   await page.locator(".milkdrop-close-btn").click();
   await click("Disable visualizations");
-  await expect.poll(async () => (await inspect()).status).toBe("idle");
+  await expect(page.locator("canvas.media-player-audio-canvas")).toBeHidden();
+  // The native graph remains the playback route after its consumers close.
+  // Retain and reuse it rather than disconnecting the already-playing station.
+  expect(await inspect()).toMatchObject({ status: "ready", nativeHasGraph: true, primaryPaused: false });
   const before = (await inspect()).primaryTime;
   await expect.poll(async () => (await inspect()).primaryTime).toBeGreaterThan(before);
   await page.unroute("**/v1/stations/*/stream");
   await page.route("**/v1/stations/*/stream", route => route.abort());
   await click("Radio spectrum");
-  await expect.poll(async () => (await inspect()).status).toBe("unavailable");
+  await expect.poll(async () => (await inspect()).status).toBe("ready");
   expect(await inspect()).toMatchObject({ primaryPaused: false, nativeHasGraph: true, sameElement: true });
   expect(relayRequests).toBe(1);
   await expect(page.locator("#vatio-native-radio-host audio")).toHaveAttribute("data-original", "yes");
   expect(errors).toEqual([]);
 });
 
-test("saved radio waits for Play, then uses the restored local-demo lifecycle", async ({ page }) => {
+test("autoplay-disabled radio uses the tested local-demo lifecycle after Play", async ({ page }) => {
   await page.route("https://station.example/**", route =>
     route.fulfill({ contentType: "audio/wav", body: radioFixture() }));
   // Restored sessions intentionally do not persist direct stream URLs. The
@@ -177,7 +182,7 @@ test("saved radio waits for Play, then uses the restored local-demo lifecycle", 
       media_kind: "audio",
       src: "/audio/demo/sb_titan.mp3",
       _demo: true,
-    }], { autoplay: true });
+    }], { autoplay: false });
   });
   await expect.poll(() => page.evaluate(async () => {
     const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
@@ -191,17 +196,12 @@ test("saved radio waits for Play, then uses the restored local-demo lifecycle", 
       playOrder: (window as Window & { __radioPlayOrder?: string[] }).__radioPlayOrder || [],
     };
   })).toMatchObject({ restored: true, paused: true, silentPlaying: false, owners: [], analysis: "idle", playOrder: [] });
+  // This harness's transport buttons are scoped to tests it started itself.
+  // Invoke the production Play entry point for the restored session instead,
+  // allowing actual decoded media to complete the handoff without fake events.
   await page.evaluate(async () => {
     const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
-    const play = runtime.play();
-    const demo = runtime.getAudioElement();
-    await new Promise(resolve => setTimeout(resolve, 100));
-    demo.currentTime = 0.2;
-    demo.dispatchEvent(new Event("playing"));
-    demo.dispatchEvent(new Event("timeupdate"));
-    await new Promise(resolve => setTimeout(resolve, 100));
-    runtime.getAudioElement()?.dispatchEvent(new Event("playing"));
-    await play;
+    await runtime.play({ fromUserGesture: true });
   });
   await expect.poll(() => page.evaluate(async () => {
     const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
@@ -214,7 +214,7 @@ test("saved radio waits for Play, then uses the restored local-demo lifecycle", 
       analysis: runtime.getRadioVisualizationStatus(),
       playOrder: (window as Window & { __radioPlayOrder?: string[] }).__radioPlayOrder || [],
     };
-  })).toMatchObject({ restored: true, primaryAdvancing: false, silentPlaying: true, owners: ["player-runtime"], analysis: "idle" });
+  })).toMatchObject({ restored: true, primaryAdvancing: true, silentPlaying: true, owners: ["player-runtime"], analysis: "idle" });
   await expect(page.locator("#vatio-native-radio-host audio")).toBeHidden();
   await page.evaluate(async () => {
     const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));

@@ -228,6 +228,8 @@ export interface DriveRecordingService {
 }
 
 export interface AudioRuntimeState {
+  playbackIntent: "playing" | "paused" | "stopped";
+  restorationStatus: "idle" | "restoring" | "blocked" | "failed" | "restored";
   queue: unknown[];
   playedHistory: unknown[];
   currentIndex: number;
@@ -244,6 +246,11 @@ export interface AudioRuntimeState {
   cacheable: boolean;
   analysisEligible: boolean;
   analysisActive: boolean;
+  radioVisualizationAutoStart?: boolean;
+  radioFocusHandoffPending?: boolean;
+  radioFocusPrepared?: boolean;
+  restoredRadioSession?: boolean;
+  restoredRadioReason?: string | null;
   radioVisualizationStatus?: "idle" | "ready" | "unavailable";
   radioVisualizationTransport?: "media-element" | "decoded-pcm" | "none";
   radioVisualizationSignal?: string;

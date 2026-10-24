@@ -943,6 +943,55 @@ describe("player cold boot", () => {
     expect(countFetchCalls(window.fetch, "get_my_media_asset_access")).toBe(0);
   });
 
+  it("hydrates and resumes public saved audio before a slow auth probe completes", async () => {
+    localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, JSON.stringify({
+      version: 2, queueEntries: [{ ...DEMO_TRACK_TITAN, entryId: "saved-demo" }],
+      currentEntryId: "saved-demo", currentIndex: 0, currentTime: 17, paused: false,
+    }));
+    const probe = createDeferred();
+    const guestFetch = createGuestDemoFetch();
+    window.fetch = vi.fn((input, options) => getFetchUrl(input).includes("sso.status") ? probe.promise : guestFetch(input, options));
+    await bootHtmlPage("player.html");
+    const playerPage = await import("../../src/player/player-demo.js");
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    expect(runtime.getState()).toMatchObject({ currentTrack: { name: "demo:titan" }, currentTime: 17 });
+    await vi.waitFor(() => expect(runtime.getState().playing).toBe(true));
+    expect(countFetchCalls(window.fetch, "get_my_media_manifest")).toBe(0);
+    probe.resolve(jsonResponse({ message: { connected: false, is_guest: true } }));
+    await playerPage.initPromise;
+  });
+
+  it("first visits start the demo playlist while authentication is pending", async () => {
+    const probe = createDeferred();
+    const guestFetch = createGuestDemoFetch();
+    window.fetch = vi.fn((input, options) => getFetchUrl(input).includes("sso.status") ? probe.promise : guestFetch(input, options));
+    await bootHtmlPage("player.html");
+    const playerPage = await import("../../src/player/player-demo.js");
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    await vi.waitFor(() => expect(runtime.getState()).toMatchObject({ playing: true, playbackIntent: "playing", currentTrack: { name: "demo:titan" } }));
+    probe.resolve(jsonResponse({ message: { connected: false, is_guest: true } }));
+    await playerPage.initPromise;
+    expect(runtime.getState().currentTrack.name).toBe("demo:titan");
+  });
+
+  it("private saved audio publishes its snapshot but waits for authentication before source access", async () => {
+    localStorage.setItem(PLAYER_SESSION_STORAGE_KEY, JSON.stringify({
+      version: 2, queueEntries: [{ ...AUDIO_ASSET_1, entryId: "saved-private" }],
+      currentEntryId: "saved-private", currentIndex: 0, currentTime: 23, paused: false,
+    }));
+    const probe = createDeferred();
+    const authenticatedFetch = createAuthenticatedPlayerFetch();
+    window.fetch = vi.fn((input, options) => getFetchUrl(input).includes("sso.status") ? probe.promise : authenticatedFetch(input, options));
+    await bootHtmlPage("player.html");
+    const playerPage = await import("../../src/player/player-demo.js");
+    const runtime = await import("../../src/shared/audio-runtime.js");
+    expect(runtime.getState()).toMatchObject({ currentTrack: { name: "AUDIO-1" }, currentTime: 23, playing: false });
+    expect(countFetchCalls(window.fetch, "get_my_media_asset_access")).toBe(0);
+    probe.resolve(jsonResponse({ message: { connected: false, is_guest: false } }));
+    await playerPage.initPromise;
+    await vi.waitFor(() => expect(runtime.getState().playing).toBe(true));
+  });
+
   it("auth-pending boot waits for the session probe before firing manifest requests", async () => {
     const sessionProbe = createDeferred();
     const fetchMock = vi.fn(async (input) => {

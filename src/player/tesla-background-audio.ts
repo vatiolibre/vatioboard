@@ -99,7 +99,10 @@ export function mountTeslaAudioTest(root: HTMLElement) {
     const analysisGraph = snapshot.isLive && Reflect.has(runtime, "getRadioAnalysisGraph")
       ? runtime.getRadioAnalysisGraph() : null;
     if (snapshot.isLive && Reflect.has(runtime, "requestRadioVisualization")
+      && snapshot.radioVisualizationStatus === "idle"
       && !analysisGraph && radioGraphRequestKey !== trackKey) {
+      // Chrome's ready shared native graph has no separate AnalysisGraph.
+      // Re-requesting it on every completion would create an endless microtask loop.
       radioGraphRequestKey = trackKey;
       mini?.destroy(); mini = null;
       miniElement = element;

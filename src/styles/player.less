@@ -282,7 +282,10 @@ html.vb-floating-drag-active body {
 /* ── Body ─────────────────────────────────────────────────────────── */
 
 .player-body {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 10px 12px 12px;
   display: flex;
   flex-direction: column;
@@ -292,6 +295,11 @@ html.vb-floating-drag-active body {
     color-mix(in srgb, var(--player-surface) 94%, var(--player-btn) 6%) 0%,
     var(--player-surface) 26px
   );
+}
+
+.player-header,
+.player-body > * {
+  flex-shrink: 0;
 }
 
 /* ── Now-playing (compact) ────────────────────────────────────────── */

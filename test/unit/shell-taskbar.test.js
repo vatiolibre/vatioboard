@@ -79,6 +79,8 @@ describe("shell-taskbar", () => {
     document.documentElement.className = "";
     document.documentElement.style.removeProperty(TASKBAR_AVOID_BOTTOM_VAR);
     localStorage.clear();
+    // These interaction tests start with an empty favorites area.
+    appControl.setFavorite("vatio.player", false);
     vi.restoreAllMocks();
     globalThis.requestAnimationFrame = (callback) => {
       callback(performance.now());

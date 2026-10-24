@@ -1,5 +1,17 @@
 # Radio restoration after refresh or revisit
 
+> Historical manual-Play audio baseline. Current automatic playback recovery is
+> described in [automatic playback recovery](automatic-playback-recovery.md).
+> Scope/spectrum restoration now follows the independently saved radio Visuals
+> preference after handoff; see [best-effort visuals](radio-visualization-best-effort.md).
+> Automatic visual recovery still requires parked-vehicle acceptance.
+
+
+> The current [automatic playback recovery](automatic-playback-recovery.md)
+> attempts the same demo-to-radio sequence on opening/returning to the page,
+> using the existing Play button if blocked. Its vehicle acceptance is pending.
+> The Play-driven acceptance below describes the preceding reference build.
+
 ## Physical acceptance
 
 **User-reported vehicle verification: Pass on 2026-09-26.** The restored-radio

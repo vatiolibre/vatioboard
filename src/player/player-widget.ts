@@ -20,6 +20,9 @@ import { loadAudioCatalog, syncAudioCatalog, annotateOfflineAvailability } from 
 import { loadPlaylists, syncPlaylistsManifest } from "../shared/playlist-loader.js";
 import { loadDemoPlaylist, syncDemoPlaylist } from "../shared/demo-cache.js";
 import * as runtime from "../shared/audio-runtime.js";
+import { hasPlayerSession, loadPlayerSession } from "../shared/player-session.js";
+import { ensureSingleTabOwnership } from "../shared/single-tab.js";
+import { appControl } from "../app-platform/app-control.js";
 import {
   getBackendSessionState,
   fetchBackendLoggedUser,
@@ -45,6 +48,8 @@ import type { ShellLifecycleOptions, ShellRuntime } from "../types/shell";
 let _bootstrapPromise = null;
 let _bootstrapped = false;
 let _lastBootstrappedAuthState = undefined;
+let _bootstrapGeneration = 0;
+let _sessionHydrated = false;
 
 async function bootstrapAuth() {
   try {
@@ -200,15 +205,6 @@ function isPristineSeededQueue(state, signature) {
   return queueNameSignature(state.queue) === signature;
 }
 
-function isPristineDemoQueue(state) {
-  if (!state?.paused || state.currentIndex > 0 || state.currentTime > 0.5) {
-    return false;
-  }
-  return Array.isArray(state.queue)
-    && state.queue.length > 0
-    && state.queue.every((track) => isPublicStaticTrack(track?.name, track));
-}
-
 function applyDemoCatalog(shell, tracks) {
   shell.setTracks(tracks);
   shell.setPlaylists(tracks.length > 0 ? [buildDemoPlaylistEntry(tracks)] : []);
@@ -227,60 +223,69 @@ function maybeRefreshSeededQueue(tracks, seededQueueSignature) {
 }
 
 async function doBootstrap(shell) {
+  const generation = ++_bootstrapGeneration;
+  const hadSession = hasPlayerSession();
+  const shouldRestore = !_sessionHydrated;
+  _sessionHydrated = true;
+  const authPromise = bootstrapAuth();
+  // Demo metadata/public source resolution never waits for backend authentication.
+  const demoPromise = loadDemoPlaylist().catch(() => ({ tracks: [] }));
+  const ownership = window.__vatioboardSpa ? ensureSingleTabOwnership() : Promise.resolve(true);
+  const playbackRevision = runtime.getState().playbackRevision;
+  const saved = loadPlayerSession();
+  const selected = saved.queueEntries.find((entry) => entry.entryId === saved.currentEntryId)
+    || saved.queueEntries[saved.currentIndex];
+  const privateMedia = selected && selected.media_kind !== "radio" && !isPublicStaticTrack(selected.name, { ...selected });
+  const enabled = () => appControl.isEnabled("vatio.player");
+  const playbackReady = Promise.all([ownership, privateMedia ? authPromise : Promise.resolve()])
+    .then(([owned]) => owned && enabled());
+  const recovery = !shouldRestore ? Promise.resolve() : hadSession
+    ? runtime.restoreSession([], { autoplay: true, prepareTracks: demoPromise.then((demo) => demo.tracks), playbackReady })
+    : Promise.all([demoPromise, playbackReady]).then(([demo, ready]) => {
+      if (generation !== _bootstrapGeneration || !ready || !demo.tracks.length || runtime.getState().queue.length
+          || runtime.getState().playbackRevision !== playbackRevision) return;
+      // First visits play the public demo even for authenticated users.
+      runtime.setRecoveryTracks?.(demo.tracks);
+      runtime.setQueue(demo.tracks, { autoplay: true });
+    });
+  // Attach a handler immediately; catalog/auth work may take much longer.
+  const recovered = Promise.resolve(recovery).catch(() => {});
   try {
-    const bootAuthState = await bootstrapAuth();
-    if (bootAuthState !== undefined) {
-      _lastBootstrappedAuthState = bootAuthState;
-    }
-
+    const bootAuthState = await authPromise;
+    if (generation !== _bootstrapGeneration) return;
+    if (bootAuthState !== undefined) _lastBootstrappedAuthState = bootAuthState;
     const { tracks } = await loadAudioCatalog();
     const annotated = await annotateOfflineAvailability(tracks);
-    const demoResult = await loadAnnotatedDemoPlaylist();
+    const demoResult = await demoPromise;
     const demoTracks = demoResult.tracks || [];
-
-    // Fall back to the free demo playlist when no catalog is available
-    // (guest / unauthenticated visitors).
+    if (generation !== _bootstrapGeneration) return;
     const playlist = annotated.length > 0 ? annotated : demoTracks;
-    const restoreCandidates = annotated.length > 0
-      ? [...annotated, ...demoTracks]
-      : playlist;
-
+    runtime.enrichCatalogMetadata(annotated);
     shell.setTracks(playlist);
-
-    // Load playlists alongside tracks (or use demo playlist for guests)
     if (annotated.length > 0) {
       loadPlaylists().then(({ playlists }) => {
-        shell.setPlaylists(playlists);
+        if (generation === _bootstrapGeneration) shell.setPlaylists(playlists);
       }).catch(() => {});
     } else if (playlist.length > 0) {
       shell.setPlaylists([buildDemoPlaylistEntry(playlist)]);
     }
-
-    // Restore previous session (or do nothing if cold start).  The runtime
-    // only autoplays when the saved session was actively playing.
-    await runtime.restoreSession(restoreCandidates, { autoplay: true });
-
-    // If no session restored, seed the full catalog as queue
-    const s = runtime.getState();
-    let seededQueueSignature = "";
-    if (annotated.length > 0 && isPristineDemoQueue(s)) {
+    await recovered;
+    if (generation !== _bootstrapGeneration) return;
+    if (shouldRestore && !hadSession && !demoTracks.length && !runtime.getState().queue.length && annotated.length) {
       runtime.setQueue(annotated, { autoplay: false });
-      seededQueueSignature = queueNameSignature(annotated);
-    } else if (s.queue.length === 0 && playlist.length > 0) {
-      runtime.setQueue(playlist, { autoplay: false });
-      seededQueueSignature = queueNameSignature(playlist);
     }
-
+    let seededQueueSignature = "";
     _bootstrapped = true;
 
     // Non-blocking background revalidation (skip for demo-only sessions)
     if (annotated.length > 0) {
       syncAudioCatalog().then(async (refreshed) => {
-        if (!refreshed) return;
+        if (!refreshed || generation !== _bootstrapGeneration) return;
         try {
           const fresh = await loadAudioCatalog();
           const freshAnnotated = await annotateOfflineAvailability(fresh.tracks);
-          if (freshAnnotated.length > 0) {
+          if (freshAnnotated.length > 0 && generation === _bootstrapGeneration) {
+            runtime.enrichCatalogMetadata(freshAnnotated);
             shell.setTracks(freshAnnotated);
             const current = runtime.getState();
             if (isPristineSeededQueue(current, seededQueueSignature)) {
@@ -293,30 +298,27 @@ async function doBootstrap(shell) {
 
       // Background sync playlists
       syncPlaylistsManifest().then(async (refreshed) => {
-        if (!refreshed) return;
+        if (!refreshed || generation !== _bootstrapGeneration) return;
         try {
           const { playlists } = await loadPlaylists();
-          shell.setPlaylists(playlists);
+          if (generation === _bootstrapGeneration) shell.setPlaylists(playlists);
         } catch { /* ignore */ }
       }).catch(() => {});
     } else {
       syncAnnotatedDemoPlaylist().then((refreshed) => {
+        if (generation !== _bootstrapGeneration) return;
         if (!refreshed?.refreshed || !refreshed.changed || refreshed.tracks.length === 0) return;
         applyDemoCatalog(shell, refreshed.tracks);
         seededQueueSignature = maybeRefreshSeededQueue(refreshed.tracks, seededQueueSignature);
       }).catch(() => {});
     }
   } catch {
-    // Offline or no manifest — try demo playlist as last resort
-    try {
-      const demoResult = await loadAnnotatedDemoPlaylist();
-      const demo = demoResult.tracks || [];
-      if (demo.length > 0) {
-        applyDemoCatalog(shell, demo);
-        runtime.setQueue(demo, { autoplay: false });
-        _bootstrapped = true;
-      }
-    } catch { /* shell starts empty */ }
+    // Catalog failures never replace a saved selection or an active recovery.
+    const demo = await demoPromise;
+    if (generation !== _bootstrapGeneration) return;
+    applyDemoCatalog(shell, demo.tracks || []);
+    await recovered;
+    if (generation === _bootstrapGeneration) _bootstrapped = true;
   }
 }
 
@@ -338,6 +340,7 @@ function getBootstrap(shell) {
  * @param {boolean} loggedIn – whether the user just logged in
  */
 async function reloadCatalogForAuthChange(shell, loggedIn) {
+  _bootstrapGeneration++;
   // Reset so getBootstrap re-runs the full flow.
   _bootstrapped = false;
   _bootstrapPromise = null;
@@ -469,8 +472,10 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
     shellAppRuntimeManager,
   });
   const contentSheet = shell.root.querySelector<HTMLElement>(".player-content-sheet");
+  const playerBody = shell.root.querySelector<HTMLElement>(".player-body");
   let cleanupLayer = () => {};
   let panelFitTimeoutId = 0;
+  let contentFitFrameId = 0;
   const panelFitFrameIds = new Set<number>();
 
   // Apply stored panel position, or use the first-visit default.
@@ -599,9 +604,9 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
     shell.root.style.top = `${Math.round(clampNumber(position.top, minTop, maxTop))}px`;
     shell.root.style.right = "auto";
     shell.root.style.bottom = "auto";
-    clearPanelFixedHeight();
-
     if (persist) persistPanelPosition();
+    shell.root.style.maxHeight = `${Math.floor(area.height)}px`;
+    shell.root.style.minHeight = `${Math.min(220, Math.floor(area.height))}px`;
   }
 
   function cancelScheduledPanelFit() {
@@ -655,6 +660,45 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
 
   contentSheet?.addEventListener("transitionend", handleContentSheetTransitionEnd);
 
+  // Observe intrinsic content, not only the constrained body: an overflowing
+  // body can keep the same border-box size when metadata or visuals grow.
+  const measuredSizes = new WeakMap<Element, string>();
+  const contentObserver = typeof ResizeObserver === "function" ? new ResizeObserver((entries) => {
+    let changed = false;
+    for (const entry of entries) {
+      const size = `${entry.contentRect.width}:${entry.contentRect.height}`;
+      if (measuredSizes.get(entry.target) !== size) changed = true;
+      measuredSizes.set(entry.target, size);
+    }
+    if (!changed || shell.root.hidden || contentFitFrameId) return;
+    contentFitFrameId = window.requestAnimationFrame(() => {
+      contentFitFrameId = 0;
+      fitPanelToAvailableSpace({ persist: false });
+    });
+  }) : null;
+  function observePanelContent() {
+    contentObserver?.observe(shell.header);
+    for (const child of Array.from(playerBody?.children || [])) contentObserver?.observe(child);
+  }
+
+  function suspendPanelSizing() {
+    contentObserver?.disconnect();
+    if (contentFitFrameId) window.cancelAnimationFrame(contentFitFrameId);
+    contentFitFrameId = 0;
+    cancelScheduledPanelFit();
+  }
+
+  const handleWorkAreaReflow = () => fitPanelToAvailableSpace({ persist: false });
+  window.addEventListener("vatioboard:shell-work-area-reflowed", handleWorkAreaReflow);
+  globalThis.visualViewport?.addEventListener("resize", handleWorkAreaReflow);
+
+  function getCompactContentHeight() {
+    if (!playerBody) return shell.root.getBoundingClientRect().height;
+    const style = getComputedStyle(shell.root);
+    return shell.header.getBoundingClientRect().height + playerBody.scrollHeight
+      + (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+  }
+
   cleanupLayer = registerFloatingPanel(shell.root, {
     id: PLAYER_WINDOW_ID,
     kind: "media",
@@ -682,6 +726,7 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
         return {
           mode: "short-landscape",
           width: Math.min(340, metrics.workArea.width),
+          height: Math.min(getCompactContentHeight() || metrics.workArea.height, metrics.workArea.height),
           maxWidth: Math.min(340, metrics.workArea.width),
           maxHeight: metrics.workArea.height,
         };
@@ -754,6 +799,8 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
   // ── Open / Close / Toggle ────────────────────────────────────
   function showPanel({ persist = true }: ShellLifecycleOptions = {}) {
     shell.root.hidden = false;
+    observePanelContent();
+    shell.resumeVisualizations?.();
     if (persist) saveVisibility(true);
 
     // Lazy bootstrap on first open
@@ -766,6 +813,7 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
 
   function hidePanel({ persist = true, stopPlayback = true }: ShellLifecycleOptions = {}) {
     shell.root.hidden = true;
+    suspendPanelSizing();
     shell.suspendVisualizations?.();
     if (persist) saveVisibility(false);
     if (stopPlayback !== false) runtime.stopPlayback();
@@ -774,6 +822,7 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
 
   function minimizePanel() {
     shell.root.hidden = true;
+    suspendPanelSizing();
     shell.suspendVisualizations?.();
   }
 
@@ -814,6 +863,10 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
   function onAuthChange(event) {
     const detail = event?.detail || {};
     const isNowAuthenticated = detail.authenticated === true && !detail.isGuest && !detail.pendingLogout;
+    if (detail.pendingLogout) {
+      _bootstrapGeneration++;
+      runtime.stopPlayback();
+    }
 
     if (_lastAuthState === undefined && _lastBootstrappedAuthState !== undefined) {
       _lastAuthState = _lastBootstrappedAuthState;
@@ -843,6 +896,9 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
   function destroy() {
     window.removeEventListener(BACKEND_AUTH_STATE_EVENT, onAuthChange);
     window.removeEventListener("resize", handleContentOpenChange);
+    window.removeEventListener("vatioboard:shell-work-area-reflowed", handleWorkAreaReflow);
+    globalThis.visualViewport?.removeEventListener("resize", handleWorkAreaReflow);
+    suspendPanelSizing();
     contentSheet?.removeEventListener("transitionend", handleContentSheetTransitionEnd);
     cancelScheduledPanelFit();
     cleanupLayer();

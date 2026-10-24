@@ -49,6 +49,8 @@ vi.mock("../../src/shared/radio-browser.js", () => ({
 }));
 
 const runtimeMock = {
+  enrichCatalogMetadata: vi.fn(),
+  setRecoveryTracks: vi.fn(),
   requestRadioVisualization: vi.fn().mockResolvedValue(false),
   releaseRadioVisualization: vi.fn(),
   updatePlayerMediaSessionMetadata: vi.fn(),
@@ -210,7 +212,7 @@ function makeRuntimeState(overrides = {}) {
     queue: [],
     currentIndex: -1,
     currentTrack: null,
-    paused: true,
+    paused: !overrides.playing,
     volume: 1,
     muted: false,
     repeat: "off",
@@ -252,6 +254,7 @@ describe("createPlayerWidget", () => {
     vi.restoreAllMocks();
 
     runtimeMock.getAudioElement.mockReset().mockReturnValue(null);
+    runtimeMock.requestRadioVisualization.mockReset().mockResolvedValue(false);
 
     // Re-apply mocks after reset
     vi.doMock("../../src/i18n.js", () => ({
@@ -663,16 +666,16 @@ describe("createPlayerWidget", () => {
     await flushMicrotasks(5);
 
     expect(runtimeMock.stopPlayback).not.toHaveBeenCalled();
-    expect(runtimeMock.setQueue).not.toHaveBeenCalled();
+    expect(runtimeMock.setQueue).toHaveBeenCalledWith([expect.objectContaining({ name: "demo:titan" })], { autoplay: true });
 
     sessionDeferred.resolve({ authenticated: false, isGuest: true });
     await flushMicrotasks(30);
 
-    expect(runtimeMock.restoreSession).toHaveBeenCalledTimes(1);
+    expect(runtimeMock.restoreSession).not.toHaveBeenCalled();
     expect(runtimeMock.setQueue).toHaveBeenCalledTimes(1);
     expect(runtimeMock.setQueue).toHaveBeenLastCalledWith(
       [expect.objectContaining({ name: "demo:titan" })],
-      { autoplay: false },
+      { autoplay: true },
     );
 
     widget.destroy();
@@ -692,20 +695,20 @@ describe("createPlayerWidget", () => {
     const widget = createPlayerWidget({ preload: "immediate", floating: false });
     await flushMicrotasks(20);
 
-    expect(runtimeMock.restoreSession).toHaveBeenCalledTimes(1);
+    expect(runtimeMock.restoreSession).not.toHaveBeenCalled();
 
     window.dispatchEvent(new CustomEvent("vatioboard:backend-auth-state", {
       detail: { authenticated: true, isGuest: false, pendingLogout: false },
     }));
     await flushMicrotasks(20);
 
-    expect(runtimeMock.restoreSession).toHaveBeenCalledTimes(1);
+    expect(runtimeMock.restoreSession).not.toHaveBeenCalled();
     expect(runtimeMock.stopPlayback).not.toHaveBeenCalled();
 
     widget.destroy();
   });
 
-  it("hydrates persisted demo queue on authenticated bootstrap and replaces pristine demo queue", async () => {
+  it("hydrates persisted demo queue before catalog loading and preserves the saved queue", async () => {
     const backendAuth = await import("../../src/shared/backend-auth.js");
     const catalogTrack = makeTrack("asset_real");
     const demoTrack = makeTrack("demo:titan", {
@@ -735,20 +738,14 @@ describe("createPlayerWidget", () => {
       });
     });
 
+    localStorage.setItem("vatioboard_player_session_v3", JSON.stringify({
+      version: 3, queueEntries: [{ ...demoTrack, entryId: "saved-demo" }], currentEntryId: "saved-demo", currentIndex: 0, paused: true,
+    }));
     const widget = createPlayerWidget({ preload: "immediate", floating: false });
     await flushMicrotasks(30);
 
-    expect(runtimeMock.restoreSession).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ name: "asset_real" }),
-        expect.objectContaining({ name: "demo:titan", src: "/audio/demo/sb_titan.mp3" }),
-      ]),
-      { autoplay: true },
-    );
-    expect(runtimeMock.setQueue).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ name: "asset_real" })]),
-      { autoplay: false },
-    );
+    expect(runtimeMock.restoreSession).toHaveBeenCalledWith([], expect.objectContaining({ autoplay: true }));
+    expect(runtimeMock.setQueue).not.toHaveBeenCalled();
 
     widget.destroy();
   });
@@ -785,22 +782,19 @@ describe("createPlayerWidget", () => {
       });
     });
 
+    localStorage.setItem("vatioboard_player_session_v3", JSON.stringify({
+      version: 3, queueEntries: [{ ...demoTrack, entryId: "saved-demo" }], currentEntryId: "saved-demo", currentIndex: 0, paused: true,
+    }));
     const widget = createPlayerWidget({ preload: "immediate", floating: false });
     await flushMicrotasks(30);
 
-    expect(runtimeMock.restoreSession).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ name: "asset_real" }),
-        expect.objectContaining({ name: "demo:titan", src: "/audio/demo/sb_titan.mp3" }),
-      ]),
-      { autoplay: true },
-    );
+    expect(runtimeMock.restoreSession).toHaveBeenCalledWith([], expect.objectContaining({ autoplay: true }));
     expect(runtimeMock.setQueue).not.toHaveBeenCalled();
 
     widget.destroy();
   });
 
-  it("revalidates a cached guest demo playlist and refreshes a pristine seeded queue", async () => {
+  it("revalidates a cached guest demo playlist without replacing the listening queue", async () => {
     const backendAuth = await import("../../src/shared/backend-auth.js");
     const demoTrack = makeTrack("demo:titan", {
       title: "Titan",
@@ -846,14 +840,11 @@ describe("createPlayerWidget", () => {
 
     expect(demoCacheMock.loadDemoPlaylist).toHaveBeenCalledTimes(1);
     expect(demoCacheMock.syncDemoPlaylist).toHaveBeenCalledTimes(1);
-    expect(runtimeMock.setQueue).toHaveBeenCalledTimes(2);
+    expect(runtimeMock.setQueue).toHaveBeenCalledTimes(1);
     expect(runtimeMock.setQueue.mock.calls[0][0]).toEqual([
       expect.objectContaining({ name: "demo:titan" }),
     ]);
-    expect(runtimeMock.setQueue.mock.calls[1][0]).toEqual([
-      expect.objectContaining({ name: "demo:titan" }),
-      expect.objectContaining({ name: "demo:atlas" }),
-    ]);
+
 
     widget.destroy();
   });
@@ -1225,7 +1216,7 @@ describe("createPlayerWidget", () => {
     const render = runtimeMock.subscribe.mock.calls.at(-1)[0];
     expect(toggle.getAttribute("aria-pressed")).toBe("false");
     expect(runtimeMock.requestRadioVisualization).not.toHaveBeenCalled();
-    Object.assign(state, { loading: false, playing: true, connectionState: "playing" });
+    Object.assign(state, { loading: false, playing: true, paused: false, connectionState: "playing" });
     render(state);
     render(state);
     expect(runtimeMock.requestRadioVisualization).toHaveBeenCalledTimes(1);
@@ -1264,23 +1255,102 @@ describe("createPlayerWidget", () => {
     widget.destroy();
   });
 
-  it("leaves restored radio visuals off until explicitly requested", async () => {
-    runtimeMock.getState.mockReturnValue(makeRuntimeState({
+  it("restores saved scope only after the handoff and Player opening", async () => {
+    localStorage.setItem("vatio_board_player_widget_visualizer_mode", "scope");
+    const state = makeRuntimeState({
       currentTrack: { name: "radio:restored", media_kind: "radio" },
       sourceType: "live", isLive: true, loading: false,
-      connectionState: "playing", playing: true, radioVisualizationAutoStart: false,
-    }));
-    runtimeMock.requestRadioVisualization.mockResolvedValueOnce(true);
+      connectionState: "playing", playing: true, radioFocusHandoffPending: true,
+    });
+    runtimeMock.getState.mockReturnValue(state);
+    runtimeMock.requestRadioVisualization.mockResolvedValue(true);
     const widget = createPlayerWidget({ floating: false });
+    expect(runtimeMock.requestRadioVisualization).not.toHaveBeenCalled();
     widget.open();
-    const toggle = document.querySelector(".player-visualizer-toggle-btn");
-    expect(toggle.getAttribute("aria-pressed")).toBe("false");
     expect(runtimeMock.requestRadioVisualization).not.toHaveBeenCalled();
-    runtimeMock.subscribe.mock.calls.at(-1)[0](runtimeMock.getState());
-    expect(runtimeMock.requestRadioVisualization).not.toHaveBeenCalled();
-    toggle.click();
+    state.radioFocusHandoffPending = false;
+    const render = runtimeMock.subscribe.mock.calls.at(-1)[0];
+    render(state);
+    render(state);
     expect(runtimeMock.requestRadioVisualization).toHaveBeenCalledTimes(1);
-    await vi.waitFor(() => expect(toggle.getAttribute("aria-pressed")).toBe("true"));
+    await flushMicrotasks();
+    expect(document.querySelector(".player-visualizer-toggle-btn").getAttribute("aria-pressed")).toBe("true");
+    expect(document.querySelector(".player-visualizer-strip").dataset.visualizerMode).toBe("scope");
+    widget.destroy();
+  });
+
+  it("persists radio off separately and retains it through reload and MP3 selection", async () => {
+    const state = makeRuntimeState({
+      currentTrack: { name: "radio:one", media_kind: "radio" },
+      sourceType: "live", isLive: true, connectionState: "playing", playing: true,
+    });
+    runtimeMock.getState.mockReturnValue(state);
+    runtimeMock.requestRadioVisualization.mockResolvedValue(true);
+    localStorage.setItem("vatio_board_player_widget_visualizer_visible", "true");
+    let widget = createPlayerWidget({ floating: false }); widget.open();
+    await flushMicrotasks();
+    document.querySelector(".player-visualizer-toggle-btn").click();
+    expect(localStorage.getItem("vatio_board_player_widget_radio_visualizer_visible")).toBe("false");
+    expect(localStorage.getItem("vatio_board_player_widget_visualizer_visible")).toBe("true");
+    widget.destroy();
+    runtimeMock.requestRadioVisualization.mockClear();
+    widget = createPlayerWidget({ floating: false }); widget.open();
+    expect(runtimeMock.requestRadioVisualization).not.toHaveBeenCalled();
+    Object.assign(state, { isLive: false, currentTrack: { name: "mp3" } });
+    runtimeMock.subscribe.mock.calls.at(-1)[0](state);
+    expect(document.querySelector(".player-visualizer-strip").hidden).toBe(false);
+    widget.destroy();
+  });
+
+  it("cancels pending visuals on Pause, minimization, and ownership loss", async () => {
+    const state = makeRuntimeState({
+      currentTrack: { name: "radio:one", media_kind: "radio" },
+      sourceType: "live", isLive: true, connectionState: "playing", playing: true,
+    });
+    runtimeMock.getState.mockReturnValue(state);
+    const pending = createDeferred();
+    runtimeMock.requestRadioVisualization.mockReturnValue(pending.promise);
+    const widget = createPlayerWidget({ floating: false }); widget.open();
+    const render = runtimeMock.subscribe.mock.calls.at(-1)[0];
+    Object.assign(state, { paused: true, playing: false }); render(state);
+    pending.resolve(true); await flushMicrotasks();
+    expect(document.querySelector(".player-visualizer-toggle-btn").getAttribute("aria-pressed")).toBe("false");
+    Object.assign(state, { paused: false, playing: true }); render(state);
+    widget.minimize(); await flushMicrotasks();
+    expect(document.querySelector(".player-visualizer-toggle-btn").getAttribute("aria-pressed")).toBe("false");
+    widget.open();
+    window.dispatchEvent(new CustomEvent("vatioboard:single-tab-ownership", { detail: { owned: false } }));
+    await flushMicrotasks();
+    expect(document.querySelector(".player-visualizer-toggle-btn").getAttribute("aria-pressed")).toBe("false");
+    expect(localStorage.getItem("vatio_board_player_widget_radio_visualizer_visible")).not.toBe("false");
+    widget.destroy();
+  });
+
+  it("coalesces foreground, resume and BFCache events and leaves continuing visuals alone", async () => {
+    const state = makeRuntimeState({
+      currentTrack: { name: "radio:one", media_kind: "radio" },
+      sourceType: "live", isLive: true, connectionState: "playing", playing: true,
+    });
+    runtimeMock.getState.mockReturnValue(state);
+    runtimeMock.requestRadioVisualization.mockResolvedValue(true);
+    const widget = createPlayerWidget({ floating: false }); widget.open();
+    await flushMicrotasks();
+    window.dispatchEvent(new Event("pageshow")); document.dispatchEvent(new Event("resume"));
+    expect(runtimeMock.requestRadioVisualization).toHaveBeenCalledTimes(1);
+    document.dispatchEvent(new Event("freeze"));
+    document.dispatchEvent(new Event("resume")); window.dispatchEvent(new Event("pageshow"));
+    document.dispatchEvent(new Event("visibilitychange"));
+    await flushMicrotasks();
+    expect(runtimeMock.requestRadioVisualization).toHaveBeenCalledTimes(2);
+    expect(document.querySelector(".player-visualizer-toggle-btn").getAttribute("aria-pressed")).toBe("true");
+    const render = runtimeMock.subscribe.mock.calls.at(-1)[0];
+    Object.assign(state, { loading: true, connectionState: "reconnecting", playing: false });
+    render(state); render(state);
+    expect(runtimeMock.requestRadioVisualization).toHaveBeenCalledTimes(2);
+    Object.assign(state, { loading: false, connectionState: "playing", playing: true });
+    render(state); render(state);
+    await flushMicrotasks();
+    expect(runtimeMock.requestRadioVisualization).toHaveBeenCalledTimes(3);
     widget.destroy();
   });
 
@@ -1390,6 +1460,38 @@ describe("createPlayerWidget", () => {
     });
 
     widget.destroy();
+  });
+
+  it("refits late intrinsic content without saving derived geometry and disconnects observers", () => {
+    vi.useFakeTimers();
+    let observeResize;
+    const disconnect = vi.fn();
+    const observe = vi.fn();
+    vi.stubGlobal("ResizeObserver", class {
+      constructor(callback) { observeResize = callback; }
+      observe(target) { observe(target); }
+      disconnect() { disconnect(); }
+    });
+    const widget = createPlayerWidget({ floating: false });
+    expect(observe).not.toHaveBeenCalled();
+    widget.open();
+    expect(observe).toHaveBeenCalled();
+    const panel = document.querySelector(".player-panel");
+    const utility = panel.querySelector(".player-utility-row");
+    panel.style.height = "220px";
+    const before = localStorage.getItem("player_widget_pos_v1");
+    const resize = [{ target: utility, contentRect: { width: 314, height: 46 } }];
+    observeResize(resize); observeResize(resize);
+    vi.advanceTimersByTime(32);
+    expect(panel.style.height).toBe("");
+    expect(panel.style.maxHeight).toMatch(/px$/);
+    expect(localStorage.getItem("player_widget_pos_v1")).toBe(before);
+    widget.minimize();
+    expect(disconnect).toHaveBeenCalledTimes(1);
+    widget.open();
+    widget.destroy();
+    expect(disconnect).toHaveBeenCalledTimes(2);
+    vi.useRealTimers();
   });
 
   // ── Playlist sheet ───────────────────────────────────────────

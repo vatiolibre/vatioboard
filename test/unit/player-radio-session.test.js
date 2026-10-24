@@ -31,8 +31,9 @@ function radioEntry() {
   };
 }
 
-describe("player session v3 radio persistence", () => {
-  beforeEach(() => localStorage.clear());
+beforeEach(() => localStorage.clear());
+
+describe("player session v4 radio persistence", () => {
 
   it("persists only UUID and safe radio display metadata with position zero", () => {
     savePlayerSession({
@@ -64,7 +65,7 @@ describe("player session v3 radio persistence", () => {
     expect(restored.queueEntries[0].artwork_ref).toBe(radioEntry().artwork_ref);
   });
 
-  it("migrates v2 finite queues into v3 without dropping duplicates", () => {
+  it("migrates v2 finite queues into v4 without dropping duplicates", () => {
     const entry = { ...radioEntry(), media_kind: "audio", name: "asset-a", station_uuid: "", artwork_ref: "", src: "" };
     localStorage.setItem("vatioboard_player_session_v2", JSON.stringify({
       version: 2,
@@ -76,7 +77,7 @@ describe("player session v3 radio persistence", () => {
       paused: true,
     }));
     const restored = loadPlayerSession();
-    expect(restored.version).toBe(3);
+    expect(restored.version).toBe(4);
     expect(restored.queueEntries.map((item) => item.entryId)).toEqual(["one", "two"]);
     expect(restored.currentTime).toBe(42);
   });
@@ -96,7 +97,7 @@ describe("player session v3 radio persistence", () => {
     }));
     const restored = loadPlayerSession();
     expect(restored).toMatchObject({
-      version: 3,
+      version: 4,
       queue: ["asset-a", "asset-a", "asset-b"],
       currentIndex: 0,
       currentTime: 19,
@@ -109,4 +110,31 @@ describe("player session v3 radio persistence", () => {
     });
     expect(new Set(restored.queueEntries.map((entry) => entry.entryId)).size).toBe(3);
   });
+});
+
+it("writes v4 intent and backward-readable mirrors", () => {
+  savePlayerSession({ queueEntries: [radioEntry()], paused: false });
+  expect(JSON.parse(localStorage.getItem("vatioboard_player_session_v4"))).toMatchObject({ version: 4, playbackIntent: "playing", paused: false });
+  expect(JSON.parse(localStorage.getItem("vatioboard_player_session_v3"))).toMatchObject({ version: 3, paused: false });
+});
+
+it("keeps stopped queues without restoring an implicit selection", () => {
+  savePlayerSession({ queueEntries: [radioEntry()], currentEntryId: "radio-entry", currentIndex: 0, playbackIntent: "stopped" });
+  expect(loadPlayerSession()).toMatchObject({ playbackIntent: "stopped", currentIndex: -1, currentEntryId: "", paused: true });
+});
+
+it("normalizes continuation tracks without persisting resolved URLs", () => {
+  savePlayerSession({
+    libraryContinuation: { tracks: [radioEntry()], lastTrackName: radioEntry().name, shuffleCycle: [radioEntry().name, "missing"] },
+  });
+  expect(loadPlayerSession().libraryContinuation).toMatchObject({
+    tracks: [expect.objectContaining({ src: "" })], shuffleCycle: [radioEntry().name],
+  });
+  expect(localStorage.getItem("vatioboard_player_session_v4")).not.toContain("must-not-persist.example");
+});
+
+it("falls back past malformed storage and migrates v3 playing intent", () => {
+  localStorage.setItem("vatioboard_player_session_v4", "null");
+  localStorage.setItem("vatioboard_player_session_v3", JSON.stringify({ queueEntries: [radioEntry()], paused: false }));
+  expect(loadPlayerSession()).toMatchObject({ version: 4, playbackIntent: "playing" });
 });

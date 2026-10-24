@@ -32,6 +32,8 @@ export interface GraphEntry {
 interface GraphCreationRecord {
   promise: Promise<GraphEntry | null> | null;
   cancelled: boolean;
+  consumers: Set<() => boolean>;
+  audioContext?: AudioContext;
 }
 
 const MEDIA_GRAPH_BY_ELEMENT = new WeakMap<HTMLMediaElement, GraphEntry>();
@@ -139,29 +141,51 @@ export function primeAudioContext(): boolean {
  * @param {HTMLMediaElement} mediaElement
  * @returns {Promise<GraphEntry|null>} null on failure (CORS, no AudioContext, etc.)
  */
-export async function acquireGraph(mediaElement: HTMLMediaElement): Promise<GraphEntry | null> {
+export async function acquireGraph(
+  mediaElement: HTMLMediaElement,
+  { isCurrent = () => true, resumePending = false }: {
+    isCurrent?: () => boolean;
+    resumePending?: boolean;
+  } = {},
+): Promise<GraphEntry | null> {
+  if (!isCurrent()) return null;
   const existing = MEDIA_GRAPH_BY_ELEMENT.get(mediaElement);
   if (existing) {
-    return retainGraph(existing);
+    const retained = await retainGraph(existing);
+    if (isCurrent()) return retained;
+    releaseGraph(mediaElement);
+    return null;
   }
 
   const pending = MEDIA_GRAPH_CREATION_BY_ELEMENT.get(mediaElement);
   if (pending) {
-    return retainGraph(await pending.promise);
+    for (const consumer of pending.consumers) {
+      if (!consumer()) pending.consumers.delete(consumer);
+    }
+    pending.consumers.add(isCurrent);
+    // A retry from a trusted tap can wake preparation that previously stalled
+    // awaiting browser activation. Keep the same context and source element.
+    if (resumePending && pending.audioContext?.state !== "running") {
+      void pending.audioContext?.resume().catch(() => {});
+    }
+    const entry = await pending.promise;
+    return isCurrent() ? retainGraph(entry) : null;
   }
 
   const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
   if (!AudioContextCtor) return null;
 
-  const creationRecord = {
+  const creationRecord: GraphCreationRecord = {
     cancelled: false,
     promise: null,
+    consumers: new Set([isCurrent]),
   };
 
   const creation = (async () => {
     // Prefer the pre-warmed context (created during a user gesture).
     const hasPrimedContext = _primedAudioContext && _primedAudioContext.state !== "closed";
     const audioContext = hasPrimedContext ? _primedAudioContext : new AudioContextCtor();
+    creationRecord.audioContext = audioContext;
     if (hasPrimedContext) {
       _primedAudioContext = null;  // consumed - next acquireGraph needs a fresh prime
     }
@@ -178,7 +202,7 @@ export async function acquireGraph(mediaElement: HTMLMediaElement): Promise<Grap
       try { await audioContext.close(); } catch { /* ignore */ }
       return null;
     }
-    if (creationRecord.cancelled) {
+    if (creationRecord.cancelled || ![...creationRecord.consumers].some((current) => current())) {
       try { await audioContext.close(); } catch { /* ignore */ }
       return null;
     }
@@ -213,7 +237,8 @@ export async function acquireGraph(mediaElement: HTMLMediaElement): Promise<Grap
   MEDIA_GRAPH_CREATION_BY_ELEMENT.set(mediaElement, creationRecord);
 
   try {
-    return retainGraph(await creation);
+    const entry = await creation;
+    return isCurrent() ? retainGraph(entry) : null;
   } finally {
     if (MEDIA_GRAPH_CREATION_BY_ELEMENT.get(mediaElement) === creationRecord) {
       MEDIA_GRAPH_CREATION_BY_ELEMENT.delete(mediaElement);

@@ -164,12 +164,21 @@ export function createAppControlService({
 
   function getState(appId: VatioAppId): VatioAppControlState {
     const record = readAppControlRecord(getStorage());
+    // Apply this default once, including existing installations. Persist the
+    // marker alongside the preference so a later removal remains authoritative.
+    if (appId === "vatio.player" && registry.getApp(appId)) {
+      const stored = record.apps[appId] as (Partial<VatioAppControlState> & { playerFavoriteSeeded?: boolean }) | undefined;
+      if (!stored?.playerFavoriteSeeded) {
+        record.apps[appId] = { ...normalizeState(appId, stored, getManifest(appId), isoNow(now)), favorite: true, playerFavoriteSeeded: true };
+        writeAppControlRecord(record, getStorage());
+      }
+    }
     return normalizeState(appId, record.apps[appId], getManifest(appId), isoNow(now));
   }
 
   function writeState(state: VatioAppControlState) {
     const record = readAppControlRecord(getStorage());
-    record.apps[state.appId] = state;
+    record.apps[state.appId] = { ...(record.apps[state.appId] as object || {}), ...state };
     const saved = writeAppControlRecord(record, getStorage());
     if (saved) {
       for (const listener of listeners) listener(state);
