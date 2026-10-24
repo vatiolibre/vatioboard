@@ -1572,9 +1572,67 @@ test("Speed Alerts uses Tesla-safe shared controls and a clamped custom listbox"
   await expect(menu).toBeHidden();
 });
 
+test("Player keeps utilities contained after restored visuals and late metadata", async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.startsWith("model-y-"), "Tesla compact and expanded profiles");
+  await openRoute(page, "speed");
+  await page.evaluate(async () => {
+    const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
+    runtime.setQueue([{ name: "radio:layout", title: "Layout station", media_kind: "radio", station_uuid: "11111111-1111-4111-8111-111111111111" }], { autoplay: false });
+    (window as any).__vatioboardPlayerWidget.open();
+  });
+  const player = page.locator(".player-panel");
+  await expect(player).toBeVisible();
+  // Switching from radio to a finite track adds seek controls and restores the
+  // MP3 visualizer after the shell has already measured its compact height.
+  await page.evaluate(async () => {
+    const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
+    runtime.setQueue([{ name: "demo:layout", title: "Layout fixture", media_kind: "audio", _demo: true, src: "/audio/demo/sb_theclimb.mp3" }], { autoplay: false });
+  });
+  const assertContained = async () => {
+    await expect.poll(() => player.evaluate(panel => {
+      const outer = panel.getBoundingClientRect();
+      const utilities = panel.querySelector(".player-utility-row")!.getBoundingClientRect();
+      const style = getComputedStyle(document.documentElement);
+      const bottom = parseFloat(style.getPropertyValue("--vb-work-area-top")) + parseFloat(style.getPropertyValue("--vb-work-area-height"));
+      return utilities.top >= outer.top && utilities.bottom <= outer.bottom + 1 && outer.bottom <= bottom + 1;
+    })).toBe(true);
+    // Actionability includes hit testing, so an overflow-hidden ancestor cannot
+    // silently clip a button that still has a nonempty bounding box.
+    await player.locator(".player-visualizer-toggle-btn").click({ trial: true });
+    await player.locator(".player-content-toggle-btn").click({ trial: true });
+  };
+  await assertContained();
+  await page.evaluate(async () => {
+    const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
+    runtime.enrichCatalogMetadata([{ name: "demo:layout", title: "Late restored metadata", artist: "An artist loaded after authentication", genre: "Jazz" }]);
+  });
+  await assertContained();
+  await page.reload({ waitUntil: "domcontentloaded" });
+  await expect(page.locator("#app-view > *").first()).toBeVisible();
+  await page.evaluate(() => (window as any).__vatioboardPlayerWidget.open());
+  await expect(player.locator(".player-visualizer-strip")).toBeVisible();
+  await assertContained();
+  await player.locator(".player-content-toggle-btn").click();
+  await expect(player).toHaveClass(/is-content-open/);
+  await player.locator(".player-content-sheet-close").click();
+  await assertContained();
+  await page.setViewportSize({ width: 773, height: 360 });
+  await player.locator(".player-content-toggle-btn").scrollIntoViewIfNeeded();
+  await player.locator(".player-content-toggle-btn").click({ trial: true });
+  expect(await player.locator(".player-body").evaluate(body => getComputedStyle(body).overflowY)).toBe("auto");
+});
+
 test("player Browse content becomes a full-height right sidecar", async ({ page }, testInfo) => {
   test.skip(!isTeslaProject(testInfo), "Exact Tesla geometry assertion");
   await openRoute(page, "speed");
+  await page.evaluate(async () => {
+    const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
+    const tracks = await (await fetch("/audio/demo/playlist.json")).json();
+    runtime.setQueue(tracks.map((track: Record<string, unknown>) => ({ ...track, _demo: true })), { autoplay: false });
+  });
+  await expect.poll(() => page.evaluate(async () => (
+    await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"))
+  ).getState().loading)).toBe(false);
   await page.evaluate(() => (window as any).__vatioboardPlayerWidget.open());
   const player = page.locator(".player-panel");
   await expect(player).toBeVisible();
@@ -1595,9 +1653,10 @@ test("player Browse content becomes a full-height right sidecar", async ({ page 
   expect(panel!.y).toBeGreaterThanOrEqual(workArea.top - 1);
   expect(panel!.x + panel!.width).toBeLessThanOrEqual(workArea.left + workArea.width + 1);
   expect(panel!.y + panel!.height).toBeLessThanOrEqual(workArea.top + workArea.height + 1);
-  await expect(page).toHaveScreenshot("player-sidecar.png", {
+  // Keep unrelated Speed canvases and iframes from masking the overlaid Player.
+  await expect(player).toHaveScreenshot("player-sidecar.png", {
     animations: "disabled",
-    mask: [page.locator("canvas"), page.locator("iframe")],
+    mask: [player.locator("canvas")],
     maxDiffPixelRatio: 0.01,
   });
 });

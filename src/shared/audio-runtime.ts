@@ -259,8 +259,12 @@ let radioVisualizationStatus: "idle" | "ready" | "unavailable" = "idle";
 let radioVisualizationGraphElement: ManagedAudioElement | null = null;
 let radioVisualizationAnalysisGraph: AnalysisGraph | null = null;
 let radioGraphPreparationPrimed = false;
+const radioVisualizationRequests = new Map<symbol, { cancel: () => void; token: number; stationUuid: string }>();
+const RADIO_VISUALIZATION_TIMEOUT_MS = 8000;
 
 function stopRadioAnalysis(): void {
+  for (const request of radioVisualizationRequests.values()) request.cancel();
+  radioVisualizationRequests.clear();
   if (radioVisualizationAnalysisGraph) {
     const stationUuid = String(radioVisualizationAnalysisGraph.stationUuid || state.currentTrack?.station_uuid || "");
     if (stationUuid) disposeRadioPcmAnalysis(stationUuid);
@@ -271,68 +275,81 @@ function stopRadioAnalysis(): void {
 
 /** Register a visualizer consumer on the already-playing radio graph. */
 export async function requestRadioVisualization(owner: symbol) {
+  radioVisualizationRequests.get(owner)?.cancel();
   radioVisualizationOwners.add(owner);
   if (!radioVisualizationLifecycleBound) {
     radioVisualizationLifecycleBound = true;
-    window.addEventListener("pagehide", () => {
-      // Analysis is disposable; native radio playback remains authoritative.
+    const suspend = () => {
       radioVisualizationStatus = "idle";
       stopRadioAnalysis();
-    });
-    document.addEventListener("visibilitychange", () => {
-      if (document.hidden) radioVisualizationStatus = "idle";
-      if (document.hidden) stopRadioAnalysis();
-    });
+    };
+    window.addEventListener("pagehide", suspend);
+    document.addEventListener("freeze", suspend);
+    document.addEventListener("visibilitychange", () => { if (document.hidden) suspend(); });
   }
-  if (!state.isLive || state.paused || document.hidden || !radioAudio?.src) {
-    radioVisualizationStatus = "unavailable";
-    return false;
-  }
-  if (radioVisualizationStatus === "ready" && radioVisualizationGraphElement === radioAudio) return true;
-  // A manual visualizer action is a user gesture on Safari. If playback has
-  // not already prepared a graph, prime the shared context before the first
-  // asynchronous acquire so WebKit can resume it without creating a second
-  // context or media source.
-  if (requiresRadioPcmAnalysis()) {
-    // Keep the independent Safari context inside the same trusted gesture
-    // window used by the visualizer control when possible.
-    primeRadioPcmAnalysisContext();
-    const stationUuid = String(state.currentTrack?.station_uuid || "");
-    const stationQueueId = state.currentTrack?._queueId;
-    const pcmGraph = await acquireRadioPcmAnalysis(stationUuid);
-    if (!pcmGraph) {
-      radioVisualizationStatus = "unavailable";
-      notify();
-      return false;
-    }
-    // A pause, station handoff, or page hide may have happened while the
-    // relay/decoder was being prepared. Never publish a stale graph to a
-    // renderer after that lifecycle transition.
-    if (!state.isLive || state.paused || document.hidden
-      || radioAudio?.src === ""
-      || state.currentTrack?._queueId !== stationQueueId) {
-      pcmGraph.dispose?.();
+  const element = radioAudio;
+  const token = loadRequestToken;
+  const stationUuid = String(state.currentTrack?.station_uuid || "");
+  let cancelled = false;
+  let cancel!: () => void;
+  const cancellation = new Promise<boolean>((resolve) => {
+    cancel = () => { cancelled = true; resolve(false); };
+  });
+  const request = { cancel, token, stationUuid };
+  radioVisualizationRequests.set(owner, request);
+  const isCurrent = () => !cancelled && radioVisualizationRequests.get(owner) === request
+    && radioVisualizationOwners.has(owner) && token === loadRequestToken
+    && state.isLive && !state.paused && !document.hidden && Boolean(element?.src)
+    && element === radioAudio
+    && (!window.__vatioboardSpa || (hasSingleTabOwnership() && appControl.isEnabled("vatio.player")));
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; cancel(); }, RADIO_VISUALIZATION_TIMEOUT_MS);
+  const prepare = async () => {
+    if (!isCurrent()) return false;
+    if (radioVisualizationStatus === "ready" && radioVisualizationGraphElement === element) {
+      const context = radioVisualizationAnalysisGraph?.audioContext || getGraph(element!)?.audioContext;
+      if (context?.state === "running") return true;
       radioVisualizationStatus = "idle";
-      return false;
     }
-    radioVisualizationAnalysisGraph = pcmGraph;
-    radioVisualizationGraphElement = radioAudio;
+    if (requiresRadioPcmAnalysis()) {
+      primeRadioPcmAnalysisContext();
+      const pcmGraph = await acquireRadioPcmAnalysis(stationUuid);
+      if (!isCurrent()) {
+        // Another visualizer may still own this same station's PCM session.
+        const anotherRequest = [...radioVisualizationRequests.values()].some((other) =>
+          other !== request && other.token === loadRequestToken && other.stationUuid === stationUuid);
+        if (pcmGraph !== radioVisualizationAnalysisGraph && !anotherRequest) pcmGraph?.dispose?.();
+        return false;
+      }
+      if (!pcmGraph || pcmGraph.audioContext.state !== "running") return false;
+      radioVisualizationAnalysisGraph = pcmGraph;
+    } else if (!await ensureRadioGraph(element, isCurrent)) return false;
+    if (!isCurrent()) return false;
+    radioVisualizationGraphElement = element;
     radioVisualizationStatus = "ready";
-    notify();
     return true;
+  };
+  try {
+    // prepare() starts synchronously so manual retries retain user activation.
+    const ready = await Promise.race([prepare().catch(() => false), cancellation]);
+    recordBackgroundDiagnostic("radio-visualization", {
+      stationUuid, outcome: timedOut ? "timeout" : cancelled ? "cancelled" : ready ? "ready" : "unavailable",
+      sourceReady: Boolean(element?.src), mediaProgress: element?.currentTime || 0,
+    });
+    if (radioVisualizationRequests.get(owner) !== request) return false;
+    if (!ready && (!cancelled || timedOut) && radioVisualizationStatus !== "ready") {
+      radioVisualizationStatus = "unavailable";
+    }
+    notify();
+    return ready && !cancelled;
+  } finally {
+    clearTimeout(timer);
+    if (radioVisualizationRequests.get(owner) === request) radioVisualizationRequests.delete(owner);
   }
-  if (!getGraph(radioAudio)) primeAudioContext();
-  const graph = await ensureRadioGraph(radioAudio);
-  if (!graph) {
-    radioVisualizationStatus = "unavailable";
-    return false;
-  }
-  radioVisualizationGraphElement = radioAudio;
-  radioVisualizationStatus = "ready";
-  notify();
-  return true;
 }
 export function releaseRadioVisualization(owner: symbol) {
+  radioVisualizationRequests.get(owner)?.cancel();
+  radioVisualizationRequests.delete(owner);
   radioVisualizationOwners.delete(owner);
   if (radioVisualizationOwners.size === 0 && radioVisualizationAnalysisGraph) {
     const stationUuid = String(radioVisualizationAnalysisGraph.stationUuid || state.currentTrack?.station_uuid || "");
@@ -357,20 +374,24 @@ export function getRadioVisualizationDiagnostics() {
   };
 }
 
-async function ensureRadioGraph(mediaElement: ManagedAudioElement | null): Promise<boolean> {
-  if (!mediaElement) return false;
+async function ensureRadioGraph(
+  mediaElement: ManagedAudioElement | null,
+  isCurrent: () => boolean = () => true,
+): Promise<boolean> {
+  if (!mediaElement || !isCurrent()) return false;
   const existing = getGraph(mediaElement);
   if (existing) {
-    return String(existing.audioContext?.state || "closed") === "running"
+    const running = String(existing.audioContext?.state || "closed") === "running"
       || await resumeGraphForElement(mediaElement);
+    return running && isCurrent();
   }
 
-  const acquired = await acquireGraph(mediaElement);
+  const acquired = await acquireGraph(mediaElement, { isCurrent, resumePending: true });
   if (!acquired) return false;
   // The graph registry retains the entry itself. This temporary retain is
   // released so visualization and playback remain independent consumers.
   releaseGraph(mediaElement);
-  return true;
+  return acquired.audioContext.state === "running" && isCurrent();
 }
 
 function primeRadioGraphForGesture(): void {
@@ -1278,6 +1299,8 @@ function bindLifecyclePersistence() {
       loadRequestToken++;
       if (pendingSeek) pendingSeek.token = loadRequestToken;
       state.paused = true;
+      radioVisualizationStatus = "idle";
+      stopRadioAnalysis();
       audio?.pause();
       stopBackgroundModeKeepAlive();
       flushSessionPersistence();
@@ -1755,7 +1778,10 @@ async function startRestoredRadioViaDemo({ restored = restoredRadioSession } = {
       notify();
       restoredRadioTakeoverActive = false;
     }
-    if (radioTakeoverPending === takeover) radioTakeoverPending = null;
+    if (radioTakeoverPending === takeover) {
+      radioTakeoverPending = null;
+      notify();
+    }
   });
   radioTakeoverPending = takeover;
   return takeover;
@@ -2256,7 +2282,7 @@ export function getState() {
     radioVisualizationTransport: (radioVisualizationAnalysisGraph?.transport || (state.isLive ? "media-element" : "none")) as "media-element" | "decoded-pcm" | "none",
     radioVisualizationSignal: radioVisualizationAnalysisGraph?.signalState || (state.isLive ? "graph-ready" : "none"),
     connectionState: state.connectionState, radioFailureClass: null,
-    radioVisualizationAutoStart: !restoredRadioSession,
+    radioVisualizationAutoStart: !state.paused && !radioTakeoverPending && !restoredRadioTakeoverActive,
     restoredRadioSession,
     restoredRadioReason,
     radioFocusPrepared: Boolean(preparedRadioTakeover?.resolved?.src),

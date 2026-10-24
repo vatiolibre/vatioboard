@@ -42,6 +42,7 @@ async function fixtures(page: Page) {
   ] }));
   await page.route("**/audio/demo/focus.wav", route => route.fulfill({ contentType: "audio/wav", body: audioFixture() }));
   await page.route("**/v1/stations/*/stream", route => route.fulfill({ contentType: "audio/wav", body: audioFixture(), headers: { "Access-Control-Allow-Origin": "*" } }));
+  await page.route("**/v1/stations/*/artwork", route => route.fulfill({ status: 204, headers: { "Access-Control-Allow-Origin": "*" } }));
 }
 
 // Playwright's page.evaluate grants user activation. Read boot/state through
@@ -65,27 +66,43 @@ async function booted(page: Page) {
   await withoutGesture(page, "import('/src/player/player-demo.ts').then(player => player.initPromise)");
 }
 
+async function analyserSignal(page: Page) {
+  return withoutGesture(page, `(async () => {
+    const runtime = await import('/src/shared/audio-runtime.ts');
+    const registry = await import('/src/shared/audio-graph-registry.ts');
+    const graph = registry.getGraph(runtime.getAudioElement());
+    let signal = 0;
+    for (const analyser of graph?.consumers || []) {
+      if (!analyser.getByteTimeDomainData) continue;
+      const samples = new Uint8Array(analyser.fftSize);
+      analyser.getByteTimeDomainData(samples);
+      signal = Math.max(signal, ...samples.map(sample => Math.abs(sample - 128)));
+    }
+    return runtime.getState().isLive ? signal : 0;
+  })()`);
+}
+
 test.describe("permitted automatic recovery", () => {
   test.use({ autoplayPolicy: "no-user-gesture-required" });
 
   test("first visit plays demo, reload preserves position, and Pause/Stop remain authoritative", async ({ page }) => {
     await fixtures(page);
-    await page.goto("/player.html");
+    await page.goto("/player.html", { waitUntil: "domcontentloaded" });
     await expect.poll(async () => (await snapshot(page)).playing).toBe(true);
     expect((await snapshot(page)).currentTrack.name).toBe("demo:focus");
     await page.evaluate(async () => {
       const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
       runtime.seekTo(4.5);
     });
-    await page.reload();
+    await page.reload({ waitUntil: "domcontentloaded" });
     await expect.poll(async () => (await snapshot(page)).currentTime).toBeGreaterThanOrEqual(4.5);
     await expect.poll(async () => (await snapshot(page)).playing).toBe(true);
     await page.evaluate(async () => (await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"))).pause());
-    await page.reload();
+    await page.reload({ waitUntil: "domcontentloaded" });
     await booted(page);
     expect(await snapshot(page)).toMatchObject({ paused: true, playing: false, playbackIntent: "paused" });
     await page.evaluate(async () => (await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"))).stopPlayback());
-    await page.reload();
+    await page.reload({ waitUntil: "domcontentloaded" });
     await booted(page);
     expect(await snapshot(page)).toMatchObject({ currentTrack: null, playbackIntent: "stopped", playing: false });
   });
@@ -97,6 +114,8 @@ test.describe("permitted automatic recovery", () => {
         version: 4, playbackIntent: "playing", paused: false, currentIndex: 0, currentEntryId: "saved-radio",
         queueEntries: [{ entryId: "saved-radio", name: "radio:saved", title: "Saved station", media_kind: "radio", station_uuid: "11111111-1111-4111-8111-111111111111" }],
       }));
+      localStorage.setItem("player_widget_visible_v1", "true");
+      localStorage.setItem("vatio_board_player_widget_visualizer_mode", "scope");
       const order: string[] = [];
       (window as Window & { __playOrder?: string[] }).__playOrder = order;
       const original = HTMLMediaElement.prototype.play;
@@ -105,7 +124,7 @@ test.describe("permitted automatic recovery", () => {
         return original.call(this);
       };
     });
-    await page.goto("/player.html");
+    await page.goto("/player.html", { waitUntil: "domcontentloaded" });
     await expect.poll(async () => {
       const state = await snapshot(page);
       return state.isLive && state.playing && state.currentTime > 0.1;
@@ -117,7 +136,53 @@ test.describe("permitted automatic recovery", () => {
     }));
     expect(result.saved.queueEntries.map((entry: { name: string }) => entry.name)).toEqual(["radio:saved"]);
     expect(result.order.indexOf("radio")).toBeGreaterThan(0);
+    await expect(page.locator(".player-visualizer-strip")).toBeVisible();
+    await expect(page.locator(".player-visualizer-strip")).toHaveAttribute("data-visualizer-mode", "scope");
+    await expect.poll(() => analyserSignal(page)).toBeGreaterThan(0);
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect.poll(() => analyserSignal(page)).toBeGreaterThan(0);
+    await expect(page.locator(".player-visualizer-toggle-btn")).toHaveAttribute("aria-pressed", "true");
+    await page.locator(".player-visualizer-toggle-btn").click();
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect.poll(async () => (await snapshot(page)).isLive && (await snapshot(page)).playing).toBe(true);
+    await expect(page.locator(".player-visualizer-toggle-btn")).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator(".player-visualizer-strip")).toBeHidden();
   });
+});
+
+test("Visuals retries blocked graph preparation while the same radio audio continues", async ({ page }) => {
+  await fixtures(page);
+  await page.addInitScript(() => {
+    localStorage.setItem("player_widget_visible_v1", "true");
+    localStorage.setItem("vatioboard_player_session_v4", JSON.stringify({
+      version: 4, playbackIntent: "playing", paused: false, currentIndex: 0, currentEntryId: "saved-radio",
+      queueEntries: [{ entryId: "saved-radio", name: "radio:saved", title: "Saved station", media_kind: "radio", station_uuid: "11111111-1111-4111-8111-111111111111" }],
+    }));
+    // Deterministic browser-policy rejection; successful playback/analysis uses
+    // the real media element, context and analyser after a trusted Visuals tap.
+    let blocked = true;
+    document.addEventListener("click", event => {
+      if (event.isTrusted && (event.target as Element)?.closest(".player-visualizer-toggle-btn")) blocked = false;
+    }, true);
+    const Original = window.AudioContext;
+    window.AudioContext = class extends Original {
+      get state() { const state = super.state; return blocked && state !== "closed" ? "suspended" : state; }
+      resume() { return blocked ? Promise.reject(new DOMException("Activation required", "NotAllowedError")) : super.resume(); }
+    };
+  });
+  await page.goto("/player.html", { waitUntil: "domcontentloaded" });
+  await expect.poll(async () => (await snapshot(page)).isLive && (await snapshot(page)).playing).toBe(true);
+  await expect(page.locator(".player-visualizer-toggle-btn")).toHaveAttribute("data-visualizer-state", "unavailable");
+  const before = await snapshot(page);
+  await page.evaluate(async () => {
+    const runtime = await import(/* @vite-ignore */ String("/src/shared/audio-runtime.ts"));
+    runtime.getAudioElement()!.dataset.originalRadio = "true";
+  });
+  await page.locator(".player-visualizer-toggle-btn").click();
+  await expect.poll(() => analyserSignal(page)).toBeGreaterThan(0);
+  await expect.poll(async () => (await snapshot(page)).currentTime).toBeGreaterThan(before.currentTime + 0.1);
+  expect(await withoutGesture(page, "import('/src/shared/audio-runtime.ts').then(r => r.getAudioElement().dataset.originalRadio)")).toBe("true");
+  expect((await snapshot(page)).currentTrack.name).toBe("radio:saved");
 });
 
 test.describe("autoplay rejection", () => {
@@ -138,7 +203,7 @@ test.describe("autoplay rejection", () => {
         return blocked ? Promise.reject(new DOMException("Autoplay blocked", "NotAllowedError")) : original.call(this);
       };
     });
-    await page.goto("/player.html");
+    await page.goto("/player.html", { waitUntil: "domcontentloaded" });
     await booted(page);
     await expect.poll(async () => (await snapshot(page)).restorationStatus).toBe("blocked");
     expect(await snapshot(page)).toMatchObject({ playbackIntent: "playing", paused: true });

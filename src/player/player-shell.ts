@@ -54,12 +54,15 @@ import {
   copyBackgroundDiagnostics,
   downloadBackgroundDiagnostics,
   isBackgroundDiagnosticsEnabled,
+  recordBackgroundDiagnostic,
 } from "../shared/background-diagnostics.js";
 import type { ShellAppRuntimeManager } from "../app-platform/types";
 import type { ShellRuntime } from "../types/shell";
+import { SINGLE_TAB_OWNERSHIP_EVENT } from "../shared/single-tab.js";
 
 const PROGRESS_MAX = 1000;
 export const VISUALIZER_VISIBLE_STORAGE_KEY = "vatio_board_player_widget_visualizer_visible";
+export const RADIO_VISUALIZER_VISIBLE_STORAGE_KEY = "vatio_board_player_widget_radio_visualizer_visible";
 export const VISUALIZER_MODE_STORAGE_KEY = "vatio_board_player_widget_visualizer_mode";
 const VISUALIZER_MODES = new Set(["spectrum", "scope"]);
 const IconVisualizer = `
@@ -683,6 +686,7 @@ export function createPlayerShell({
     saveText(key, value);
   };
   let preferredVisualizerVisible = loadSettingText(VISUALIZER_VISIBLE_STORAGE_KEY, "true") !== "false";
+  let preferredRadioVisualizerVisible = loadSettingText(RADIO_VISUALIZER_VISIBLE_STORAGE_KEY, "true") !== "false";
   let visualizerVisible = preferredVisualizerVisible;
   let visualizerMode = normalizeVisualizerMode(loadSettingText(VISUALIZER_MODE_STORAGE_KEY, "spectrum"));
   let visualizerController = null;
@@ -1742,21 +1746,34 @@ export function createPlayerShell({
   let radioVisualizerPending = false;
   let radioVisualizerOperation = 0;
   let visualizersDisposed = false;
+  let visualizerReturnPending = false;
+  let radioVisualizerWasPaused = false;
+  let radioVisualizerRecovering = false;
+  let visualizerOwnership = true;
+  let radioVisualizerTrigger = "initial-load";
 
   function disableRadioVisualizer() {
+    if (radioVisualizerPending) recordBackgroundDiagnostic("radio-visual-recovery", {
+      trigger: "interruption", outcome: "cancelled", station: radioVisualizerTrackKey,
+    });
     ++radioVisualizerOperation;
     radioVisualizerPending = false;
     visualizerVisible = false;
     stopVisualizer();
+    destroyVisualizerController();
     if ("releaseRadioVisualization" in runtime) runtime.releaseRadioVisualization(radioScopeOwner);
     syncVisualizerUi();
   }
 
-  function requestRadioVisualizer() {
+  function requestRadioVisualizer(trigger = radioVisualizerTrigger) {
     radioVisualizerAttempted = true;
     radioVisualizerPending = true;
     const operation = ++radioVisualizerOperation;
     resetVisualizerFailure();
+    recordBackgroundDiagnostic("radio-visual-recovery", {
+      trigger, outcome: "attempt", station: radioVisualizerTrackKey,
+      sourceReady: runtime.getState().connectionState === "playing",
+    });
     // Invoke directly: a manual retry must retain the tap's user activation.
     const result = "requestRadioVisualization" in runtime
       ? runtime.requestRadioVisualization(radioScopeOwner)
@@ -1764,6 +1781,10 @@ export function createPlayerShell({
     void Promise.resolve(result).catch(() => false).then((ready) => {
       if (visualizersDisposed || operation !== radioVisualizerOperation) return;
       radioVisualizerPending = false;
+      recordBackgroundDiagnostic("radio-visual-recovery", {
+        trigger, outcome: ready ? "restored" : "unavailable", station: radioVisualizerTrackKey,
+        mediaProgress: runtime.getState().currentTime || 0,
+      });
       visualizerVisible = ready;
       visualizerFailed = !ready;
       if (ready) _gestureUnlocked = true;
@@ -1778,6 +1799,7 @@ export function createPlayerShell({
       ? String(track._queueId || track.station_uuid || track.name || "")
       : "";
     if (trackKey !== radioVisualizerTrackKey) {
+      radioVisualizerTrigger = snapshot.restoredRadioSession ? "session-recovery" : "station-change";
       radioVisualizerTrackKey = trackKey;
       radioVisualizerAttempted = true;
       disableRadioVisualizer();
@@ -1789,13 +1811,29 @@ export function createPlayerShell({
       resetVisualizerFailure();
       visualizerVisible = track ? false : preferredVisualizerVisible;
     }
+    const paused = snapshot.paused || snapshot.playbackIntent === "stopped";
+    const recovering = Boolean(snapshot.loading || snapshot.restorationStatus === "restoring"
+      || snapshot.connectionState === "reconnecting");
+    if (track && recovering && !radioVisualizerRecovering) {
+      radioVisualizerTrigger = "playback-recovery";
+      if (radioVisualizerPending || visualizerVisible) disableRadioVisualizer();
+      radioVisualizerAttempted = false;
+    }
+    radioVisualizerRecovering = recovering;
+    if (radioVisualizerWasPaused && !paused) radioVisualizerAttempted = false;
+    radioVisualizerWasPaused = paused;
     if (!track || visualizersDisposed) return;
+    if (paused || document.hidden || root.hidden || !visualizerOwnership) {
+      if (radioVisualizerPending || visualizerVisible) disableRadioVisualizer();
+      return;
+    }
     if (visualizerVisible && !radioVisualizerPending
       && Reflect.has(runtime, "getRadioVisualizationStatus")
       && runtime.getRadioVisualizationStatus() !== "ready") {
       disableRadioVisualizer();
     }
-    if (!radioVisualizerAttempted && snapshot.radioVisualizationAutoStart !== false
+    if (preferredRadioVisualizerVisible && !radioVisualizerAttempted
+      && snapshot.radioVisualizationAutoStart !== false && !snapshot.radioFocusHandoffPending
       && snapshot.connectionState === "playing"
       && snapshot.playing && !snapshot.loading && !document.hidden) {
       requestRadioVisualizer();
@@ -1847,6 +1885,10 @@ export function createPlayerShell({
         : "disabled";
     visualizerToggleBtn.classList.toggle("active", visualizerVisible);
     visualizerToggleBtn.setAttribute("aria-pressed", String(visualizerVisible));
+    visualizerToggleBtn.title = visualizerFailed
+      ? t("mediaPlayerVisualizerUnavailable") : t("mediaPlayerVisualizerMode");
+    visualizerToggleBtn.dataset.visualizerState = radioVisualizerPending ? "restoring"
+      : visualizerFailed ? "unavailable" : visualizerVisible ? "ready" : "disabled";
     visualizerLabel.textContent = visualizerFailed || (visualizerVisible && !sourceSafe)
       ? t("mediaPlayerVisualizerUnavailable")
       : getVisualizerModeLabel(visualizerMode);
@@ -1973,12 +2015,12 @@ export function createPlayerShell({
   visualizerToggleBtn.addEventListener("click", (e) => {
     e.stopPropagation();
     if (runtime.getState().isLive) {
+      const nextVisible = !visualizerVisible && !radioVisualizerPending;
+      preferredRadioVisualizerVisible = nextVisible;
+      saveSettingText(RADIO_VISUALIZER_VISIBLE_STORAGE_KEY, nextVisible ? "true" : "false");
       radioVisualizerAttempted = true;
-      if (visualizerVisible) disableRadioVisualizer();
-      else {
-        if (radioVisualizerPending) disableRadioVisualizer();
-        requestRadioVisualizer();
-      }
+      if (!nextVisible) disableRadioVisualizer();
+      else requestRadioVisualizer("visuals-button");
       return;
     }
     const nextVisible = !visualizerVisible;
@@ -2385,11 +2427,36 @@ export function createPlayerShell({
   }
 
   // ── Runtime subscription ───────────────────────────────────────
+  const suspendVisualizers = () => {
+    visualizerReturnPending = true;
+    if (runtime.getState().isLive) disableRadioVisualizer();
+    stopVisualizer();
+  };
+  const resumeVisualizers = () => {
+    if (document.hidden || root.hidden || !visualizerOwnership) return;
+    if (visualizerReturnPending) {
+      visualizerReturnPending = false;
+      radioVisualizerTrigger = "foreground-return";
+      radioVisualizerAttempted = false;
+      resetVisualizerFailure();
+    }
+    syncVisualizerPlayback();
+  };
   const handleVisualizerVisibilityChange = () => {
-    if (document.hidden) stopVisualizer();
-    else syncVisualizerPlayback();
+    if (document.hidden) suspendVisualizers();
+    else resumeVisualizers();
+  };
+  const handleVisualizerOwnership = (event: Event) => {
+    visualizerOwnership = (event as CustomEvent).detail?.owned !== false;
+    if (!visualizerOwnership) suspendVisualizers();
+    else resumeVisualizers();
   };
   document.addEventListener("visibilitychange", handleVisualizerVisibilityChange);
+  document.addEventListener("freeze", suspendVisualizers);
+  document.addEventListener("resume", resumeVisualizers);
+  window.addEventListener("pagehide", suspendVisualizers);
+  window.addEventListener("pageshow", resumeVisualizers);
+  window.addEventListener(SINGLE_TAB_OWNERSHIP_EVENT, handleVisualizerOwnership);
   const unsubscribe = runtime.subscribe(renderState);
   updateRangeVisualFill(progressBar);
   updateRangeVisualFill(volumeSlider);
@@ -2408,10 +2475,8 @@ export function createPlayerShell({
     /** The close button (widget wires its click handler). */
     closeBtn,
 
-    suspendVisualizations() {
-      if (runtime.getState().isLive) disableRadioVisualizer();
-      stopVisualizer();
-    },
+    suspendVisualizations: suspendVisualizers,
+    resumeVisualizations: resumeVisualizers,
     destroy() {
       visualizersDisposed = true;
       ++radioVisualizerOperation;
@@ -2422,6 +2487,11 @@ export function createPlayerShell({
       disposeSummary();
       unsubscribe();
       document.removeEventListener("visibilitychange", handleVisualizerVisibilityChange);
+      document.removeEventListener("freeze", suspendVisualizers);
+      document.removeEventListener("resume", resumeVisualizers);
+      window.removeEventListener("pagehide", suspendVisualizers);
+      window.removeEventListener("pageshow", resumeVisualizers);
+      window.removeEventListener(SINGLE_TAB_OWNERSHIP_EVENT, handleVisualizerOwnership);
       clearQueueSaveStatusTimer();
       destroyVisualizerController();
       milkdropPanel?.destroy();

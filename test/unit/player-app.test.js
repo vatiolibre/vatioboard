@@ -182,8 +182,10 @@ async function loadModules() {
     createPlayerApp: playerApp.createPlayerApp,
     PLAYER_APP_ID: playerApp.PLAYER_APP_ID,
     PLAYER_VISUALIZER_VISIBLE_SETTING_KEY: playerApp.PLAYER_VISUALIZER_VISIBLE_SETTING_KEY,
+    PLAYER_RADIO_VISUALIZER_VISIBLE_SETTING_KEY: playerApp.PLAYER_RADIO_VISUALIZER_VISIBLE_SETTING_KEY,
     createPlayerWidget: playerWidget.createPlayerWidget,
     VISUALIZER_MODE_STORAGE_KEY: playerShell.VISUALIZER_MODE_STORAGE_KEY,
+    RADIO_VISUALIZER_VISIBLE_STORAGE_KEY: playerShell.RADIO_VISUALIZER_VISIBLE_STORAGE_KEY,
     VISUALIZER_VISIBLE_STORAGE_KEY: playerShell.VISUALIZER_VISIBLE_STORAGE_KEY,
   };
 }
@@ -474,6 +476,25 @@ describe("Player OS app module", () => {
     player.destroy();
     shellAppRuntimeManager.destroy();
     shellManager.destroy();
+  });
+
+  it("mirrors the independent radio preference through Player settings", async () => {
+    const modules = await loadModules();
+    const key = `vatioboard.app.${modules.PLAYER_APP_ID}.settings.${modules.PLAYER_RADIO_VISUALIZER_VISIBLE_SETTING_KEY}`;
+    localStorage.setItem(key, "false");
+    audioRuntimeMock.getState.mockReturnValue({
+      queue: [], currentTrack: { name: "radio:one", media_kind: "radio" },
+      isLive: true, paused: true, playing: false,
+    });
+    const { shellManager, shellAppRuntimeManager, launcher } = createShellHarness(modules);
+    const player = modules.createPlayerApp({ mount: document.body, restoreVisibility: false, shellManager, shellAppRuntimeManager });
+    launcher.openApp(modules.PLAYER_APP_ID);
+    expect(localStorage.getItem(modules.RADIO_VISUALIZER_VISIBLE_STORAGE_KEY)).toBe("false");
+    document.querySelector(".player-visualizer-toggle-btn").click();
+    await flushMicrotasks();
+    expect(localStorage.getItem(key)).toBe("true");
+    expect(localStorage.getItem(modules.VISUALIZER_VISIBLE_STORAGE_KEY)).not.toBe("false");
+    player.destroy(); shellAppRuntimeManager.destroy(); shellManager.destroy();
   });
 
   it("lets legacy visualizer preferences win over stale runtime mirrors", async () => {

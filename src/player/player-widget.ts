@@ -472,8 +472,10 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
     shellAppRuntimeManager,
   });
   const contentSheet = shell.root.querySelector<HTMLElement>(".player-content-sheet");
+  const playerBody = shell.root.querySelector<HTMLElement>(".player-body");
   let cleanupLayer = () => {};
   let panelFitTimeoutId = 0;
+  let contentFitFrameId = 0;
   const panelFitFrameIds = new Set<number>();
 
   // Apply stored panel position, or use the first-visit default.
@@ -602,9 +604,9 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
     shell.root.style.top = `${Math.round(clampNumber(position.top, minTop, maxTop))}px`;
     shell.root.style.right = "auto";
     shell.root.style.bottom = "auto";
-    clearPanelFixedHeight();
-
     if (persist) persistPanelPosition();
+    shell.root.style.maxHeight = `${Math.floor(area.height)}px`;
+    shell.root.style.minHeight = `${Math.min(220, Math.floor(area.height))}px`;
   }
 
   function cancelScheduledPanelFit() {
@@ -658,6 +660,45 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
 
   contentSheet?.addEventListener("transitionend", handleContentSheetTransitionEnd);
 
+  // Observe intrinsic content, not only the constrained body: an overflowing
+  // body can keep the same border-box size when metadata or visuals grow.
+  const measuredSizes = new WeakMap<Element, string>();
+  const contentObserver = typeof ResizeObserver === "function" ? new ResizeObserver((entries) => {
+    let changed = false;
+    for (const entry of entries) {
+      const size = `${entry.contentRect.width}:${entry.contentRect.height}`;
+      if (measuredSizes.get(entry.target) !== size) changed = true;
+      measuredSizes.set(entry.target, size);
+    }
+    if (!changed || shell.root.hidden || contentFitFrameId) return;
+    contentFitFrameId = window.requestAnimationFrame(() => {
+      contentFitFrameId = 0;
+      fitPanelToAvailableSpace({ persist: false });
+    });
+  }) : null;
+  function observePanelContent() {
+    contentObserver?.observe(shell.header);
+    for (const child of Array.from(playerBody?.children || [])) contentObserver?.observe(child);
+  }
+
+  function suspendPanelSizing() {
+    contentObserver?.disconnect();
+    if (contentFitFrameId) window.cancelAnimationFrame(contentFitFrameId);
+    contentFitFrameId = 0;
+    cancelScheduledPanelFit();
+  }
+
+  const handleWorkAreaReflow = () => fitPanelToAvailableSpace({ persist: false });
+  window.addEventListener("vatioboard:shell-work-area-reflowed", handleWorkAreaReflow);
+  globalThis.visualViewport?.addEventListener("resize", handleWorkAreaReflow);
+
+  function getCompactContentHeight() {
+    if (!playerBody) return shell.root.getBoundingClientRect().height;
+    const style = getComputedStyle(shell.root);
+    return shell.header.getBoundingClientRect().height + playerBody.scrollHeight
+      + (parseFloat(style.borderTopWidth) || 0) + (parseFloat(style.borderBottomWidth) || 0);
+  }
+
   cleanupLayer = registerFloatingPanel(shell.root, {
     id: PLAYER_WINDOW_ID,
     kind: "media",
@@ -685,6 +726,7 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
         return {
           mode: "short-landscape",
           width: Math.min(340, metrics.workArea.width),
+          height: Math.min(getCompactContentHeight() || metrics.workArea.height, metrics.workArea.height),
           maxWidth: Math.min(340, metrics.workArea.width),
           maxHeight: metrics.workArea.height,
         };
@@ -757,6 +799,8 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
   // ── Open / Close / Toggle ────────────────────────────────────
   function showPanel({ persist = true }: ShellLifecycleOptions = {}) {
     shell.root.hidden = false;
+    observePanelContent();
+    shell.resumeVisualizations?.();
     if (persist) saveVisibility(true);
 
     // Lazy bootstrap on first open
@@ -769,6 +813,7 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
 
   function hidePanel({ persist = true, stopPlayback = true }: ShellLifecycleOptions = {}) {
     shell.root.hidden = true;
+    suspendPanelSizing();
     shell.suspendVisualizations?.();
     if (persist) saveVisibility(false);
     if (stopPlayback !== false) runtime.stopPlayback();
@@ -777,6 +822,7 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
 
   function minimizePanel() {
     shell.root.hidden = true;
+    suspendPanelSizing();
     shell.suspendVisualizations?.();
   }
 
@@ -850,6 +896,9 @@ export function createPlayerWidget(options: PlayerWidgetOptions = {}): PlayerWid
   function destroy() {
     window.removeEventListener(BACKEND_AUTH_STATE_EVENT, onAuthChange);
     window.removeEventListener("resize", handleContentOpenChange);
+    window.removeEventListener("vatioboard:shell-work-area-reflowed", handleWorkAreaReflow);
+    globalThis.visualViewport?.removeEventListener("resize", handleWorkAreaReflow);
+    suspendPanelSizing();
     contentSheet?.removeEventListener("transitionend", handleContentSheetTransitionEnd);
     cancelScheduledPanelFit();
     cleanupLayer();

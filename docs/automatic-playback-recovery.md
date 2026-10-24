@@ -53,9 +53,18 @@ The blocked browser branch injects `NotAllowedError` until the existing Play
 button is clicked, since debugging/engagement can grant autoplay despite launch
 policy. Successful retries use actual decoded browser audio.
 
-**Vehicle acceptance is pending.** The earlier manual-Play acceptance in
-[radio-session-restoration.md](radio-session-restoration.md) remains a historical
-baseline; it does not certify this automatic successor.
+The user reports successful MP3 demo and internet-radio audio recovery in Tesla.
+A recorded vehicle software/build matrix and automatic visual recovery acceptance
+remain pending. The earlier manual-Play acceptance in
+[radio-session-restoration.md](radio-session-restoration.md) remains a historical baseline.
+
+Radio scope/spectrum now restores its independently saved Visuals preference after
+native playback and demo-handoff completion, with one bounded attempt while Player
+is visible. The saved mode is preserved. Failure leaves audio alone and the existing
+Visuals button ready to retry. Panel height follows restored content and supports
+internal scrolling within the shell work area. See
+[best-effort radio visuals](radio-visualization-best-effort.md) for lifecycle,
+ownership, diagnostics, and the pending vehicle checklist.
 
 ### Parked Tesla checklist
 

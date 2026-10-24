@@ -246,6 +246,11 @@ export interface AudioRuntimeState {
   cacheable: boolean;
   analysisEligible: boolean;
   analysisActive: boolean;
+  radioVisualizationAutoStart?: boolean;
+  radioFocusHandoffPending?: boolean;
+  radioFocusPrepared?: boolean;
+  restoredRadioSession?: boolean;
+  restoredRadioReason?: string | null;
   radioVisualizationStatus?: "idle" | "ready" | "unavailable";
   radioVisualizationTransport?: "media-element" | "decoded-pcm" | "none";
   radioVisualizationSignal?: string;

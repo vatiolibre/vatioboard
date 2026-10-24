@@ -7,6 +7,7 @@ import {
 } from "../../player/player-widget.js";
 import {
   VISUALIZER_MODE_STORAGE_KEY,
+  RADIO_VISUALIZER_VISIBLE_STORAGE_KEY,
   VISUALIZER_VISIBLE_STORAGE_KEY,
   type PlayerShellSettingsStore,
 } from "../../player/player-shell.js";
@@ -19,10 +20,12 @@ import { setRadioExternalNetworkAccessCheck } from "../../shared/radio-browser.j
 
 export const PLAYER_APP_ID = "vatio.player";
 export const PLAYER_VISUALIZER_VISIBLE_SETTING_KEY = "visualizerVisible";
+export const PLAYER_RADIO_VISUALIZER_VISIBLE_SETTING_KEY = "radioVisualizerVisible";
 export const PLAYER_VISUALIZER_MODE_SETTING_KEY = "visualizerMode";
 
 const PLAYER_SETTING_KEYS = new Map([
   [VISUALIZER_VISIBLE_STORAGE_KEY, PLAYER_VISUALIZER_VISIBLE_SETTING_KEY],
+  [RADIO_VISUALIZER_VISIBLE_STORAGE_KEY, PLAYER_RADIO_VISUALIZER_VISIBLE_SETTING_KEY],
   [VISUALIZER_MODE_STORAGE_KEY, PLAYER_VISUALIZER_MODE_SETTING_KEY],
 ]);
 

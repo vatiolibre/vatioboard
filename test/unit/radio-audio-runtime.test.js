@@ -270,6 +270,7 @@ it("shares optional analysis across viewers and cleans up on last release, Pause
   const native = runtime.getAudioElement();
   const scope = Symbol("scope"), milkdrop = Symbol("milkdrop");
   await runtime.requestRadioVisualization(scope);
+  vi.spyOn(registry, "getGraph").mockReturnValue({ audioContext: context });
   const analysis = runtime.getVisualizationAudioElement();
   await runtime.requestRadioVisualization(milkdrop);
   expect(acquire).toHaveBeenCalledTimes(1);
@@ -681,4 +682,88 @@ it("Play after cancelling a track load resolves the selected track rather than p
   await runtime.play({ fromUserGesture: true });
   expect(runtime.getAudioElement().src).toBe("blob:selected");
   expect(runtime.getState().currentTrack.name).toBe("demo:selected");
+});
+
+
+it("bounds stalled visual preparation and leaves native audio and independent leases intact", async () => {
+  await system.acquireBackgroundAudioLease("recording");
+  await runtime.playTrackNow(station());
+  const native = runtime.getAudioElement();
+  const registry = await import("../../src/shared/audio-graph-registry.js");
+  let finish;
+  vi.spyOn(registry, "acquireGraph").mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  const owner = Symbol("scope");
+  const attempt = runtime.requestRadioVisualization(owner);
+  await vi.advanceTimersByTimeAsync(8000);
+  await expect(attempt).resolves.toBe(false);
+  expect(runtime.getRadioVisualizationStatus()).toBe("unavailable");
+  runtime.releaseRadioVisualization(owner);
+  finish({ audioContext: { state: "running" } }); await flush();
+  expect(runtime.getRadioVisualizationStatus()).toBe("unavailable");
+  expect(native.paused).toBe(false);
+  expect(runtime.getState().currentTrack.name).toBe("radio:one");
+  expect(system.getBackgroundAudioState().activeLeaseIds).toContain("recording");
+});
+
+it.each(["release", "pause", "stop", "station"])("ignores visual preparation after %s", async (action) => {
+  await runtime.playTrackNow(station());
+  const registry = await import("../../src/shared/audio-graph-registry.js");
+  let finish;
+  vi.spyOn(registry, "acquireGraph").mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  const diagnostics = await import("../../src/shared/background-diagnostics.js");
+  const record = vi.spyOn(diagnostics, "recordBackgroundDiagnostic");
+  const owner = Symbol("scope");
+  const attempt = runtime.requestRadioVisualization(owner);
+  if (action === "release") runtime.releaseRadioVisualization(owner);
+  if (action === "pause") runtime.pause();
+  if (action === "stop") runtime.stopPlayback();
+  if (action === "station") await runtime.playTrackNow(station("two"));
+  await expect(attempt).resolves.toBe(false);
+  expect(record).toHaveBeenCalledWith("radio-visualization", expect.objectContaining({ outcome: "cancelled", sourceReady: expect.any(Boolean) }));
+  finish({ audioContext: { state: "running" } }); await flush();
+  expect(runtime.getRadioVisualizationStatus()).not.toBe("ready");
+});
+
+it("rejects a graph whose context remains suspended without changing playback", async () => {
+  await runtime.playTrackNow(station());
+  const registry = await import("../../src/shared/audio-graph-registry.js");
+  vi.spyOn(registry, "acquireGraph").mockResolvedValue({ audioContext: { state: "suspended" } });
+  expect(await runtime.requestRadioVisualization(Symbol("scope"))).toBe(false);
+  expect(runtime.getAudioElement().paused).toBe(false);
+});
+
+
+it("does not dispose shared Safari PCM when one pending viewer is cancelled", async () => {
+  await runtime.playTrackNow(station());
+  const pcm = await import("../../src/shared/radio-pcm-analysis.js");
+  vi.spyOn(pcm, "requiresRadioPcmAnalysis").mockReturnValue(true);
+  vi.spyOn(pcm, "primeRadioPcmAnalysisContext").mockReturnValue(true);
+  let finish;
+  const graph = { audioContext: { state: "running" }, dispose: vi.fn() };
+  const shared = new Promise(resolve => { finish = resolve; });
+  vi.spyOn(pcm, "acquireRadioPcmAnalysis").mockReturnValue(shared);
+  const scopeOwner = Symbol("scope"), milkdropOwner = Symbol("milkdrop");
+  const scope = runtime.requestRadioVisualization(scopeOwner);
+  const milkdrop = runtime.requestRadioVisualization(milkdropOwner);
+  runtime.releaseRadioVisualization(scopeOwner);
+  finish(graph);
+  await expect(scope).resolves.toBe(false);
+  await expect(milkdrop).resolves.toBe(true);
+  expect(graph.dispose).not.toHaveBeenCalled();
+  expect(runtime.getRadioAnalysisGraph()).toBe(graph);
+});
+
+it("disposes Safari PCM that finishes after a playback cancellation", async () => {
+  await runtime.playTrackNow(station());
+  const pcm = await import("../../src/shared/radio-pcm-analysis.js");
+  vi.spyOn(pcm, "requiresRadioPcmAnalysis").mockReturnValue(true);
+  vi.spyOn(pcm, "primeRadioPcmAnalysisContext").mockReturnValue(true);
+  let finish;
+  const graph = { audioContext: { state: "running" }, dispose: vi.fn() };
+  vi.spyOn(pcm, "acquireRadioPcmAnalysis").mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  const attempt = runtime.requestRadioVisualization(Symbol("scope"));
+  runtime.pause(); await expect(attempt).resolves.toBe(false);
+  finish(graph); await flush();
+  expect(graph.dispose).toHaveBeenCalledTimes(1);
+  expect(runtime.getRadioAnalysisGraph()).toBeNull();
 });

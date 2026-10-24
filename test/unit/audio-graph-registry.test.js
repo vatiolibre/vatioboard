@@ -183,6 +183,47 @@ describe("audio-graph-registry", () => {
       expect(fakeAudioContext.close).toHaveBeenCalled();
     });
 
+    it("does not bind a late graph after its visualizer consumer cancels", async () => {
+      let resume;
+      let current = true;
+      fakeAudioContext.state = "suspended";
+      fakeAudioContext.resume = vi.fn(() => new Promise((resolve) => { resume = resolve; }));
+      const pending = acquireGraph(mediaElement, { isCurrent: () => current });
+      current = false;
+      fakeAudioContext.state = "running"; resume();
+      await expect(pending).resolves.toBeNull();
+      expect(fakeAudioContext.createMediaElementSource).not.toHaveBeenCalled();
+      expect(fakeAudioContext.close).toHaveBeenCalled();
+    });
+
+    it("keeps preparation alive for another consumer when one consumer cancels", async () => {
+      let resume;
+      let current = true;
+      fakeAudioContext.state = "suspended";
+      fakeAudioContext.resume = vi.fn(() => new Promise((resolve) => { resume = resolve; }));
+      const scope = acquireGraph(mediaElement, { isCurrent: () => current });
+      const milkdrop = acquireGraph(mediaElement);
+      current = false;
+      fakeAudioContext.state = "running"; resume();
+      await expect(scope).resolves.toBeNull();
+      expect((await milkdrop).refCount).toBe(1);
+      expect(fakeAudioContext.close).not.toHaveBeenCalled();
+      expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
+    });
+
+    it("can resume pending preparation on a manual retry without a second context", async () => {
+      let resume;
+      fakeAudioContext.state = "suspended";
+      fakeAudioContext.resume = vi.fn()
+        .mockImplementationOnce(() => new Promise((resolve) => { resume = resolve; }))
+        .mockImplementation(() => { fakeAudioContext.state = "running"; resume(); return Promise.resolve(); });
+      const first = acquireGraph(mediaElement);
+      const retry = acquireGraph(mediaElement, { resumePending: true });
+      expect((await Promise.all([first, retry]))[0]).not.toBeNull();
+      expect(window.AudioContext).toHaveBeenCalledTimes(1);
+      expect(fakeAudioContext.createMediaElementSource).toHaveBeenCalledTimes(1);
+    });
+
     it("returns null when createMediaElementSource throws", async () => {
       fakeAudioContext.createMediaElementSource = vi.fn(() => {
         throw new Error("CORS tainted");
