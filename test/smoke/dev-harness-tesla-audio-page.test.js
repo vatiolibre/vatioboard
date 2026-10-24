@@ -50,3 +50,22 @@ it("starts native radio synchronously and unmounts without releasing recording",
   for (const result of intervals.mock.results) expect(clearInterval).toHaveBeenCalledWith(result.value);
   system.releaseBackgroundAudioLease("drive-recording");
 });
+
+it("does not re-request a ready native radio graph without an independent analysis stream", async () => {
+  await bootHtmlPage("tesla-background-audio.html");
+  vi.useFakeTimers();
+  const root = document.getElementById("tesla-audio-test");
+  root.removeAttribute("id");
+  const { mountTeslaAudioTest } = await import("../../src/player/tesla-background-audio.js");
+  const runtime = await import("../../src/shared/audio-runtime.js");
+  const unmount = mountTeslaAudioTest(root);
+  const click = (label) => [...root.querySelectorAll("button")].find((button) => button.textContent === label).click();
+  click("VatioBoard native radio");
+  const getState = runtime.getState;
+  vi.spyOn(runtime, "getState").mockImplementation(() => ({ ...getState(), radioVisualizationStatus: "ready" }));
+  const request = vi.spyOn(runtime, "requestRadioVisualization").mockResolvedValue(true);
+  click("Radio spectrum");
+  for (let index = 0; index < 30; index++) await Promise.resolve();
+  expect(request).toHaveBeenCalledTimes(1);
+  unmount();
+});

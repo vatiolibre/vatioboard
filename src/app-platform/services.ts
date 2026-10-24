@@ -53,6 +53,8 @@ function canUseService(
 }
 
 const DENIED_AUDIO_STATE: AudioRuntimeState = {
+  playbackIntent: "stopped",
+  restorationStatus: "idle",
   queue: [],
   playedHistory: [],
   currentIndex: -1,

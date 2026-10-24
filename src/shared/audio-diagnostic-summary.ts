@@ -53,6 +53,7 @@ export function mountAudioDiagnosticSummary(root: HTMLElement) {
       `Observation: ${Math.floor(elapsed / 60)}m ${elapsed % 60}s · ${document.visibilityState}`,
       `Radio source: ${getState().sourceTransport || "none"}`,
       `Restoration: ${getState().restoredRadioReason || "none"} · visuals ${getState().radioVisualizationAutoStart ? "automatic" : "manual"}`,
+      `Player intent: ${getState().playbackIntent} · recovery: ${getState().restorationStatus}`,
       `Visualization analysis: ${getState().radioVisualizationStatus || "idle"} · ${getState().radioVisualizationTransport || "none"} · ${getState().radioVisualizationSignal || "unknown"}`,
       `Focus handoff: ${getState().radioFocusPrepared ? (getState().radioFocusHandoffPending ? "running" : "prepared") : "unavailable"}`,
       `Primary attached: ${primary?.isConnected ?? false} · controls: ${primary?.controls ?? false}`,

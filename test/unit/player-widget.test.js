@@ -49,6 +49,8 @@ vi.mock("../../src/shared/radio-browser.js", () => ({
 }));
 
 const runtimeMock = {
+  enrichCatalogMetadata: vi.fn(),
+  setRecoveryTracks: vi.fn(),
   requestRadioVisualization: vi.fn().mockResolvedValue(false),
   releaseRadioVisualization: vi.fn(),
   updatePlayerMediaSessionMetadata: vi.fn(),
@@ -663,16 +665,16 @@ describe("createPlayerWidget", () => {
     await flushMicrotasks(5);
 
     expect(runtimeMock.stopPlayback).not.toHaveBeenCalled();
-    expect(runtimeMock.setQueue).not.toHaveBeenCalled();
+    expect(runtimeMock.setQueue).toHaveBeenCalledWith([expect.objectContaining({ name: "demo:titan" })], { autoplay: true });
 
     sessionDeferred.resolve({ authenticated: false, isGuest: true });
     await flushMicrotasks(30);
 
-    expect(runtimeMock.restoreSession).toHaveBeenCalledTimes(1);
+    expect(runtimeMock.restoreSession).not.toHaveBeenCalled();
     expect(runtimeMock.setQueue).toHaveBeenCalledTimes(1);
     expect(runtimeMock.setQueue).toHaveBeenLastCalledWith(
       [expect.objectContaining({ name: "demo:titan" })],
-      { autoplay: false },
+      { autoplay: true },
     );
 
     widget.destroy();
@@ -692,20 +694,20 @@ describe("createPlayerWidget", () => {
     const widget = createPlayerWidget({ preload: "immediate", floating: false });
     await flushMicrotasks(20);
 
-    expect(runtimeMock.restoreSession).toHaveBeenCalledTimes(1);
+    expect(runtimeMock.restoreSession).not.toHaveBeenCalled();
 
     window.dispatchEvent(new CustomEvent("vatioboard:backend-auth-state", {
       detail: { authenticated: true, isGuest: false, pendingLogout: false },
     }));
     await flushMicrotasks(20);
 
-    expect(runtimeMock.restoreSession).toHaveBeenCalledTimes(1);
+    expect(runtimeMock.restoreSession).not.toHaveBeenCalled();
     expect(runtimeMock.stopPlayback).not.toHaveBeenCalled();
 
     widget.destroy();
   });
 
-  it("hydrates persisted demo queue on authenticated bootstrap and replaces pristine demo queue", async () => {
+  it("hydrates persisted demo queue before catalog loading and preserves the saved queue", async () => {
     const backendAuth = await import("../../src/shared/backend-auth.js");
     const catalogTrack = makeTrack("asset_real");
     const demoTrack = makeTrack("demo:titan", {
@@ -735,20 +737,14 @@ describe("createPlayerWidget", () => {
       });
     });
 
+    localStorage.setItem("vatioboard_player_session_v3", JSON.stringify({
+      version: 3, queueEntries: [{ ...demoTrack, entryId: "saved-demo" }], currentEntryId: "saved-demo", currentIndex: 0, paused: true,
+    }));
     const widget = createPlayerWidget({ preload: "immediate", floating: false });
     await flushMicrotasks(30);
 
-    expect(runtimeMock.restoreSession).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ name: "asset_real" }),
-        expect.objectContaining({ name: "demo:titan", src: "/audio/demo/sb_titan.mp3" }),
-      ]),
-      { autoplay: true },
-    );
-    expect(runtimeMock.setQueue).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ name: "asset_real" })]),
-      { autoplay: false },
-    );
+    expect(runtimeMock.restoreSession).toHaveBeenCalledWith([], expect.objectContaining({ autoplay: true }));
+    expect(runtimeMock.setQueue).not.toHaveBeenCalled();
 
     widget.destroy();
   });
@@ -785,22 +781,19 @@ describe("createPlayerWidget", () => {
       });
     });
 
+    localStorage.setItem("vatioboard_player_session_v3", JSON.stringify({
+      version: 3, queueEntries: [{ ...demoTrack, entryId: "saved-demo" }], currentEntryId: "saved-demo", currentIndex: 0, paused: true,
+    }));
     const widget = createPlayerWidget({ preload: "immediate", floating: false });
     await flushMicrotasks(30);
 
-    expect(runtimeMock.restoreSession).toHaveBeenCalledWith(
-      expect.arrayContaining([
-        expect.objectContaining({ name: "asset_real" }),
-        expect.objectContaining({ name: "demo:titan", src: "/audio/demo/sb_titan.mp3" }),
-      ]),
-      { autoplay: true },
-    );
+    expect(runtimeMock.restoreSession).toHaveBeenCalledWith([], expect.objectContaining({ autoplay: true }));
     expect(runtimeMock.setQueue).not.toHaveBeenCalled();
 
     widget.destroy();
   });
 
-  it("revalidates a cached guest demo playlist and refreshes a pristine seeded queue", async () => {
+  it("revalidates a cached guest demo playlist without replacing the listening queue", async () => {
     const backendAuth = await import("../../src/shared/backend-auth.js");
     const demoTrack = makeTrack("demo:titan", {
       title: "Titan",
@@ -846,14 +839,11 @@ describe("createPlayerWidget", () => {
 
     expect(demoCacheMock.loadDemoPlaylist).toHaveBeenCalledTimes(1);
     expect(demoCacheMock.syncDemoPlaylist).toHaveBeenCalledTimes(1);
-    expect(runtimeMock.setQueue).toHaveBeenCalledTimes(2);
+    expect(runtimeMock.setQueue).toHaveBeenCalledTimes(1);
     expect(runtimeMock.setQueue.mock.calls[0][0]).toEqual([
       expect.objectContaining({ name: "demo:titan" }),
     ]);
-    expect(runtimeMock.setQueue.mock.calls[1][0]).toEqual([
-      expect.objectContaining({ name: "demo:titan" }),
-      expect.objectContaining({ name: "demo:atlas" }),
-    ]);
+
 
     widget.destroy();
   });

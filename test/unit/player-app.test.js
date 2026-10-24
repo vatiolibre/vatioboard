@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const audioRuntimeMock = {
+  enrichCatalogMetadata: vi.fn(),
   getAudioElement: vi.fn(() => document.createElement("audio")),
   getState: vi.fn(() => ({
     queue: [],
@@ -424,6 +425,9 @@ describe("Player OS app module", () => {
     const track = makeTrack("AUDIO-1", { _offline: true });
     catalogMock.loadAudioCatalog.mockResolvedValue({ tracks: [track], total: 1 });
     const modules = await loadModules();
+    localStorage.setItem("vatioboard_player_session_v3", JSON.stringify({
+      version: 3, queueEntries: [{ ...track, entryId: "saved-private" }], currentEntryId: "saved-private", paused: true,
+    }));
     const { shellManager, shellAppRuntimeManager } = createShellHarness(modules);
     const player = modules.createPlayerApp({
       mount: document.body,
@@ -436,14 +440,8 @@ describe("Player OS app module", () => {
     await flushMicrotasks(30);
 
     expect(catalogMock.annotateOfflineAvailability).toHaveBeenCalledWith([track]);
-    expect(audioRuntimeMock.restoreSession).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ name: "AUDIO-1" })]),
-      { autoplay: true },
-    );
-    expect(audioRuntimeMock.setQueue).toHaveBeenCalledWith(
-      expect.arrayContaining([expect.objectContaining({ name: "AUDIO-1" })]),
-      { autoplay: false },
-    );
+    expect(audioRuntimeMock.restoreSession).toHaveBeenCalledWith([], expect.objectContaining({ autoplay: true }));
+    expect(audioRuntimeMock.setQueue).not.toHaveBeenCalled();
 
     player.destroy();
     shellAppRuntimeManager.destroy();

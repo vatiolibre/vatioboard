@@ -228,6 +228,8 @@ export interface DriveRecordingService {
 }
 
 export interface AudioRuntimeState {
+  playbackIntent: "playing" | "paused" | "stopped";
+  restorationStatus: "idle" | "restoring" | "blocked" | "failed" | "restored";
   queue: unknown[];
   playedHistory: unknown[];
   currentIndex: number;

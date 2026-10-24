@@ -1522,7 +1522,7 @@ describe("audio-runtime", () => {
     expect(saved.currentTime).toBe(42);
   });
 
-  it("restoreSession does not show playback error when refresh autoplay is blocked for demo tracks", async () => {
+  it("restoreSession reports blocked autoplay without losing the saved playing intent", async () => {
     const originalPlay = window.Audio.prototype.play;
     window.Audio.prototype.play = vi.fn(function playBlockedByPolicy() {
       this.paused = true;
@@ -1560,12 +1560,15 @@ describe("audio-runtime", () => {
         expect(s.currentTime).toBe(27);
         expect(s.paused).toBe(true);
         expect(s.playing).toBe(false);
-        expect(s.error).toBeNull();
+        expect(s.error).toBe("playback-blocked");
+        expect(s.playbackIntent).toBe("playing");
+        expect(s.restorationStatus).toBe("blocked");
       });
 
       const saved = JSON.parse(localStorage.getItem(PLAYER_SESSION_STORAGE_KEY));
       expect(saved.currentTime).toBe(27);
-      expect(saved.paused).toBe(true);
+      expect(saved.paused).toBe(false);
+      expect(saved.playbackIntent).toBe("playing");
     } finally {
       window.Audio.prototype.play = originalPlay;
     }
@@ -1697,7 +1700,7 @@ describe("audio-runtime", () => {
     expect(s.currentTrack?.artist).toBe("Archive Artist");
   });
 
-  it("restoreSession skips unavailable restored items without destroying the rest of the queue", async () => {
+  it("restoreSession preserves unavailable selected items and the rest of the queue", async () => {
     vi.resetModules();
     localStorage.clear();
 
@@ -1777,8 +1780,9 @@ describe("audio-runtime", () => {
     await vi.waitFor(() => {
       const s = freshRuntime.getState();
       expect(s.queue).toHaveLength(2);
-      expect(s.currentIndex).toBe(1);
-      expect(s.currentTrack?.name).toBe("asset_b");
+      expect(s.currentIndex).toBe(0);
+      expect(s.currentTrack?.name).toBe("missing_track");
+      expect(s.restorationStatus).toBe("failed");
       expect(s.paused).toBe(true);
     });
   });

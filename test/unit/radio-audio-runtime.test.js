@@ -33,6 +33,8 @@ beforeEach(async () => {
   vi.resetModules();
   vi.useFakeTimers();
   localStorage.clear();
+  const sources = await import("../../src/shared/audio-source-resolver.js");
+  sources.resolveAudioSource.mockReset().mockResolvedValue({ src: "blob:music", type: "blob", transport: "local" });
   runtime = await import("../../src/shared/audio-runtime.js");
   system = await import("../../src/shared/audio-system.js");
 });
@@ -294,13 +296,13 @@ async function saveAndRestoreRadio({ autoplay = true, paused = false } = {}) {
   const sessions = await import("../../src/shared/player-session.js");
   const saved = sessions.loadPlayerSession();
   runtime.stopPlayback();
-  sessions.savePlayerSession({ ...saved, paused });
+  sessions.savePlayerSession({ ...saved, paused, playbackIntent: paused ? "paused" : "playing" });
   await runtime.restoreSession([], { autoplay });
   await flush();
 }
 
-it("restores radio paused until the selecting Play gesture", async () => {
-  await saveAndRestoreRadio();
+it("restores radio paused when autoplay is explicitly disabled", async () => {
+  await saveAndRestoreRadio({ autoplay: false });
   const native = runtime.getAudioElement();
   expect(runtime.getState()).toMatchObject({ restoredRadioSession: true, radioVisualizationAutoStart: false, paused: true });
   expect(native.isConnected).toBe(true);
@@ -332,7 +334,7 @@ it("runs the real restored-demo lifecycle before restored radio resumes", async 
   const sessions = await import("../../src/shared/player-session.js");
   const saved = sessions.loadPlayerSession();
   runtime.stopPlayback();
-  sessions.savePlayerSession({ ...saved, paused: true });
+  sessions.savePlayerSession({ ...saved, paused: true, playbackIntent: "paused" });
 
   await runtime.restoreSession([{
     name: "demo:focus",
@@ -380,23 +382,24 @@ it("runs the real restored-demo lifecycle before restored radio resumes", async 
 });
 
 it("releases restored retention on blocked native autoplay and allows a Play retry", async () => {
-  await runtime.playTrackNow(station());
+  const nativePlay = vi.spyOn(HTMLMediaElement.prototype, "play").mockRejectedValueOnce(new DOMException("Blocked", "NotAllowedError"));
+  // Seed a saved session without starting playback through the spy.
   const sessions = await import("../../src/shared/player-session.js");
-  const saved = sessions.loadPlayerSession();
-  runtime.stopPlayback();
-  sessions.savePlayerSession(saved);
+  sessions.savePlayerSession({ queueEntries: [{ ...station(), entryId: "radio" }], currentEntryId: "radio", currentIndex: 0, paused: false });
   await runtime.restoreSession([], { autoplay: true });
   await flush();
-  expect(runtime.getState()).toMatchObject({ paused: true, error: null });
+  expect(runtime.getState()).toMatchObject({ paused: true, error: "playback-blocked", playbackIntent: "playing", restorationStatus: "blocked" });
+  expect(sessions.loadPlayerSession().playbackIntent).toBe("playing");
   expect(system.getBackgroundAudioState().activeLeaseIds).toEqual([]);
-  await runtime.play();
+  nativePlay.mockRestore();
+  await runtime.play({ fromUserGesture: true });
   await flush();
   expect(runtime.getAudioElement().paused).toBe(false);
   expect(system.getBackgroundAudioState().activeLeaseIds).toContain("player-runtime");
 });
 
-it("does not arm the background carrier before restored radio Play", async () => {
-  await saveAndRestoreRadio();
+it("does not arm the background carrier for a deliberately paused station", async () => {
+  await saveAndRestoreRadio({ paused: true });
   expect(runtime.getAudioElement().paused).toBe(true);
   expect(system.getBackgroundKeepAliveAudio().paused).toBe(true);
   expect(runtime.getState().error).toBeNull();
@@ -451,4 +454,231 @@ it.each(["stop", "station change"])("does not restore a cached station after %s"
   window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
   expect(play).not.toHaveBeenCalled();
   expect(runtime.getState().restoredRadioSession).toBe(false);
+});
+
+const focusTrack = { name: "demo:focus", title: "Focus clip", media_kind: "audio", src: "/audio/demo/focus.mp3", _demo: true };
+
+async function seedRadioSession() {
+  const sessions = await import("../../src/shared/player-session.js");
+  sessions.savePlayerSession({ queueEntries: [{ ...station(), entryId: "saved-radio" }], currentEntryId: "saved-radio", currentIndex: 0, paused: false });
+  return sessions;
+}
+
+async function advanceDemoAndRadio() {
+  await flush();
+  const demo = runtime.getAudioElement();
+  demo.currentTime = 0.2;
+  demo.dispatchEvent(new Event("playing"));
+  demo.dispatchEvent(new Event("timeupdate"));
+  await flush();
+  runtime.getAudioElement().dispatchEvent(new Event("playing"));
+  await flush();
+}
+
+it("automatically runs the tested demo handoff while persisting only the station", async () => {
+  const sessions = await seedRadioSession();
+  const recovery = runtime.restoreSession([focusTrack], { autoplay: true });
+  await flush();
+  expect(runtime.getAudioElement().src).toBe("blob:music");
+  expect(sessions.loadPlayerSession()).toMatchObject({ currentEntryId: "saved-radio", playbackIntent: "playing", queueEntries: [expect.objectContaining({ media_kind: "radio" })] });
+  window.dispatchEvent(new Event("pagehide"));
+  expect(sessions.loadPlayerSession().queueEntries).toHaveLength(1);
+  await advanceDemoAndRadio();
+  await recovery;
+  expect(runtime.getState()).toMatchObject({ isLive: true, paused: false, playbackIntent: "playing", restorationStatus: "restored" });
+  expect(runtime.getState().queue.map((track) => track.name)).toEqual([station().name]);
+});
+
+it("rolls back a blocked demo and retries from the existing Play action", async () => {
+  const sessions = await seedRadioSession();
+  const play = vi.spyOn(window.Audio.prototype, "play").mockRejectedValue(new DOMException("Blocked", "NotAllowedError"));
+  const recovery = runtime.restoreSession([focusTrack], { autoplay: true });
+  await flush();
+  await vi.advanceTimersByTimeAsync(5300);
+  await recovery;
+  expect(runtime.getState()).toMatchObject({ isLive: true, paused: true, playbackIntent: "playing", restorationStatus: "blocked", currentTrack: expect.objectContaining({ name: station().name }) });
+  expect(sessions.loadPlayerSession().currentEntryId).toBe("saved-radio");
+  expect(system.getBackgroundAudioState().activeLeaseIds).not.toContain("player-runtime");
+  play.mockRestore();
+  const retry = runtime.play({ fromUserGesture: true });
+  await flush();
+  expect(runtime.getAudioElement().src).toBe("blob:music");
+  await advanceDemoAndRadio();
+  await retry;
+  expect(runtime.getState()).toMatchObject({ isLive: true, paused: false });
+});
+
+it("explicit Pause during takeover restores the station and cancels all late handoff work", async () => {
+  const sessions = await seedRadioSession();
+  const recovery = runtime.restoreSession([focusTrack], { autoplay: true });
+  await flush();
+  const demo = runtime.getAudioElement();
+  runtime.pause();
+  demo.currentTime = 1;
+  demo.dispatchEvent(new Event("timeupdate"));
+  await vi.advanceTimersByTimeAsync(5300);
+  await recovery;
+  expect(runtime.getState()).toMatchObject({ isLive: true, paused: true, playbackIntent: "paused", currentTrack: expect.objectContaining({ name: station().name }) });
+  expect(runtime.getState().queue).toHaveLength(1);
+  expect(sessions.loadPlayerSession()).toMatchObject({ playbackIntent: "paused", currentEntryId: "saved-radio" });
+});
+
+it("Stop while boot preparation is pending prevents late autoplay", async () => {
+  await seedRadioSession();
+  let ready;
+  const recovery = runtime.restoreSession([], { autoplay: true, prepareTracks: new Promise((resolve) => { ready = resolve; }) });
+  expect(runtime.getState().currentTrack?.name).toBe(station().name);
+  runtime.stopPlayback();
+  ready([focusTrack]);
+  await recovery;
+  expect(runtime.getState()).toMatchObject({ currentTrack: null, paused: true, playbackIntent: "stopped" });
+  expect(system.getBackgroundAudioState().activeLeaseIds).not.toContain("player-runtime");
+});
+
+it("page return does not restart an element that is still playing", async () => {
+  await runtime.playTrackNow(station());
+  const play = vi.spyOn(runtime.getAudioElement(), "play");
+  window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
+  window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+  document.dispatchEvent(new Event("resume"));
+  await flush();
+  expect(play).not.toHaveBeenCalled();
+});
+
+it("freeze flushes finite playback position and resume coalesces with pageshow", async () => {
+  runtime.setQueue([focusTrack], { autoplay: true });
+  await flush();
+  const el = runtime.getAudioElement();
+  el.currentTime = 24.5;
+  document.dispatchEvent(new Event("freeze"));
+  const sessions = await import("../../src/shared/player-session.js");
+  expect(sessions.loadPlayerSession()).toMatchObject({ currentTime: 24.5, playbackIntent: "playing" });
+  el.pause();
+  const play = vi.spyOn(el, "play");
+  document.dispatchEvent(new Event("resume"));
+  window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+  await flush();
+  expect(play).toHaveBeenCalledTimes(1);
+  expect(runtime.getState().currentTime).toBe(24.5);
+});
+
+it("a stopped session retains its queue without selecting or starting a track", async () => {
+  const sessions = await seedRadioSession();
+  sessions.savePlayerSession({ playbackIntent: "stopped" });
+  await runtime.restoreSession([focusTrack], { autoplay: true });
+  expect(runtime.getState()).toMatchObject({ currentIndex: -1, currentTrack: null, playbackIntent: "stopped", paused: true });
+  expect(runtime.getState().queue).toHaveLength(1);
+});
+
+it("restores library continuation and its shuffle history", async () => {
+  const sessions = await import("../../src/shared/player-session.js");
+  const second = { ...focusTrack, name: "demo:second", src: "/audio/demo/second.mp3" };
+  await runtime.playLibraryTrackNow(focusTrack, [focusTrack, second]);
+  runtime.pause();
+  const saved = sessions.loadPlayerSession();
+  expect(saved.libraryContinuation).toMatchObject({ lastTrackName: focusTrack.name, shuffleCycle: [focusTrack.name] });
+  runtime.stopPlayback();
+  sessions.savePlayerSession(saved);
+  await runtime.restoreSession([focusTrack, second], { autoplay: false });
+  await runtime.nextTrack();
+  await flush();
+  expect(runtime.getState().currentTrack?.name).toBe(second.name);
+});
+
+it("reports a suspended AudioContext as blocked and the Play action can resume it", async () => {
+  runtime.setQueue([focusTrack], { autoplay: false });
+  await flush();
+  const registry = await import("../../src/shared/audio-graph-registry.js");
+  const graph = { audioContext: { state: "suspended" } };
+  vi.spyOn(registry, "getGraph").mockReturnValue(graph);
+  await runtime.play();
+  expect(runtime.getState()).toMatchObject({ paused: true, playbackIntent: "playing", restorationStatus: "blocked" });
+  expect(system.getBackgroundAudioState().activeLeaseIds).not.toContain("player-runtime");
+  graph.audioContext.state = "running";
+  await runtime.play({ fromUserGesture: true });
+  expect(runtime.getState()).toMatchObject({ paused: false, playing: true });
+});
+
+it("ownership loss cancels playback without clearing saved playing intent or service leases", async () => {
+  await system.acquireBackgroundAudioLease("recording");
+  await runtime.playTrackNow(station());
+  window.__vatioboardSpa = true;
+  window.dispatchEvent(new CustomEvent("vatioboard:single-tab-ownership", { detail: { owned: false } }));
+  expect(runtime.getAudioElement().paused).toBe(true);
+  const sessions = await import("../../src/shared/player-session.js");
+  expect(sessions.loadPlayerSession().playbackIntent).toBe("playing");
+  expect(system.getBackgroundAudioState().activeLeaseIds).toEqual(["recording"]);
+  window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+  await flush();
+  expect(runtime.getAudioElement().paused).toBe(true);
+  delete window.__vatioboardSpa;
+});
+
+it("a blocked tab cannot overwrite the owning tab's newer session on pagehide", async () => {
+  await runtime.playTrackNow(station());
+  window.__vatioboardSpa = true;
+  const sessions = await import("../../src/shared/player-session.js");
+  sessions.savePlayerSession({ queueEntries: [{ ...station("newer"), entryId: "newer" }], currentEntryId: "newer", currentIndex: 0, paused: false });
+  window.dispatchEvent(new Event("pagehide"));
+  expect(sessions.loadPlayerSession().currentEntryId).toBe("newer");
+  delete window.__vatioboardSpa;
+});
+
+it("an unavailable restored source is attempted once and preserves its position", async () => {
+  const sources = await import("../../src/shared/audio-source-resolver.js");
+  sources.resolveAudioSource.mockResolvedValue(null);
+  const sessions = await import("../../src/shared/player-session.js");
+  sessions.savePlayerSession({ queueEntries: [{ ...focusTrack, entryId: "missing" }], currentEntryId: "missing", currentIndex: 0, currentTime: 19, paused: false });
+  await runtime.restoreSession([], { autoplay: true });
+  expect(sources.resolveAudioSource).toHaveBeenCalledTimes(1);
+  expect(runtime.getState()).toMatchObject({ currentTime: 19, playbackIntent: "playing", restorationStatus: "failed", currentTrack: { name: focusTrack.name } });
+});
+
+it("preserves queue edits made while the automatic demo handoff is running", async () => {
+  const sessions = await seedRadioSession();
+  const recovery = runtime.restoreSession([focusTrack], { autoplay: true });
+  await flush();
+  runtime.enqueue([{ ...focusTrack, name: "demo:later" }]);
+  runtime.playNext([{ ...focusTrack, name: "demo:next" }]);
+  runtime.removeFromQueue("demo:later");
+  window.dispatchEvent(new Event("pagehide"));
+  expect(sessions.loadPlayerSession().queueEntries.map((entry) => entry.name)).toEqual([station().name, "demo:next"]);
+  await advanceDemoAndRadio();
+  await recovery;
+  expect(runtime.getState().queue.map((track) => track.name)).toEqual([station().name, "demo:next"]);
+});
+
+it("a Play tap before demo metadata arrives still uses the tested radio handoff", async () => {
+  await seedRadioSession();
+  let prepare;
+  const recovery = runtime.restoreSession([], { autoplay: true, prepareTracks: new Promise((resolve) => { prepare = resolve; }) });
+  const manual = runtime.play({ fromUserGesture: true });
+  prepare([focusTrack]);
+  await flush();
+  expect(runtime.getAudioElement().src).toBe("blob:music");
+  await advanceDemoAndRadio();
+  await Promise.all([manual, recovery]);
+  expect(runtime.getState()).toMatchObject({ isLive: true, playing: true });
+});
+
+it("Play after cancelling a track load resolves the selected track rather than playing the previous source", async () => {
+  runtime.setQueue([focusTrack], { autoplay: true });
+  await flush();
+  runtime.getAudioElement().currentTime = 42;
+  const sources = await import("../../src/shared/audio-source-resolver.js");
+  let resolve;
+  sources.resolveAudioSource.mockImplementationOnce(() => new Promise((ready) => { resolve = ready; }));
+  const selected = { ...focusTrack, name: "demo:selected" };
+  const loading = runtime.playLibraryTrackNow(selected, [selected]);
+  await flush();
+  runtime.getAudioElement().dispatchEvent(new Event("timeupdate"));
+  runtime.getAudioElement().dispatchEvent(new Event("loadedmetadata"));
+  runtime.pause();
+  expect(runtime.getState().currentTime).toBe(0);
+  resolve({ src: "blob:stale", type: "blob", transport: "local" });
+  await loading;
+  sources.resolveAudioSource.mockResolvedValue({ src: "blob:selected", type: "blob", transport: "local" });
+  await runtime.play({ fromUserGesture: true });
+  expect(runtime.getAudioElement().src).toBe("blob:selected");
+  expect(runtime.getState().currentTrack.name).toBe("demo:selected");
 });

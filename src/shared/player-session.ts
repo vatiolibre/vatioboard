@@ -20,12 +20,20 @@
  * Never persists blobs, object URLs, or signed/expiring playback URLs.
  */
 
-const STORAGE_KEY = "vatioboard_player_session_v3";
+const STORAGE_KEY = "vatioboard_player_session_v4";
+const V3_STORAGE_KEY = "vatioboard_player_session_v3";
 const V2_STORAGE_KEY = "vatioboard_player_session_v2";
 const LEGACY_STORAGE_KEY = "vatioboard_player_session_v1";
-const SESSION_VERSION = 3;
+const SESSION_VERSION = 4;
 
 export type PlayerRepeatMode = "off" | "all" | "one";
+export type PlaybackIntent = "playing" | "paused" | "stopped";
+
+export interface PlayerLibraryContinuation {
+  tracks: PlayerQueueEntry[];
+  lastTrackName: string;
+  shuffleCycle: string[];
+}
 
 export interface PlayerQueueEntry {
   entryId: string;
@@ -62,6 +70,8 @@ export interface PlayerSession {
   currentTrackName: string;
   currentTime: number;
   paused: boolean;
+  playbackIntent: PlaybackIntent;
+  libraryContinuation: PlayerLibraryContinuation | null;
   volume: number;
   muted: boolean;
   repeat: PlayerRepeatMode;
@@ -81,6 +91,8 @@ const DEFAULTS: Readonly<PlayerSession> = Object.freeze({
   currentTrackName: "",
   currentTime: 0,
   paused: true,
+  playbackIntent: "paused",
+  libraryContinuation: null,
   volume: 0.88,
   muted: false,
   repeat: "off",
@@ -97,6 +109,9 @@ export function loadPlayerSession(): PlayerSession {
     const parsed = readStoredSession(STORAGE_KEY);
     if (parsed) return normalizeSession(parsed);
 
+    const v3 = readStoredSession(V3_STORAGE_KEY);
+    if (v3) return normalizeSession(v3);
+
     const v2 = readStoredSession(V2_STORAGE_KEY);
     if (v2) return normalizeSession(v2);
 
@@ -109,6 +124,12 @@ export function loadPlayerSession(): PlayerSession {
   }
 }
 
+/** Distinguish a saved empty/stopped session from a first-ever visit. */
+export function hasPlayerSession(): boolean {
+  return [STORAGE_KEY, V3_STORAGE_KEY, V2_STORAGE_KEY, LEGACY_STORAGE_KEY]
+    .some((key) => readStoredSession(key) !== null);
+}
+
 /**
  * Save the current player session state.
  * @param {Partial<typeof DEFAULTS>} state
@@ -116,11 +137,15 @@ export function loadPlayerSession(): PlayerSession {
 export function savePlayerSession(state: Partial<PlayerSession>): void {
   try {
     const current = loadPlayerSession();
-    const merged = normalizeSession({ ...current, ...state });
+    const playbackIntent = state.playbackIntent
+      ?? (typeof state.paused === "boolean" ? (state.paused ? "paused" : "playing") : current.playbackIntent);
+    const merged = normalizeSession({ ...current, ...state, playbackIntent });
     const serialized = JSON.stringify(serializeSession(merged));
     localStorage.setItem(STORAGE_KEY, serialized);
-    // Transitional mirror for an older open tab while the schema rolls to v3.
-    localStorage.setItem(V2_STORAGE_KEY, serialized);
+    // Keep older builds able to read the queue and deliberate playback intent.
+    const legacy = JSON.stringify({ ...serializeSession(merged), version: 3 });
+    localStorage.setItem(V3_STORAGE_KEY, legacy);
+    localStorage.setItem(V2_STORAGE_KEY, legacy);
   } catch {
     // localStorage unavailable in private/incognito
   }
@@ -132,6 +157,7 @@ export function savePlayerSession(state: Partial<PlayerSession>): void {
 export function clearPlayerSession(): void {
   try {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(V3_STORAGE_KEY);
     localStorage.removeItem(V2_STORAGE_KEY);
     localStorage.removeItem(LEGACY_STORAGE_KEY);
   } catch { /* ignore */ }
@@ -150,7 +176,9 @@ function readStoredSession(key: string): Record<string, unknown> | null {
   try {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      && (Array.isArray(parsed.queueEntries) || Array.isArray(parsed.queue)) ? parsed : null;
   } catch {
     return null;
   }
@@ -159,8 +187,9 @@ function readStoredSession(key: string): Record<string, unknown> | null {
 function normalizeSession(parsed: Record<string, unknown>): PlayerSession {
   const queueEntries = normalizeQueueEntries(parsed.queueEntries);
   const playedEntries = normalizeQueueEntries(parsed.playedEntries);
-  const currentIndex = normalizeIndex(parsed.currentIndex, queueEntries.length);
-  const currentEntryId = str(parsed.currentEntryId);
+  const playbackIntent = normalizeIntent(parsed);
+  const currentIndex = playbackIntent === "stopped" ? -1 : normalizeIndex(parsed.currentIndex, queueEntries.length);
+  const currentEntryId = playbackIntent === "stopped" ? "" : str(parsed.currentEntryId);
   const currentTrackName = str(parsed.currentTrackName)
     || queueEntries.find((entry) => entry.entryId === currentEntryId)?.name
     || queueEntries[currentIndex]?.name
@@ -175,7 +204,9 @@ function normalizeSession(parsed: Record<string, unknown>): PlayerSession {
     currentIndex,
     currentTrackName,
     currentTime: queueEntries[currentIndex]?.media_kind === "radio" ? 0 : clampTime(parsed.currentTime),
-    paused: parsed.paused !== false,
+    paused: playbackIntent !== "playing",
+    playbackIntent,
+    libraryContinuation: normalizeContinuation(parsed.libraryContinuation),
     volume: clampVolume(parsed.volume),
     muted: Boolean(parsed.muted),
     repeat: validateRepeat(parsed.repeat),
@@ -224,6 +255,8 @@ function normalizeLegacySession(parsed: Record<string, unknown>): PlayerSession 
     currentTrackName,
     currentTime: clampTime(parsed.currentTime),
     paused: parsed.paused !== false,
+    playbackIntent: parsed.paused === false ? "playing" : "paused",
+    libraryContinuation: null,
     volume: clampVolume(parsed.volume),
     muted: Boolean(parsed.muted),
     repeat: validateRepeat(parsed.repeat),
@@ -238,16 +271,36 @@ function serializeSession(state: Partial<PlayerSession>): PersistedPlayerSession
     queueEntries: normalizeQueueEntries(state.queueEntries),
     playedEntries: normalizeQueueEntries(state.playedEntries),
     currentEntryId: str(state.currentEntryId),
-    currentIndex: normalizeIndex(state.currentIndex, state.queueEntries?.length ?? 0),
+    currentIndex: state.playbackIntent === "stopped" ? -1 : normalizeIndex(state.currentIndex, state.queueEntries?.length ?? 0),
     currentTime: state.queueEntries?.[state.currentIndex ?? -1]?.media_kind === "radio"
       ? 0
       : clampTime(state.currentTime),
     paused: state.paused !== false,
+    playbackIntent: state.playbackIntent || "paused",
+    libraryContinuation: normalizeContinuation(state.libraryContinuation),
     volume: clampVolume(state.volume),
     muted: Boolean(state.muted),
     repeat: validateRepeat(state.repeat),
     shuffle: Boolean(state.shuffle),
     backgroundMode: Boolean(state.backgroundMode),
+  };
+}
+
+function normalizeIntent(parsed: Record<string, unknown>): PlaybackIntent {
+  return parsed.playbackIntent === "playing" || parsed.playbackIntent === "stopped"
+    || parsed.playbackIntent === "paused" ? parsed.playbackIntent : parsed.paused === false ? "playing" : "paused";
+}
+
+function normalizeContinuation(value: unknown): PlayerLibraryContinuation | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Record<string, unknown>;
+  const tracks = normalizeQueueEntries(record.tracks);
+  if (!tracks.length) return null;
+  const names = new Set(tracks.map((track) => track.name));
+  return {
+    tracks,
+    lastTrackName: str(record.lastTrackName),
+    shuffleCycle: Array.isArray(record.shuffleCycle) ? record.shuffleCycle.map(str).filter((name) => names.has(name)) : [],
   };
 }
 

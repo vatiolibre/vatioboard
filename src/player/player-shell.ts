@@ -2232,7 +2232,9 @@ export function createPlayerShell({
     root.classList.toggle("error", Boolean(s.error));
 
     if (s.error) {
-      errorMsg.textContent = s.radioFailureClass === "relay-unreachable"
+      errorMsg.textContent = s.error === "playback-blocked"
+        ? t("playerAutoplayBlocked")
+        : s.radioFailureClass === "relay-unreachable"
         ? t("playerRadioDevelopmentRelayUnavailable")
         : s.radioFailureClass === "origin-rejected"
           ? t("playerRadioOriginRejected")
