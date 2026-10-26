@@ -249,6 +249,11 @@ export interface AudioRuntimeState {
   radioVisualizationAutoStart?: boolean;
   radioFocusHandoffPending?: boolean;
   radioFocusPrepared?: boolean;
+  radioConnectionGeneration?: number;
+  radioReconnectRequired?: string | null;
+  radioLastProgressAt?: number;
+  radioProgressConfirmed?: boolean;
+  radioRetryCount?: number;
   restoredRadioSession?: boolean;
   restoredRadioReason?: string | null;
   radioVisualizationStatus?: "idle" | "ready" | "unavailable";

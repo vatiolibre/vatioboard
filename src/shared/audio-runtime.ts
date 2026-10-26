@@ -40,6 +40,7 @@ import { recordBackgroundDiagnostic } from "./background-diagnostics.js";
 import { startAudioLifecycleDiagnostics } from "./audio-lifecycle-diagnostics.js";
 import {
   acquireGraph,
+  destroyGraphForElement,
   getGraph,
   primeAudioContext,
   releaseGraph,
@@ -170,8 +171,17 @@ let loadedEntryId = "";
 let radioTimer: ReturnType<typeof setTimeout> | null = null;
 let radioRetries = 0;
 let radioAttempt = 0;
-let radioHasPlayed = false;
+const RADIO_PROGRESS_TIMEOUT_MS = 12_000;
+let radioConnectionGeneration = 0;
+let radioReconnectRequired: string | null = null;
+let radioLastProgressAt = 0;
+let radioObservedTime = 0;
+let radioProgressConfirmed = false;
+let radioElementReplaced = false;
+let radioProgressDeadline = 0;
+let radioHiddenTime: number | null = null;
 let radioRetryScheduled = false;
+let radioPlayCompletion: ((started: boolean) => void) | null = null;
 type PreparedRadioTakeover = {
   track: RuntimeTrack;
   resolved: ResolvedAudioSource;
@@ -183,7 +193,7 @@ let lastRadioFocusTrack: RuntimeTrack | null = null;
 let restoredRadioSession = false;
 let restoredRadioReason: "saved-session" | "pageshow" | null = null;
 let recoveryGeneration = 0;
-let recoveryPending: Promise<unknown> | null = null;
+let recoveryPending: Promise<boolean> | null = null;
 let returnPending = false;
 let recoveryMediaPending: Promise<void> | null = null;
 let handoffSnapshot: { queue: RuntimeTrack[]; currentTrack: RuntimeTrack; currentIndex: number } | null = null;
@@ -191,6 +201,9 @@ let handoffSnapshot: { queue: RuntimeTrack[]; currentTrack: RuntimeTrack; curren
 function cancelRecovery() {
   recoveryGeneration++;
   recoveryPending = null;
+  clearRadioTimer();
+  radioPlayCompletion?.(false);
+  radioAttempt++;
   state.restorationStatus = "idle";
   if (handoffSnapshot) {
     const saved = handoffSnapshot;
@@ -218,31 +231,56 @@ function playbackFailed(error: unknown) {
   notify();
 }
 
-/** One attempt per foreground transition; never replace audio that is still playing. */
-function reconcilePlayback(trigger: string) {
+/** Lifecycle and Play share one cancellable operation, including the demo handoff. */
+function reconcilePlayback(trigger: string, { fromUserGesture = false } = {}) {
   if (state.playbackIntent !== "playing" || !state.currentTrack || document.hidden
       || (window.__vatioboardSpa && (!hasSingleTabOwnership() || !appControl.isEnabled("vatio.player")))) return Promise.resolve(false);
+  if (state.isLive && navigator.onLine === false) {
+    radioReconnectRequired ||= "offline";
+    returnPending = true;
+    radioDiagnostic(trigger, "offline");
+    return Promise.resolve(false);
+  }
   returnPending = false;
   if (recoveryPending) return recoveryPending;
+  if (state.isLive && radioRetryScheduled && radioTimer) return Promise.resolve(true);
+  if (state.restorationStatus === "blocked" && !fromUserGesture) return Promise.resolve(false);
   if (audio && !audio.paused && !audio.ended) {
-    // Web Audio may have been suspended even though the element stayed active.
     const graph = getGraph(audio);
-    if (!graph || graph.audioContext.state === "running") return Promise.resolve(true);
+    const graphRunning = !graph || graph.audioContext.state === "running";
+    if (!state.isLive && graphRunning) return Promise.resolve(true);
+    if (state.isLive && !radioReconnectRequired && graphRunning) {
+      // An active connection attempt already has a deadline. Repeated lifecycle
+      // events and Play taps must not reload it or replenish its retry budget.
+      if (radioTimer && (state.loading || radioRetryScheduled)) return Promise.resolve(true);
+      if ((radioHiddenTime !== null && audio.currentTime > radioHiddenTime + 0.01)
+          || (radioProgressConfirmed && Date.now() - radioLastProgressAt < RADIO_PROGRESS_TIMEOUT_MS)) {
+        radioHiddenTime = null;
+        observeRadioProgress();
+        armRadioProgressDeadline();
+        return Promise.resolve(true);
+      }
+    }
   }
   if (state.isLive) {
+    radioReconnectRequired ||= trigger;
+    radioRetries = 0;
+    radioElementReplaced = false;
     restoredRadioSession = true;
     restoredRadioReason = trigger === "initial-load" ? "saved-session" : "pageshow";
+    radioDiagnostic(trigger, "attempt");
   }
   state.restorationStatus = "restoring";
   recordBackgroundDiagnostic("player-recovery", { trigger, outcome: "attempt", sourceReady: Boolean(audio?.src) });
   const generation = recoveryGeneration;
   const pending = (async () => {
-    if (state.isLive && lastRadioFocusTrack && !preparedRadioTakeover) await prepareRadioFocus(lastRadioFocusTrack);
     if (generation !== recoveryGeneration) return false;
-    return startPlayback();
+    return startPlayback({ fromUserGesture });
   })().then((result) => {
     if (generation !== recoveryGeneration) return false;
-    if (result === false && state.restorationStatus === "restoring") playbackFailed(new Error("Recovery failed"));
+    if (result === false && state.restorationStatus === "restoring" && !(state.isLive && radioTimer && !state.paused)) {
+      playbackFailed(new Error("Recovery failed"));
+    }
     return result;
   }).catch((error) => {
     if (generation === recoveryGeneration) playbackFailed(error);
@@ -438,7 +476,17 @@ async function prepareRadioFocus(track: RuntimeTrack | null | undefined) {
   clearRadioFocusPreparation();
   if (!isRadioFocusTrack(track)) return false;
 
-  const resolved = await resolveRuntimeAudioSource(track.name, track).catch(() => null);
+  let expired = false;
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const source = resolveRuntimeAudioSource(track.name, track).catch(() => null).then((resolved) => {
+    if (expired) { resolved?.revokeUrl?.(); return null; }
+    return resolved;
+  });
+  const resolved = await Promise.race([
+    source,
+    new Promise<null>((resolve) => { timeout = setTimeout(() => { expired = true; resolve(null); }, 5000); }),
+  ]);
+  if (timeout) clearTimeout(timeout);
   if (generation !== recoveryGeneration) {
     resolved?.revokeUrl?.();
     return false;
@@ -511,22 +559,142 @@ function selectAudioForTrack(live: boolean) {
     setMainAudioElement(audio);
   }
 }
+function radioDiagnostic(trigger: string, outcome: string) {
+  const buffered: number[][] = [];
+  try {
+    for (let i = 0; i < (radioAudio?.buffered.length || 0); i++) {
+      buffered.push([radioAudio!.buffered.start(i), radioAudio!.buffered.end(i)]);
+    }
+  } catch { /* Resource may have been detached. */ }
+  recordBackgroundDiagnostic("radio-connection", {
+    trigger, outcome, radioStationUuid: state.currentTrack?.station_uuid || null,
+    connectionGeneration: radioConnectionGeneration, reconnectRequired: radioReconnectRequired,
+    attempt: radioRetries + 1, currentTime: radioAudio?.currentTime || 0,
+    lastProgressAt: radioLastProgressAt,
+    buffered: JSON.stringify(buffered.slice(-4).map(range => range.map(time => Math.round(time * 1000) / 1000))),
+    mediaErrorCode: radioAudio?.error?.code || null,
+    sourceReady: Boolean(radioAudio?.src),
+  });
+}
+
+/** Abort the retained HTTP resource; the relay URL deliberately has no query. */
+function refreshRadioConnection(reason: string, replace = false) {
+  const resolved = state.currentTrack && resolveRadioSource(state.currentTrack);
+  if (!resolved || !radioAudio) return false;
+  clearRadioTimer();
+  radioPlayCompletion?.(false);
+  radioAttempt++;
+  radioVisualizationStatus = "idle";
+  radioVisualizationGraphElement = null;
+  stopRadioAnalysis();
+  const old = radioAudio;
+  const replacing = replace && !radioElementReplaced;
+  unbindAudioElement(old);
+  clearAudioElementSource(old);
+  if (replacing) {
+    destroyGraphForElement(old);
+    radioAudio = null;
+    audio = null;
+    old.remove();
+    document.getElementById("vatio-native-radio-host")?.remove();
+    selectAudioForTrack(true);
+    radioElementReplaced = true;
+  } else bindAudioElement(old);
+  const el = radioAudio!;
+  el.src = resolved.src;
+  el.volume = state.muted ? 0 : state.volume;
+  el.muted = state.muted;
+  resetAudioElementPlaybackRate(el);
+  radioConnectionGeneration++;
+  radioObservedTime = Number(el.currentTime || 0);
+  radioProgressConfirmed = false;
+  radioLastProgressAt = 0;
+  radioHiddenTime = null;
+  radioReconnectRequired = null;
+  el.load();
+  radioDiagnostic(reason, replacing ? "element-replaced" : "source-reloaded");
+  return true;
+}
+
+function radioPlaybackExpected() {
+  return state.isLive && state.playbackIntent === "playing" && !state.paused
+    && (!window.__vatioboardSpa || (hasSingleTabOwnership() && appControl.isEnabled("vatio.player")));
+}
+
+/** One-shot, event-driven watchdog. Only advancing media time renews it. */
+function armRadioProgressDeadline() {
+  if (!radioPlaybackExpected() || document.hidden || navigator.onLine === false || radioRetryScheduled || radioTimer) return;
+  const token = loadRequestToken;
+  const generation = radioConnectionGeneration;
+  radioProgressDeadline = (radioLastProgressAt || Date.now()) + RADIO_PROGRESS_TIMEOUT_MS;
+  radioTimer = setTimeout(() => {
+    radioTimer = null;
+    if (token !== loadRequestToken || generation !== radioConnectionGeneration || !radioPlaybackExpected()) return;
+    if (document.hidden) { returnPending = true; return; }
+    // A timer queued before an OS suspension can run before timeupdate on wake.
+    // Sample once before reconnecting; never infer health from paused alone.
+    if (!radioReconnectRequired && observeRadioProgress()) { notify(); return; }
+    radioReconnectRequired ||= "progress-timeout";
+    radioDiagnostic("progress-timeout", "stalled");
+    failRadio(token);
+  }, Math.max(0, radioProgressDeadline - Date.now()));
+}
+
+function observeRadioProgress() {
+  if (!radioPlaybackExpected() || !radioAudio || radioAudio.paused || radioRetryScheduled || radioReconnectRequired) return false;
+  const graph = getGraph(radioAudio);
+  if (graph && graph.audioContext.state !== "running") return false;
+  const time = Number(radioAudio.currentTime || 0);
+  if (time <= radioObservedTime + 0.01) return false;
+  radioObservedTime = time;
+  radioLastProgressAt = Date.now();
+  const first = !radioProgressConfirmed;
+  radioProgressConfirmed = true;
+  state.connectionState = "playing";
+  state.loading = false;
+  if (state.restorationStatus === "restoring") state.restorationStatus = "restored";
+  clearRadioTimer();
+  armRadioProgressDeadline();
+  radioPlayCompletion?.(true);
+  if (first) radioDiagnostic("media-progress", "restored");
+  return true;
+}
+
+function markRadioInterrupted(reason: string) {
+  if (!state.isLive && !handoffSnapshot) return;
+  const blocked = state.restorationStatus === "blocked";
+  cancelRecovery();
+  if (blocked) state.restorationStatus = "blocked";
+  radioReconnectRequired = reason;
+  returnPending = true;
+  radioDiagnostic(reason, "interrupted");
+}
+
 function startRadioPlayback(token = loadRequestToken) {
   if (token !== loadRequestToken || !state.isLive || state.paused || !radioAudio)
     return Promise.resolve(false);
+  if (getGraph(radioAudio)?.audioContext.state === "closed" && !radioElementReplaced) {
+    if (!refreshRadioConnection("closed-context", true)) return Promise.resolve(false);
+  }
   const el = radioAudio;
+  radioPlayCompletion?.(false);
   const attemptId = ++radioAttempt;
   clearRadioTimer();
   state.error = null;
   state.loading = true;
   state.connectionState = radioRetries ? "reconnecting" : "connecting";
-  radioTimer = setTimeout(() => failRadio(token), 12000);
+  radioLastProgressAt = 0;
+  radioObservedTime = Number(el.currentTime || 0);
+  armRadioProgressDeadline();
   // Restored radio follows the MP3 retention ordering: initiate the shared
   // Player carrier before native playback.
   syncBackgroundModeKeepAlive();
 
   const playNativeRadio = () => {
     if (token !== loadRequestToken || attemptId !== radioAttempt || state.paused || !state.isLive) return Promise.resolve(false);
+    let complete: (started: boolean) => void;
+    const interrupted = new Promise<boolean>((resolve) => { complete = resolve; });
+    radioPlayCompletion = complete!;
     let attempt: Promise<void>;
     try {
       attempt = el.play();
@@ -534,8 +702,8 @@ function startRadioPlayback(token = loadRequestToken) {
       attempt = Promise.reject(error);
     }
     notify();
-    return Promise.resolve(attempt).then(
-      () => token === loadRequestToken,
+    const played = Promise.resolve(attempt).then(
+      () => token === loadRequestToken && attemptId === radioAttempt && !state.paused,
       (error) => {
         if (token !== loadRequestToken || attemptId !== radioAttempt || state.paused) return false;
         if (error?.name === "NotAllowedError") {
@@ -545,6 +713,7 @@ function startRadioPlayback(token = loadRequestToken) {
           state.restorationStatus = "blocked";
           state.error = "playback-blocked";
           state.connectionState = "unavailable";
+          radioDiagnostic("autoplay", "blocked");
           syncBackgroundModeKeepAlive();
           flushSessionPersistence();
           syncMediaSessionPlaybackState();
@@ -553,6 +722,9 @@ function startRadioPlayback(token = loadRequestToken) {
         return false;
       },
     );
+    return Promise.race([played, interrupted]).finally(() => {
+      if (radioPlayCompletion === complete) radioPlayCompletion = null;
+    });
   };
 
   // During the demo-to-radio handoff, finish graph preparation before the
@@ -563,24 +735,53 @@ function startRadioPlayback(token = loadRequestToken) {
     || (radioGraphPreparationPrimed && restoredRadioTakeoverActive));
   radioGraphPreparationPrimed = false;
   if (prepareGraphBeforePlay) {
-    return ensureRadioGraph(el).then(() => playNativeRadio(), () => playNativeRadio());
+    const current = () => token === loadRequestToken && attemptId === radioAttempt && !state.paused && el === audio;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let expired = false;
+    return Promise.race([
+      ensureRadioGraph(el, () => !expired && current()).catch(() => false),
+      new Promise<boolean>((resolve) => { timeout = setTimeout(() => { expired = true; resolve(false); }, 1500); }),
+    ]).then((ready) => {
+      if (!current()) return false;
+      if (!ready && getGraph(el)) {
+        playbackFailed(new DOMException("Radio context suspended", "NotAllowedError"));
+        clearRadioTimer();
+        return false;
+      }
+      return playNativeRadio();
+    }).finally(() => { expired = true; if (timeout) clearTimeout(timeout); });
   }
   return playNativeRadio();
 }
 function failRadio(token = loadRequestToken) {
   if (token !== loadRequestToken || !state.isLive || state.paused || radioRetryScheduled) return;
   clearRadioTimer();
-  if (radioHasPlayed && radioRetries < 2) {
+  radioPlayCompletion?.(false);
+  radioReconnectRequired ||= "media-error";
+  radioDiagnostic(radioReconnectRequired, "retry");
+  if (radioRetries < 2) {
     radioRetryScheduled = true;
     radioRetries++;
     state.connectionState = "reconnecting";
     state.loading = true;
     radioTimer = setTimeout(() => {
       if (token !== loadRequestToken || state.paused) return;
-      radioAudio?.load();
+      if (document.hidden || navigator.onLine === false) {
+        radioTimer = null;
+        radioRetryScheduled = false;
+        returnPending = true;
+        return;
+      }
+      const closed = getGraph(radioAudio!)?.audioContext.state === "closed";
+      if (!refreshRadioConnection(radioReconnectRequired || "retry", closed || (radioRetries === 2 && !radioProgressConfirmed))) {
+        radioRetryScheduled = false;
+        failRadio(token);
+        return;
+      }
       void startRadioPlayback(token);
     }, 5000);
   } else {
+    radioDiagnostic(radioReconnectRequired, "failed");
     state.error = "station-unavailable";
     state.connectionState = "unavailable";
     state.loading = false;
@@ -638,6 +839,7 @@ function bindAudioElement(el: ManagedAudioElement) {
   el.addEventListener("canplay", onCanPlay);
   el.addEventListener("error", onError);
   el.addEventListener("waiting", onWaiting);
+  el.addEventListener("stalled", onRadioStalled);
   el.addEventListener("playing", onPlaying);
 }
 
@@ -650,6 +852,7 @@ function unbindAudioElement(el: ManagedAudioElement) {
   el.removeEventListener("canplay", onCanPlay);
   el.removeEventListener("error", onError);
   el.removeEventListener("waiting", onWaiting);
+  el.removeEventListener("stalled", onRadioStalled);
   el.removeEventListener("playing", onPlaying);
 }
 
@@ -1274,18 +1477,26 @@ function bindLifecyclePersistence() {
   window.addEventListener("beforeunload", () => flushSessionPersistence());
   document.addEventListener("visibilitychange", () => {
     flushOnHide();
-    if (document.hidden) returnPending = true;
+    if (document.hidden) {
+      returnPending = true;
+      radioHiddenTime = Number(radioAudio?.currentTime || 0);
+    }
     else if (returnPending) {
       void reconcilePlayback("visibility-visible");
     }
   });
   document.addEventListener("freeze", () => {
+    markRadioInterrupted("freeze");
     returnPending = true;
     flushSessionPersistence();
   });
   document.addEventListener("resume", () => {
     if (!returnPending || document.hidden) return;
     void reconcilePlayback("resume");
+  });
+  window.addEventListener("offline", () => markRadioInterrupted("offline"));
+  window.addEventListener("online", () => {
+    if (radioReconnectRequired) void reconcilePlayback("online");
   });
   window.addEventListener(SINGLE_TAB_OWNERSHIP_EVENT, (event) => {
     if (!window.__vatioboardSpa) return;
@@ -1504,8 +1715,13 @@ async function loadTrack(index, { startTime = 0, autoplay = true, restored = fal
   const requestToken = ++loadRequestToken;
   restoredRadioSession = restored && track.media_kind === "radio";
   restoredRadioReason = restoredRadioSession ? "saved-session" : null;
+  radioPlayCompletion?.(false);
   radioAttempt++;
-  clearRadioTimer(); radioRetries = 0; radioHasPlayed = false;
+  clearRadioTimer(); radioRetries = 0;
+  radioReconnectRequired = null;
+  radioLastProgressAt = 0;
+  radioProgressConfirmed = false;
+  radioElementReplaced = false;
   state.isLive = track.media_kind === "radio";
   if (!state.isLive) radioGraphPreparationPrimed = false;
   radioVisualizationStatus = "idle";
@@ -1596,6 +1812,10 @@ async function loadTrack(index, { startTime = 0, autoplay = true, restored = fal
     try { el.removeAttribute("src"); el.load(); } catch { /* ignore */ }
   }
   el.src = resolved.src;
+  if (state.isLive) {
+    radioConnectionGeneration++;
+    radioObservedTime = Number(el.currentTime || 0);
+  }
   loadedEntryId = track._queueId;
   resetAudioElementPlaybackRate(el);
   el.volume = state.muted ? 0 : state.volume;
@@ -1669,10 +1889,6 @@ function waitForPlaybackAdvancing(el: ManagedAudioElement, token: number, queueI
       if (Date.now() - startedAt >= 5000) finish(false);
     };
     function onPlaying() {
-  if (state.restorationStatus === "restoring") {
-    state.restorationStatus = "restored";
-    recordBackgroundDiagnostic("player-recovery", { outcome: "playing", currentTime: getCurrentPlaybackTime() });
-  }
       started = true;
       check();
     }
@@ -1688,27 +1904,23 @@ function waitForPlaybackAdvancing(el: ManagedAudioElement, token: number, queueI
 function waitForRadioPlayback(token: number, queueId: string) {
   return new Promise<boolean>((resolve) => {
     let settled = false;
+    let unsubscribe = () => {};
     const finish = (playing: boolean) => {
       if (settled) return;
       settled = true;
-      radioAudio?.removeEventListener("playing", onPlaying);
-      clearInterval(poll);
+      unsubscribe();
       clearTimeout(timeout);
       resolve(playing);
     };
     const check = () => {
-      if (token !== loadRequestToken || state.currentTrack?._queueId !== queueId || state.paused) {
-        finish(false);
-      } else if (radioHasPlayed || state.connectionState === "playing") {
-        finish(true);
-      } else if (state.connectionState === "unavailable" || state.error) {
-        finish(false);
-      }
+      if (token !== loadRequestToken || state.currentTrack?._queueId !== queueId || state.paused) finish(false);
+      else if (radioProgressConfirmed && state.connectionState === "playing") finish(true);
+      else if (state.connectionState === "unavailable" || state.error) finish(false);
     };
-    function onPlaying() { finish(true); }
-    const poll = setInterval(check, 100);
-    const timeout = setTimeout(() => finish(false), 12_500);
-    radioAudio?.addEventListener("playing", onPlaying);
+    // Initial attempt + two retries, including retry delays and graph resume.
+    const timeout = setTimeout(() => finish(false), 49_000);
+    unsubscribe = subscribe(check);
+    if (settled) unsubscribe();
     check();
   });
 }
@@ -1921,6 +2133,15 @@ async function playMusicElement(el: ManagedAudioElement, token = loadRequestToke
 }
 
 export async function play({ fromUserGesture = false } = {}) {
+  if (recoveryPending) return recoveryPending;
+  if (state.isLive) {
+    state.playbackIntent = "playing";
+    // A real Play retries blocked policy; native/media-session Play also starts
+    // a new attempt. Lifecycle events alone never retry an autoplay rejection.
+    if (state.restorationStatus === "blocked") state.restorationStatus = "idle";
+    if (state.paused || audio?.paused || state.connectionState === "unavailable") radioReconnectRequired ||= "play";
+    return reconcilePlayback("play", { fromUserGesture });
+  }
   const retrying = state.restorationStatus === "blocked" || state.restorationStatus === "failed";
   cancelRecovery();
   if (retrying) state.restorationStatus = "restoring";
@@ -1953,6 +2174,10 @@ async function startPlayback({ fromUserGesture = false } = {}) {
     if (restoredRadioSession && preparedRadioTakeover) {
       return startRestoredRadioViaDemo({ restored: true });
     }
+    if (radioReconnectRequired) {
+      const closed = getGraph(radioAudio)?.audioContext.state === "closed";
+      if (!refreshRadioConnection(radioReconnectRequired, closed)) return false;
+    }
     return startRadioPlayback();
   }
   state.paused = false;
@@ -1983,6 +2208,7 @@ export function pause() {
   radioVisualizationStatus = "idle";
   radioVisualizationGraphElement = null;
   stopRadioAnalysis();
+  radioPlayCompletion?.(false);
   radioAttempt++;
   clearRadioTimer();
   state.paused = true;
@@ -2282,6 +2508,11 @@ export function getState() {
     radioVisualizationTransport: (radioVisualizationAnalysisGraph?.transport || (state.isLive ? "media-element" : "none")) as "media-element" | "decoded-pcm" | "none",
     radioVisualizationSignal: radioVisualizationAnalysisGraph?.signalState || (state.isLive ? "graph-ready" : "none"),
     connectionState: state.connectionState, radioFailureClass: null,
+    radioConnectionGeneration,
+    radioReconnectRequired,
+    radioLastProgressAt,
+    radioProgressConfirmed,
+    radioRetryCount: radioRetries,
     radioVisualizationAutoStart: !state.paused && !radioTakeoverPending && !restoredRadioTakeoverActive,
     restoredRadioSession,
     restoredRadioReason,
@@ -2467,6 +2698,7 @@ function onEnded() {
 }
 
 function onTimeUpdate() {
+  if (state.isLive) observeRadioProgress();
   reconcilePendingSeekDuringPlayback();
   syncPositionState();
   maybePrepareUpcomingTrack({ force: false });
@@ -2510,8 +2742,17 @@ function onError(event) {
   notify();
 }
 
+function onRadioStalled() {
+  if (!state.isLive) return;
+  armRadioProgressDeadline();
+  radioDiagnostic("stalled-event", "waiting");
+}
+
 function onWaiting() {
-  if (state.isLive) { state.connectionState = "connecting"; }
+  if (state.isLive) {
+    state.connectionState = radioRetryScheduled ? "reconnecting" : "connecting";
+    armRadioProgressDeadline();
+  }
   state.loading = true;
   syncBackgroundModeKeepAlive();
   syncMediaSessionPlaybackState();
@@ -2520,11 +2761,17 @@ function onWaiting() {
 
 function onPlaying() {
   if (audio?.paused || state.playbackIntent !== "playing") return;
-  if (state.restorationStatus === "restoring") {
+  if (!state.isLive && !restoredRadioTakeoverActive && state.restorationStatus === "restoring") {
     state.restorationStatus = "restored";
     recordBackgroundDiagnostic("player-recovery", { outcome: "playing", currentTime: getCurrentPlaybackTime() });
   }
-  if (state.isLive) { clearRadioTimer(); radioHasPlayed = true; state.connectionState = "playing"; }
+  if (state.isLive) {
+    // Buffered playback is provisional. Keep the deadline armed even after
+    // playing and after the first progress event.
+    state.connectionState = radioRetryScheduled ? "reconnecting" : "playing";
+    observeRadioProgress();
+    armRadioProgressDeadline();
+  }
   state.loading = false;
   syncBackgroundModeKeepAlive();
   syncMediaSessionPlaybackState();

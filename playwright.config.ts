@@ -71,7 +71,7 @@ export default defineConfig({
     { name: "desktop-large", testIgnore: /mobile-scrollless\.spec\.ts/, use: { viewport: { width: 1440, height: 900 }, deviceScaleFactor: 1 } },
   ],
   webServer: {
-    command: "pnpm exec vite --host 127.0.0.1 --port 4175",
+    command: "pnpm exec vite --config test/helpers/vite-browser.config.ts --host 127.0.0.1 --port 4175",
     url: "http://127.0.0.1:4175",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,
