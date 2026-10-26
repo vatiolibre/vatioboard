@@ -45,7 +45,7 @@ describe("radio media Worker", () => {
     resetRadioMediaWorkerForTesting();
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
   it("exposes only the CORS-safe station stream route", async () => {
     expect((await worker.fetch(request("/v1/health"), ENV)).status).toBe(404);
@@ -115,4 +115,43 @@ describe("radio media Worker", () => {
     expect(limit.limit).toHaveBeenCalledTimes(1);
     expect(fetch).not.toHaveBeenCalled();
   });
+
+  it("keeps an established streaming body alive beyond the upstream connection timeout", async () => {
+    vi.useFakeTimers();
+    let bodyController!: ReadableStreamDefaultController<Uint8Array>;
+    let upstreamSignal: AbortSignal | null | undefined;
+    mockRadioFetch(() => new Response(new ReadableStream<Uint8Array>({
+      start(controller) { bodyController = controller; },
+    }), { headers: { "Content-Type": "audio/mpeg" } }));
+    const mock = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      if (String(input) === "https://stream.example.com/live.mp3") upstreamSignal = init?.signal;
+      return mock(input, init);
+    });
+    const response = await worker.fetch(request(`/v1/stations/${UUID}/stream`), ENV);
+    const reader = response.body!.getReader();
+    await vi.advanceTimersByTimeAsync(13_000);
+    expect(upstreamSignal).toBeDefined();
+    expect(upstreamSignal?.aborted).toBe(false);
+    bodyController.enqueue(new Uint8Array([1, 2, 3]));
+    expect(await reader.read()).toEqual({ value: new Uint8Array([1, 2, 3]), done: false });
+    bodyController.close();
+    await reader.cancel();
+  });
+
+  it("opens a fresh upstream on another canonical GET even when directory metadata is cached", async () => {
+    const upstream = vi.fn(() => new Response(new Uint8Array([1, 2, 3]), {
+      headers: { "Content-Type": "audio/mpeg" },
+    }));
+    mockRadioFetch(upstream);
+    const first = await worker.fetch(request(`/v1/stations/${UUID}/stream`), ENV);
+    await first.body!.cancel();
+    const second = await worker.fetch(request(`/v1/stations/${UUID}/stream`), ENV);
+    expect(second.status).toBe(200);
+    expect(second.headers.get("Cache-Control")).toContain("no-store");
+    expect(upstream).toHaveBeenCalledTimes(2);
+    await second.body!.cancel();
+    expect((await worker.fetch(request(`/v1/stations/${UUID}/stream?timestamp=1`), ENV)).status).toBe(400);
+  });
+
 });

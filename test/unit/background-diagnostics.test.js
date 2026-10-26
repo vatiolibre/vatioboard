@@ -63,3 +63,27 @@ describe("background diagnostics", () => {
     });
   });
 });
+
+it("exports bounded radio recovery observations without media URLs or arbitrary station metadata", async () => {
+  vi.resetModules();
+  sessionStorage.clear();
+  sessionStorage.setItem("vatioboard.debug.background", "1");
+  const diagnostics = await import("../../src/shared/background-diagnostics.js");
+  diagnostics.recordBackgroundDiagnostic("radio-connection", {
+    trigger: "freeze", outcome: "restored", sourceReady: true,
+    radioStationUuid: "11111111-1111-4111-8111-111111111111",
+    connectionGeneration: 4, reconnectRequired: null, attempt: 2,
+    currentTime: 32.5, lastProgressAt: 123456,
+    buffered: "[[31,36]]", mediaErrorCode: 2,
+    streamUrl: "https://secret.example/live", title: "Private metadata",
+  });
+  expect(diagnostics.getBackgroundDiagnostics().at(-1).detail).toEqual({
+    trigger: "freeze", outcome: "restored", sourceReady: true,
+    radioStationUuid: "11111111-1111-4111-8111-111111111111",
+    connectionGeneration: 4, reconnectRequired: null, attempt: 2,
+    currentTime: 32.5, lastProgressAt: 123456,
+    buffered: "[[31,36]]", mediaErrorCode: 2,
+  });
+  diagnostics.recordBackgroundDiagnostic("radio-connection", { radioStationUuid: "Private metadata" });
+  expect(diagnostics.getBackgroundDiagnostics().at(-1).detail).toEqual({});
+});

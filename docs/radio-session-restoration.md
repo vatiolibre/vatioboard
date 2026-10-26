@@ -1,5 +1,8 @@
 # Radio restoration after refresh or revisit
 
+> Retained-page suspension and stale live-stream recovery are documented in
+> [radio suspension recovery](radio-suspension-recovery.md). Vehicle validation is pending.
+
 > Historical manual-Play audio baseline. Current automatic playback recovery is
 > described in [automatic playback recovery](automatic-playback-recovery.md).
 > Scope/spectrum restoration now follows the independently saved radio Visuals

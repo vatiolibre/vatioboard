@@ -72,6 +72,9 @@ const ALLOWED_FIELDS = new Set([
   "relayVersion",
   "probeOutcome",
   "probeStage",
+  "trigger", "outcome", "sourceReady", "currentTime",
+  "connectionGeneration", "reconnectRequired", "attempt", "lastProgressAt",
+  "radioStationUuid", "buffered",
   "latencyBucket",
 ]);
 
@@ -115,6 +118,10 @@ function sanitizeDetail(detail: Record<string, unknown> = {}) {
   const safe: Record<string, string | number | boolean | null> = {};
   for (const [key, value] of Object.entries(detail)) {
     if (!ALLOWED_FIELDS.has(key)) continue;
+    // Recovery can identify a public directory station, never its stream URL
+    // or arbitrary track/user metadata.
+    if (key === "radioStationUuid" && value !== null
+        && (typeof value !== "string" || !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value))) continue;
     if (value === null || typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
       safe[key] = typeof value === "string"
         ? value.slice(0, 240)

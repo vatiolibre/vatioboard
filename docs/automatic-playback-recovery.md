@@ -1,5 +1,8 @@
 # Automatic playback recovery
 
+> Retained-page suspension and stale live-stream recovery are documented in
+> [radio suspension recovery](radio-suspension-recovery.md). Vehicle validation is pending.
+
 The Player restores its saved session before catalog loading completes and makes
 one best-effort playback attempt when its saved intent is playing. Paused and
 stopped sessions stay paused/stopped. The existing Play button retries blocked

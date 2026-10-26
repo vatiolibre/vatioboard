@@ -175,16 +175,22 @@ describe("native radio extension of main audio", () => {
     const radio = runtime.getAudioElement();
     const play = vi.spyOn(radio, "play");
     radio.dispatchEvent(new Event("playing"));
+    radio.currentTime += 0.2;
+    radio.dispatchEvent(new Event("timeupdate"));
     for (let i = 0; i < 2; i++) {
       radio.dispatchEvent(new Event("error"));
       await vi.advanceTimersByTimeAsync(5000);
       radio.dispatchEvent(new Event("playing"));
+      radio.currentTime += 0.2;
+      radio.dispatchEvent(new Event("timeupdate"));
     }
     radio.dispatchEvent(new Event("error"));
     expect(runtime.getState().connectionState).toBe("unavailable");
     expect(play).toHaveBeenCalledTimes(2);
     await runtime.playTrackNow(station("two"));
     radio.dispatchEvent(new Event("playing"));
+    radio.currentTime += 0.2;
+    radio.dispatchEvent(new Event("timeupdate"));
     radio.dispatchEvent(new Event("error"));
     runtime.stopPlayback();
     const count = play.mock.calls.length;
@@ -371,6 +377,8 @@ it("runs the real restored-demo lifecycle before restored radio resumes", async 
   demo.dispatchEvent(new Event("timeupdate"));
   await flush();
   native.dispatchEvent(new Event("playing"));
+  native.currentTime += 0.2;
+  native.dispatchEvent(new Event("timeupdate"));
   await handoff;
   expect(nativePlay).toHaveBeenCalledTimes(1);
   await flush();
@@ -432,12 +440,16 @@ it("retains silence during restored radio retries and releases it after terminal
   const native = runtime.getAudioElement();
   const silent = system.getBackgroundKeepAliveAudio();
   native.dispatchEvent(new Event("playing"));
+  native.currentTime += 0.2;
+  native.dispatchEvent(new Event("timeupdate"));
   const pause = vi.spyOn(silent, "pause");
   for (let retry = 0; retry < 2; retry++) {
     native.dispatchEvent(new Event("error"));
     expect(silent.paused).toBe(false);
     await vi.advanceTimersByTimeAsync(5000);
     native.dispatchEvent(new Event("playing"));
+    native.currentTime += 0.2;
+    native.dispatchEvent(new Event("timeupdate"));
   }
   expect(pause).not.toHaveBeenCalled();
   native.dispatchEvent(new Event("error"));
@@ -472,7 +484,10 @@ async function advanceDemoAndRadio() {
   demo.dispatchEvent(new Event("playing"));
   demo.dispatchEvent(new Event("timeupdate"));
   await flush();
-  runtime.getAudioElement().dispatchEvent(new Event("playing"));
+  const native = runtime.getAudioElement();
+  native.dispatchEvent(new Event("playing"));
+  native.currentTime += 0.2;
+  native.dispatchEvent(new Event("timeupdate"));
   await flush();
 }
 
@@ -538,6 +553,8 @@ it("Stop while boot preparation is pending prevents late autoplay", async () => 
 
 it("page return does not restart an element that is still playing", async () => {
   await runtime.playTrackNow(station());
+  runtime.getAudioElement().currentTime = 1;
+  runtime.getAudioElement().dispatchEvent(new Event("timeupdate"));
   const play = vi.spyOn(runtime.getAudioElement(), "play");
   window.dispatchEvent(new PageTransitionEvent("pagehide", { persisted: true }));
   window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
@@ -766,4 +783,275 @@ it("disposes Safari PCM that finishes after a playback cancellation", async () =
   finish(graph); await flush();
   expect(graph.dispose).toHaveBeenCalledTimes(1);
   expect(runtime.getRadioAnalysisGraph()).toBeNull();
+});
+
+function radioProgress(time) {
+  const el = runtime.getAudioElement();
+  el.currentTime = time;
+  el.dispatchEvent(new Event("timeupdate"));
+  return el;
+}
+
+it("reconnects buffered playing followed by waiting without requiring a media error", async () => {
+  await runtime.playTrackNow(station());
+  const native = radioProgress(1);
+  const generation = runtime.getState().radioConnectionGeneration;
+  native.dispatchEvent(new Event("playing"));
+  await vi.advanceTimersByTimeAsync(6000);
+  native.dispatchEvent(new Event("waiting"));
+  await vi.advanceTimersByTimeAsync(5000);
+  native.dispatchEvent(new Event("waiting")); // Must not extend the deadline.
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(runtime.getState()).toMatchObject({ connectionState: "reconnecting", radioRetryCount: 1 });
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(runtime.getState().radioConnectionGeneration).toBe(generation + 1);
+  expect(native.src).toBe(station().url_resolved);
+  radioProgress(2);
+  expect(runtime.getState()).toMatchObject({ connectionState: "playing", radioProgressConfirmed: true });
+});
+
+it("detects a silent stall without waiting, error, or lifecycle events", async () => {
+  await runtime.playTrackNow(station());
+  radioProgress(1);
+  await vi.advanceTimersByTimeAsync(17000);
+  expect(runtime.getState()).toMatchObject({ radioRetryCount: 1, playbackIntent: "playing" });
+  expect(runtime.getState().radioConnectionGeneration).toBe(2);
+});
+
+it("does not mistake buffered playing for successful restoration", async () => {
+  await runtime.playTrackNow(station());
+  runtime.pause();
+  await runtime.play();
+  runtime.getAudioElement().dispatchEvent(new Event("playing"));
+  expect(runtime.getState()).toMatchObject({ restorationStatus: "restoring", radioProgressConfirmed: false });
+  radioProgress(1);
+  expect(runtime.getState()).toMatchObject({ restorationStatus: "restored", radioProgressConfirmed: true });
+});
+
+it("freeze/resume establishes one fresh connection despite paused=false and duplicate events", async () => {
+  await runtime.playTrackNow(station());
+  const native = radioProgress(1);
+  const generation = runtime.getState().radioConnectionGeneration;
+  document.dispatchEvent(new Event("freeze"));
+  expect(native.paused).toBe(false);
+  document.dispatchEvent(new Event("resume"));
+  window.dispatchEvent(new PageTransitionEvent("pageshow", { persisted: true }));
+  document.dispatchEvent(new Event("resume"));
+  await Promise.all([runtime.play(), runtime.play()]);
+  expect(runtime.getState().radioConnectionGeneration).toBe(generation + 1);
+  expect(runtime.getState().queue.map(track => track.name)).toEqual([station().name]);
+  expect(runtime.getState().playbackIntent).toBe("playing");
+});
+
+it("Play after a browser pause reloads the canonical URL without query parameters", async () => {
+  await runtime.playTrackNow(station());
+  const native = radioProgress(1);
+  native.pause();
+  const load = vi.spyOn(native, "load");
+  const generation = runtime.getState().radioConnectionGeneration;
+  await runtime.play({ fromUserGesture: true });
+  expect(load).toHaveBeenCalledTimes(2); // Abort old resource, then load fresh URL.
+  expect(native.src).toBe(station().url_resolved);
+  expect(runtime.getState().radioConnectionGeneration).toBe(generation + 1);
+});
+
+it("checks real media progress before an overdue timer reconnects on wake", async () => {
+  await runtime.playTrackNow(station());
+  const native = radioProgress(1);
+  const generation = runtime.getState().radioConnectionGeneration;
+  native.currentTime = 14; // No timeupdate delivered while JavaScript was suspended.
+  await vi.advanceTimersByTimeAsync(12000);
+  expect(runtime.getState()).toMatchObject({ radioConnectionGeneration: generation, radioRetryCount: 0 });
+  await vi.advanceTimersByTimeAsync(17000);
+  expect(runtime.getState().radioConnectionGeneration).toBe(generation + 1);
+});
+
+it("defers a hidden stall until foreground and preserves progressing background playback", async () => {
+  await runtime.playTrackNow(station());
+  const native = radioProgress(1);
+  const generation = runtime.getState().radioConnectionGeneration;
+  document.hidden = true;
+  document.dispatchEvent(new Event("visibilitychange"));
+  await vi.advanceTimersByTimeAsync(30000);
+  expect(runtime.getState().radioConnectionGeneration).toBe(generation);
+  native.currentTime = 31;
+  document.hidden = false;
+  document.dispatchEvent(new Event("visibilitychange"));
+  await flush();
+  expect(runtime.getState().radioConnectionGeneration).toBe(generation);
+  document.hidden = true;
+  document.dispatchEvent(new Event("visibilitychange"));
+  await vi.advanceTimersByTimeAsync(30000);
+  document.hidden = false;
+  document.dispatchEvent(new Event("visibilitychange"));
+  await flush();
+  expect(runtime.getState().radioConnectionGeneration).toBe(generation + 1);
+});
+
+it("online recovery coalesces and never overrides an explicit Pause", async () => {
+  await runtime.playTrackNow(station());
+  radioProgress(1);
+  const generation = runtime.getState().radioConnectionGeneration;
+  window.dispatchEvent(new Event("offline"));
+  window.dispatchEvent(new Event("online"));
+  window.dispatchEvent(new Event("online"));
+  await flush();
+  expect(runtime.getState().radioConnectionGeneration).toBe(generation + 1);
+  window.dispatchEvent(new Event("offline"));
+  runtime.pause();
+  window.dispatchEvent(new Event("online"));
+  await flush();
+  expect(runtime.getState()).toMatchObject({ paused: true, playbackIntent: "paused", radioConnectionGeneration: generation + 1 });
+});
+
+it("bounds initial startup and two retries across fresh source loads and one replacement", async () => {
+  await system.acquireBackgroundAudioLease("recording");
+  await runtime.playTrackNow(station());
+  const original = runtime.getAudioElement();
+  const firstGeneration = runtime.getState().radioConnectionGeneration;
+  await vi.advanceTimersByTimeAsync(46000);
+  expect(runtime.getState()).toMatchObject({ paused: true, connectionState: "unavailable", restorationStatus: "failed", radioRetryCount: 2, playbackIntent: "playing" });
+  expect(runtime.getAudioElement()).not.toBe(original);
+  expect(original.isConnected).toBe(false);
+  expect(runtime.getState().radioConnectionGeneration).toBe(firstGeneration + 2);
+  expect(system.getBackgroundAudioState().activeLeaseIds).toEqual(["recording"]);
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(runtime.getState().radioConnectionGeneration).toBe(firstGeneration + 2);
+});
+
+it.each(["pause", "stop", "station", "ownership"])("cancels a scheduled stall retry after %s", async action => {
+  await runtime.playTrackNow(station());
+  radioProgress(1);
+  await vi.advanceTimersByTimeAsync(12000);
+  if (action === "pause") runtime.pause();
+  if (action === "stop") runtime.stopPlayback();
+  if (action === "station") await runtime.playTrackNow(station("new"));
+  if (action === "ownership") {
+    window.__vatioboardSpa = true;
+    window.dispatchEvent(new CustomEvent("vatioboard:single-tab-ownership", { detail: { owned: false } }));
+  }
+  const generation = runtime.getState().radioConnectionGeneration;
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(runtime.getState().radioConnectionGeneration).toBe(generation);
+  delete window.__vatioboardSpa;
+});
+
+it("bounds a hung radio graph resume and only Play retries a blocked context", async () => {
+  await runtime.playTrackNow(station());
+  runtime.pause();
+  const registry = await import("../../src/shared/audio-graph-registry.js");
+  const graph = { audioContext: { state: "suspended" } };
+  vi.spyOn(registry, "getGraph").mockReturnValue(graph);
+  vi.spyOn(registry, "resumeGraphForElement").mockReturnValue(new Promise(() => {}));
+  const play = runtime.play({ fromUserGesture: true });
+  await vi.advanceTimersByTimeAsync(1500);
+  await play;
+  expect(runtime.getState()).toMatchObject({ paused: true, restorationStatus: "blocked", playbackIntent: "playing" });
+  const generation = runtime.getState().radioConnectionGeneration;
+  document.dispatchEvent(new Event("freeze"));
+  document.dispatchEvent(new Event("resume"));
+  window.dispatchEvent(new Event("online"));
+  await flush();
+  expect(runtime.getState().radioConnectionGeneration).toBe(generation);
+  graph.audioContext.state = "running";
+  await runtime.play({ fromUserGesture: true });
+  radioProgress(1);
+  expect(runtime.getState().restorationStatus).toBe("restored");
+});
+
+it("does not start a retry while the document becomes hidden during its delay", async () => {
+  await runtime.playTrackNow(station());
+  radioProgress(1);
+  await vi.advanceTimersByTimeAsync(12000);
+  const generation = runtime.getState().radioConnectionGeneration;
+  document.hidden = true;
+  document.dispatchEvent(new Event("visibilitychange"));
+  await vi.advanceTimersByTimeAsync(5000);
+  expect(runtime.getState().radioConnectionGeneration).toBe(generation);
+  document.hidden = false;
+  document.dispatchEvent(new Event("visibilitychange"));
+  await flush();
+  expect(runtime.getState().radioConnectionGeneration).toBe(generation + 1);
+});
+
+it("replaces a closed Player radio graph without disposing independent retention", async () => {
+  await system.acquireBackgroundAudioLease("alerts");
+  await runtime.playTrackNow(station());
+  const original = radioProgress(1);
+  runtime.pause();
+  const registry = await import("../../src/shared/audio-graph-registry.js");
+  vi.spyOn(registry, "getGraph").mockImplementation(el => el === original ? { audioContext: { state: "closed" } } : null);
+  await runtime.play({ fromUserGesture: true });
+  const replacement = runtime.getAudioElement();
+  expect(replacement).not.toBe(original);
+  expect(replacement).toMatchObject({ isConnected: true, crossOrigin: "anonymous", controls: false });
+  expect(original.isConnected).toBe(false);
+  radioProgress(1);
+  expect(runtime.getState().restorationStatus).toBe("restored");
+  expect(system.getBackgroundAudioState().activeLeaseIds).toContain("alerts");
+});
+
+it("cancels a pending radio graph resume before its late completion", async () => {
+  await runtime.playTrackNow(station());
+  runtime.pause();
+  const native = runtime.getAudioElement();
+  const registry = await import("../../src/shared/audio-graph-registry.js");
+  const graph = { audioContext: { state: "suspended" } };
+  vi.spyOn(registry, "getGraph").mockReturnValue(graph);
+  let finish;
+  vi.spyOn(registry, "resumeGraphForElement").mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  const nativePlay = vi.spyOn(native, "play");
+  const pending = runtime.play({ fromUserGesture: true });
+  await flush();
+  runtime.pause();
+  graph.audioContext.state = "running";
+  finish(true);
+  await pending;
+  expect(nativePlay).not.toHaveBeenCalled();
+  expect(runtime.getState()).toMatchObject({ paused: true, playbackIntent: "paused" });
+});
+
+it("bounds optional demo resolution and revokes a late source instead of altering the station", async () => {
+  await runtime.playTrackNow(station());
+  runtime.setRecoveryTracks([focusTrack]);
+  const resolver = await import("../../src/shared/audio-source-resolver.js");
+  let finish;
+  resolver.resolveAudioSource.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+  document.dispatchEvent(new Event("freeze"));
+  document.dispatchEvent(new Event("resume"));
+  await vi.advanceTimersByTimeAsync(5000);
+  const revokeUrl = vi.fn();
+  finish({ src: "blob:late", type: "blob", revokeUrl });
+  await flush();
+  expect(revokeUrl).toHaveBeenCalledTimes(1);
+  expect(runtime.getState()).toMatchObject({ isLive: true, paused: false, currentTrack: { name: station().name } });
+  expect(runtime.getState().queue).toHaveLength(1);
+});
+
+it("settles a hung native play promise when its attempt expires so Play remains usable", async () => {
+  await runtime.playTrackNow(station());
+  radioProgress(1);
+  runtime.pause();
+  const native = runtime.getAudioElement();
+  vi.spyOn(native, "play").mockReturnValue(new Promise(() => {}));
+  const pending = runtime.play();
+  await flush();
+  await vi.advanceTimersByTimeAsync(46000);
+  await expect(pending).resolves.toBe(false);
+  expect(runtime.getState()).toMatchObject({ paused: true, restorationStatus: "failed", playbackIntent: "playing" });
+  await runtime.play({ fromUserGesture: true });
+  radioProgress(1);
+  expect(runtime.getState().restorationStatus).toBe("restored");
+});
+
+it("defers an offline restored session and resumes on network return without another Play", async () => {
+  await seedRadioSession();
+  const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  await runtime.restoreSession([], { autoplay: true });
+  expect(runtime.getState()).toMatchObject({ paused: true, playbackIntent: "playing", radioReconnectRequired: "offline" });
+  online.mockReturnValue(true);
+  window.dispatchEvent(new Event("online"));
+  await flush();
+  radioProgress(1);
+  expect(runtime.getState()).toMatchObject({ paused: false, restorationStatus: "restored", radioReconnectRequired: null });
 });
